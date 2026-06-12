@@ -14,6 +14,7 @@ pub mod block_traffic;
 pub mod metrics;
 pub mod real_ip;
 pub mod require_user_agent;
+pub mod security_headers;
 pub mod session;
 
 pub use block_traffic::middleware as block_traffic;
@@ -21,6 +22,7 @@ pub use block_traffic::middleware as block_traffic;
 pub use metrics::update_metrics;
 pub use real_ip::middleware as real_ip;
 pub use require_user_agent::require_user_agent;
+pub use security_headers::middleware as security_headers;
 pub use session::{attach_session, SessionExtension};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
@@ -31,6 +33,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(from_fn(log_request))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
+        .layer(from_fn(self::security_headers::middleware))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),
