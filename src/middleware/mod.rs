@@ -10,8 +10,18 @@ use crate::Env;
 use crate::app::AppState;
 
 pub mod block_traffic;
+#[cfg(feature = "metrics")]
+pub mod metrics;
 pub mod real_ip;
 pub mod require_user_agent;
+pub mod session;
+
+pub use block_traffic::middleware as block_traffic;
+#[cfg(feature = "metrics")]
+pub use metrics::update_metrics;
+pub use real_ip::middleware as real_ip;
+pub use require_user_agent::require_user_agent;
+pub use session::{attach_session, SessionExtension};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;

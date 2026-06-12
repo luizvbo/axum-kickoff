@@ -2,6 +2,8 @@
 
 use crate::config;
 use crate::db::Database;
+#[cfg(feature = "metrics")]
+use crate::metrics::InstanceMetrics;
 use std::sync::Arc;
 
 use derive_more::Deref;
@@ -13,6 +15,9 @@ pub struct App {
     pub config: Arc<config::Server>,
     /// The database connection pool
     pub database: Database,
+    /// Instance metrics for monitoring (available with `metrics` feature)
+    #[cfg(feature = "metrics")]
+    pub metrics: InstanceMetrics,
 }
 
 impl App {
@@ -21,6 +26,8 @@ impl App {
         Self {
             config: Arc::new(config),
             database,
+            #[cfg(feature = "metrics")]
+            metrics: InstanceMetrics::new(),
         }
     }
 
