@@ -9,33 +9,31 @@ use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 use crate::Env;
 use crate::app::AppState;
 
+pub mod block_traffic;
+pub mod real_ip;
+pub mod require_user_agent;
+
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
 
-    let middlewares = tower::ServiceBuilder::new()
+    let router = router
         .layer(from_fn(log_request))
         .layer(CatchPanicLayer::new())
-        // Optionally print debug information for each request in development
-        .layer(conditional_layer(env == Env::Development, || {
-            from_fn(debug_requests)
-        }));
-
-    router
-        .layer(middlewares)
+        .layer(from_fn(self::require_user_agent::require_user_agent))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),
         ))
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(30)))
-        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest))
-}
+        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
 
-pub fn conditional_layer<L, F: FnOnce() -> L>(
-    condition: bool,
-    layer: F,
-) -> axum_extra::either::Either<(axum::middleware::ResponseAxumBodyLayer, L), tower::layer::util::Identity> {
-    axum_extra::middleware::option_layer(condition.then(layer))
+    // Optionally print debug information for each request in development
+    if env == Env::Development {
+        router.layer(from_fn(debug_requests))
+    } else {
+        router
+    }
 }
 
 async fn log_request(

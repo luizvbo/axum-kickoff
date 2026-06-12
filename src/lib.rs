@@ -15,6 +15,7 @@ static ALLOC: Jemalloc = Jemalloc;
 pub mod app;
 pub mod config;
 pub mod middleware;
+pub mod rate_limiter;
 mod router;
 
 /// Used for setting different values depending on whether the app is being run in production,

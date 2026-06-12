@@ -3,7 +3,6 @@
 use crate::config;
 use std::sync::Arc;
 
-use axum::extract::{FromRef, FromRequestParts, State};
 use derive_more::Deref;
 
 /// The `App` struct holds the main components of the application like
@@ -14,18 +13,28 @@ pub struct App {
 }
 
 impl App {
-    /// A unique key to generate signed cookies
-    pub fn session_key(&self) -> &cookie::Key {
-        &self.config.session_key
+    /// Create a new App instance with the given configuration
+    pub fn new(config: config::Server) -> Self {
+        Self {
+            config: Arc::new(config),
+        }
+    }
+
+    /// Get the server's IP address
+    pub fn ip(&self) -> std::net::IpAddr {
+        self.config.ip
+    }
+
+    /// Get the server's port
+    pub fn port(&self) -> u16 {
+        self.config.port
+    }
+
+    /// Get the domain name
+    pub fn domain_name(&self) -> &str {
+        &self.config.domain_name
     }
 }
 
-#[derive(Clone, FromRequestParts, Deref)]
-#[from_request(via(State))]
+#[derive(Clone, Deref)]
 pub struct AppState(pub Arc<App>);
-
-impl FromRef<AppState> for cookie::Key {
-    fn from_ref(app: &AppState) -> Self {
-        app.session_key().clone()
-    }
-}
