@@ -32,6 +32,7 @@ pub struct Server {
     pub blocked_ips: HashSet<IpAddr>,
     pub blocked_routes: HashSet<String>,
     pub blocked_traffic: Vec<(String, Vec<BlockCriteria>)>,
+    pub session_key: cookie::Key,
 }
 
 impl Server {
@@ -86,6 +87,18 @@ impl Server {
         // Parse blocked traffic (header=value pairs)
         let blocked_traffic = parse_blocked_traffic()?;
 
+        // Load session key for signing cookies
+        let session_key = dotenvy::var("SESSION_KEY")
+            .map_err(|_| {
+                tracing::error!("Required environment variable 'SESSION_KEY' is not set");
+                anyhow::anyhow!("Required environment variable 'SESSION_KEY' is not set")
+            })?;
+        let session_key = cookie::Key::try_from(session_key.as_bytes())
+            .map_err(|e| {
+                tracing::error!("Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.", e);
+                anyhow::anyhow!("Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.", e)
+            })?;
+
         Ok(Server {
             base,
             ip,
@@ -96,6 +109,7 @@ impl Server {
             blocked_ips,
             blocked_routes,
             blocked_traffic,
+            session_key,
         })
     }
 

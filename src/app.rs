@@ -18,16 +18,20 @@ pub struct App {
     /// Instance metrics for monitoring (available with `metrics` feature)
     #[cfg(feature = "metrics")]
     pub metrics: InstanceMetrics,
+    /// Session key for signing cookies
+    pub session_key: cookie::Key,
 }
 
 impl App {
     /// Create a new App instance with the given configuration and database
     pub fn new(config: config::Server, database: Database) -> Self {
+        let session_key = config.session_key.clone();
         Self {
             config: Arc::new(config),
             database,
             #[cfg(feature = "metrics")]
             metrics: InstanceMetrics::new(),
+            session_key,
         }
     }
 

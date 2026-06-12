@@ -21,6 +21,7 @@ pub mod metrics;
 pub mod models;
 pub mod rate_limiter;
 mod router;
+pub mod util;
 
 /// Used for setting different values depending on whether the app is being run in production,
 /// in development, or for testing.

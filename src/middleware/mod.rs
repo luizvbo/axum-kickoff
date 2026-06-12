@@ -5,6 +5,7 @@ use std::time::Duration;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
+use tracing::Instrument;
 
 use crate::Env;
 use crate::app::AppState;
@@ -23,13 +24,14 @@ pub use metrics::update_metrics;
 pub use real_ip::middleware as real_ip;
 pub use require_user_agent::require_user_agent;
 pub use security_headers::middleware as security_headers;
-pub use session::{attach_session, SessionExtension};
+pub use session::SessionExtension;
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
 
     let router = router
+        .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
@@ -40,6 +42,9 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         ))
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(30)))
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
+
+    #[cfg(feature = "metrics")]
+    let router = router.layer(from_fn_with_state(state.clone(), self::metrics::update_metrics));
 
     // Optionally print debug information for each request in development
     if env == Env::Development {
@@ -55,10 +60,26 @@ async fn log_request(
 ) -> axum::response::Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
-    
-    tracing::info!("{} {}", method, uri);
-    
-    next.run(req).await
+    let user_agent = req
+        .headers()
+        .get("user-agent")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("<unknown>");
+
+    // Create a tracing span for structured logging
+    let span = tracing::info_span!(
+        "http_request",
+        method = %method,
+        uri = %uri,
+        user_agent = %user_agent,
+    );
+
+    async move {
+        tracing::info!("{} {}", method, uri);
+        next.run(req).await
+    }
+    .instrument(span)
+    .await
 }
 
 async fn debug_requests(
