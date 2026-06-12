@@ -1,6 +1,7 @@
 //! Application-wide components in a struct accessible from each request
 
 use crate::config;
+use crate::db::Database;
 use std::sync::Arc;
 
 use derive_more::Deref;
@@ -10,13 +11,16 @@ use derive_more::Deref;
 pub struct App {
     /// The server configuration
     pub config: Arc<config::Server>,
+    /// The database connection pool
+    pub database: Database,
 }
 
 impl App {
-    /// Create a new App instance with the given configuration
-    pub fn new(config: config::Server) -> Self {
+    /// Create a new App instance with the given configuration and database
+    pub fn new(config: config::Server, database: Database) -> Self {
         Self {
             config: Arc::new(config),
+            database,
         }
     }
 
@@ -33,6 +37,11 @@ impl App {
     /// Get the domain name
     pub fn domain_name(&self) -> &str {
         &self.config.domain_name
+    }
+
+    /// Get the database
+    pub fn db(&self) -> &Database {
+        &self.database
     }
 }
 
