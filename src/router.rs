@@ -1,14 +1,20 @@
-use axum::response::IntoResponse;
+use askama::Template;
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use http::{Method, StatusCode};
+use tower_http::services::ServeDir;
+use chrono::Utc;
 
 use crate::Env;
 use crate::app::AppState;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
     let mut router = Router::new()
-        .route("/health", get(health_check));
+        .route("/", get(home))
+        .route("/health", get(health_check))
+        .route("/api/server-time", get(server_time))
+        .nest_service("/static", ServeDir::new("static"));
 
     // Add development-only routes
     if state.config.env() == Env::Development {
@@ -23,6 +29,11 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
+async fn home() -> impl IntoResponse {
+    let template = IndexTemplate {};
+    HtmlTemplate(template)
+}
+
 async fn health_check() -> &'static str {
     "OK"
 }
@@ -31,6 +42,40 @@ async fn debug_info() -> &'static str {
     "Debug mode enabled"
 }
 
+async fn server_time() -> impl IntoResponse {
+    let time = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let template = ServerTimeTemplate { time };
+    HtmlTemplate(template)
+}
+
 fn not_found() -> (StatusCode, &'static str) {
     (StatusCode::NOT_FOUND, "Not Found")
+}
+
+#[derive(Template)]
+#[template(path = "index.html")]
+struct IndexTemplate {}
+
+#[derive(Template)]
+#[template(path = "server_time.html")]
+struct ServerTimeTemplate {
+    time: String,
+}
+
+struct HtmlTemplate<T>(T);
+
+impl<T> IntoResponse for HtmlTemplate<T>
+where
+    T: Template,
+{
+    fn into_response(self) -> Response {
+        match self.0.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to render template: {}", err),
+            )
+                .into_response(),
+        }
+    }
 }
