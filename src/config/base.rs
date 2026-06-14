@@ -4,6 +4,7 @@
 
 use crate::Env;
 
+#[derive(Clone)]
 pub struct Base {
     pub env: Env,
 }

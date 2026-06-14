@@ -25,7 +25,9 @@
 //! use axum_kickoff::rate_limiter::{RateLimiter, LimitedAction, RateLimiterConfig};
 //! use std::time::Duration;
 //! use std::collections::HashMap;
+//! use std::net::IpAddr;
 //!
+//! # async fn example() {
 //! // Configure rate limits
 //! let mut config = HashMap::new();
 //! config.insert(
@@ -39,10 +41,12 @@
 //! let rate_limiter = RateLimiter::new(config);
 //!
 //! // Check if a request is allowed
+//! let ip_address = IpAddr::from([127, 0, 0, 1]);
 //! match rate_limiter.check_by_ip(ip_address, LimitedAction::ApiRequest).await {
 //!     Ok(()) => { /* allow request */ },
 //!     Err(e) => { /* return 429 Too Many Requests */ },
 //! }
+//! # }
 //! ```
 
 use chrono::{DateTime, Utc};

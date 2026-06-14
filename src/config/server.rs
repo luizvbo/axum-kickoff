@@ -22,6 +22,7 @@ use std::str::FromStr;
 
 use super::base::Base;
 
+#[derive(Clone)]
 pub struct Server {
     pub base: Base,
     pub ip: IpAddr,

@@ -28,6 +28,18 @@ test:
 test-nextest:
     cargo nextest run
 
+[doc("Run tests with nextest and accept updated snapshots")]
+test-nextest-accept:
+    # Accept all snapshot changes without prompting. Use this when you've
+    # intentionally changed API responses and want to update the snapshots.
+    cargo nextest run --accept
+
+[doc("Run tests with nextest and review snapshot changes")]
+test-nextest-review:
+    # Review snapshot changes interactively. Use this to inspect what changed
+    # before accepting. You'll be prompted to accept or reject each change.
+    cargo nextest run --review
+
 [doc("Run tests with output")]
 test-verbose:
     cargo test -- --nocapture
