@@ -11,6 +11,7 @@ use crate::Env;
 use crate::app::AppState;
 
 pub mod block_traffic;
+pub mod error_handler;
 #[cfg(feature = "metrics")]
 pub mod metrics;
 pub mod real_ip;
@@ -19,6 +20,7 @@ pub mod security_headers;
 pub mod session;
 
 pub use block_traffic::middleware as block_traffic;
+pub use error_handler::middleware as error_handler;
 #[cfg(feature = "metrics")]
 pub use metrics::update_metrics;
 pub use real_ip::middleware as real_ip;
@@ -33,6 +35,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let router = router
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
+        .layer(from_fn(self::error_handler::middleware))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
         .layer(from_fn(self::security_headers::middleware))
