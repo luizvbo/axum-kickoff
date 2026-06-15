@@ -4,10 +4,10 @@
 
 use crate::models::token::{CrateScope, EndpointScope};
 use crate::models::ApiToken;
-use crate::util::errors::{BoxedAppError, forbidden, unauthorized};
+use crate::util::errors::{forbidden, unauthorized, BoxedAppError};
 use axum::extract::FromRequestParts;
-use http::request::Parts;
 use http::header;
+use http::request::Parts;
 use secrecy::SecretString;
 use std::sync::Arc;
 
@@ -115,16 +115,22 @@ pub struct AuthCheck {
     allow_any_crate_scope: bool,
 }
 
-impl AuthCheck {
-    /// Create a default AuthCheck that allows both cookies and tokens
-    #[must_use]
-    pub fn default() -> Self {
+impl Default for AuthCheck {
+    fn default() -> Self {
         Self {
             allow_token: true,
             endpoint_scope: None,
             crate_name: None,
             allow_any_crate_scope: false,
         }
+    }
+}
+
+impl AuthCheck {
+    /// Create a default AuthCheck that allows both cookies and tokens
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create an AuthCheck that only allows cookie authentication
@@ -188,13 +194,13 @@ impl AuthCheck {
                 ));
             }
 
-            if !self.endpoint_scope_matches(token.parse_endpoint_scopes().as_ref().map(|v| v.as_slice())) {
+            if !self.endpoint_scope_matches(token.parse_endpoint_scopes().as_deref()) {
                 return Err(forbidden(
                     "this token does not have the required permissions to perform this action",
                 ));
             }
 
-            if !self.crate_scope_matches(token.parse_crate_scopes().as_ref().map(|v| v.as_slice())) {
+            if !self.crate_scope_matches(token.parse_crate_scopes().as_deref()) {
                 return Err(forbidden(
                     "this token does not have the required permissions to perform this action",
                 ));
@@ -225,7 +231,7 @@ impl AuthCheck {
             (None, _) => true,
 
             // The token does not have any resource scopes
-            (Some(token_scopes), _) if token_scopes.is_empty() => true,
+            (Some([]), _) => true,
 
             // The token has resource scopes, but the endpoint does not deal with specific resources
             // However, if allow_any_crate_scope is set, we allow it (caller handles filtering)
@@ -251,7 +257,8 @@ mod tests {
         crate_scopes: Option<Vec<String>>,
     ) -> Arc<ApiToken> {
         let crate_scopes_json = crate_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
-        let endpoint_scopes_json = endpoint_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let endpoint_scopes_json =
+            endpoint_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
 
         Arc::new(ApiToken {
             id: 1,
@@ -269,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_auth_check_default() {
-        let check = AuthCheck::default();
+        let check = AuthCheck::new();
         assert!(check.allow_token);
         assert!(check.endpoint_scope.is_none());
         assert!(check.crate_name.is_none());
@@ -284,25 +291,25 @@ mod tests {
 
     #[test]
     fn test_auth_check_with_endpoint_scope() {
-        let check = AuthCheck::default().with_endpoint_scope(EndpointScope::Read);
+        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
         assert_eq!(check.endpoint_scope, Some(EndpointScope::Read));
     }
 
     #[test]
     fn test_auth_check_for_resource() {
-        let check = AuthCheck::default().for_crate("posts");
+        let check = AuthCheck::new().for_crate("posts");
         assert_eq!(check.crate_name, Some("posts".to_string()));
     }
 
     #[test]
     fn test_auth_check_allow_any_crate_scope() {
-        let check = AuthCheck::default().allow_any_crate_scope();
+        let check = AuthCheck::new().allow_any_crate_scope();
         assert!(check.allow_any_crate_scope);
     }
 
     #[test]
     fn test_endpoint_scope_matches_legacy_token() {
-        let check = AuthCheck::default().with_endpoint_scope(EndpointScope::Read);
+        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
         let token = create_test_token(None, None);
         let auth = Authentication::Token {
             user_id: 1,
@@ -314,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_endpoint_scope_matches_with_scope() {
-        let check = AuthCheck::default().with_endpoint_scope(EndpointScope::Read);
+        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
         let token = create_test_token(Some(vec![EndpointScope::Read]), None);
         let auth = Authentication::Token {
             user_id: 1,
@@ -326,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_endpoint_scope_mismatch() {
-        let check = AuthCheck::default().with_endpoint_scope(EndpointScope::Read);
+        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
         let token = create_test_token(Some(vec![EndpointScope::Create]), None);
         let auth = Authentication::Token {
             user_id: 1,
@@ -338,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_crate_scope_matches_legacy_token() {
-        let check = AuthCheck::default().for_crate("posts");
+        let check = AuthCheck::new().for_crate("posts");
         let token = create_test_token(None, None);
         let auth = Authentication::Token {
             user_id: 1,
@@ -350,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_crate_scope_matches_exact() {
-        let check = AuthCheck::default().for_crate("posts");
+        let check = AuthCheck::new().for_crate("posts");
         let token = create_test_token(None, Some(vec!["posts".to_string()]));
         let auth = Authentication::Token {
             user_id: 1,
@@ -362,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_crate_scope_matches_wildcard() {
-        let check = AuthCheck::default().for_crate("posts");
+        let check = AuthCheck::new().for_crate("posts");
         let token = create_test_token(None, Some(vec!["p*".to_string()]));
         let auth = Authentication::Token {
             user_id: 1,
@@ -374,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_crate_scope_mismatch() {
-        let check = AuthCheck::default().for_crate("posts");
+        let check = AuthCheck::new().for_crate("posts");
         let token = create_test_token(None, Some(vec!["users".to_string()]));
         let auth = Authentication::Token {
             user_id: 1,
@@ -398,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_cookie_auth_always_allowed() {
-        let check = AuthCheck::default().with_endpoint_scope(EndpointScope::Read);
+        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
         let auth = Authentication::Cookie { user_id: 1 };
         assert!(check.check(&auth).is_ok());
     }

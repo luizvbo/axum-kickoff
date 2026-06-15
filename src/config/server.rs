@@ -17,9 +17,9 @@
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 
-use crate::Env;
 use crate::middleware::block_traffic::BlockCriteria;
 use crate::storage::StorageConfig;
+use crate::Env;
 use http::HeaderValue;
 use std::collections::HashSet;
 use std::net::IpAddr;
@@ -71,8 +71,7 @@ impl Server {
 
         let base = Base::from_environment()?;
 
-        let domain_name = dotenvy::var("DOMAIN_NAME")
-            .unwrap_or_else(|_| "localhost".into());
+        let domain_name = dotenvy::var("DOMAIN_NAME").unwrap_or_else(|_| "localhost".into());
 
         let allowed_origins = AllowedOrigins::from_default_env()?;
 
@@ -97,28 +96,30 @@ impl Server {
         let blocked_traffic = parse_blocked_traffic()?;
 
         // Load session key for signing cookies
-        let session_key = dotenvy::var("SESSION_KEY")
-            .map_err(|_| {
-                tracing::error!("Required environment variable 'SESSION_KEY' is not set");
-                anyhow::anyhow!("Required environment variable 'SESSION_KEY' is not set")
-            })?;
-        let session_key = cookie::Key::try_from(session_key.as_bytes())
-            .map_err(|e| {
-                tracing::error!("Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.", e);
-                anyhow::anyhow!("Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.", e)
-            })?;
+        let session_key = dotenvy::var("SESSION_KEY").map_err(|_| {
+            tracing::error!("Required environment variable 'SESSION_KEY' is not set");
+            anyhow::anyhow!("Required environment variable 'SESSION_KEY' is not set")
+        })?;
+        let session_key = cookie::Key::try_from(session_key.as_bytes()).map_err(|e| {
+            tracing::error!(
+                "Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.",
+                e
+            );
+            anyhow::anyhow!(
+                "Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.",
+                e
+            )
+        })?;
 
         // Load GitHub OAuth credentials
-        let gh_client_id = dotenvy::var("GH_CLIENT_ID")
-            .map_err(|_| {
-                tracing::error!("Required environment variable 'GH_CLIENT_ID' is not set");
-                anyhow::anyhow!("Required environment variable 'GH_CLIENT_ID' is not set")
-            })?;
-        let gh_client_secret = dotenvy::var("GH_CLIENT_SECRET")
-            .map_err(|_| {
-                tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
-                anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
-            })?;
+        let gh_client_id = dotenvy::var("GH_CLIENT_ID").map_err(|_| {
+            tracing::error!("Required environment variable 'GH_CLIENT_ID' is not set");
+            anyhow::anyhow!("Required environment variable 'GH_CLIENT_ID' is not set")
+        })?;
+        let gh_client_secret = dotenvy::var("GH_CLIENT_SECRET").map_err(|_| {
+            tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
+            anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
+        })?;
 
         // Load storage configuration
         let storage_config = StorageConfig::from_environment();
@@ -175,7 +176,7 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
             .split(',')
             .map(|v| v.trim())
             .filter(|v| !v.is_empty())
-            .map(|v| BlockCriteria::try_from(v))
+            .map(BlockCriteria::try_from)
             .collect::<Result<_, _>>()
             .map_err(|e| anyhow::anyhow!("Invalid block criteria: {}", e))?;
 
@@ -191,14 +192,20 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
 pub struct AllowedOrigins(Vec<String>);
 
 impl AllowedOrigins {
-    pub fn from_str(s: &str) -> Self {
-        Self(s.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+    pub fn parse(s: &str) -> Self {
+        Self(
+            s.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+        )
     }
 
     pub fn from_default_env() -> anyhow::Result<Self> {
-        let value = dotenvy::var("WEB_ALLOWED_ORIGINS")
-            .map_err(|_| anyhow::anyhow!("Required environment variable 'WEB_ALLOWED_ORIGINS' is not set"))?;
-        Ok(Self::from_str(&value))
+        let value = dotenvy::var("WEB_ALLOWED_ORIGINS").map_err(|_| {
+            anyhow::anyhow!("Required environment variable 'WEB_ALLOWED_ORIGINS' is not set")
+        })?;
+        Ok(Self::parse(&value))
     }
 
     pub fn contains(&self, value: &HeaderValue) -> bool {
@@ -210,7 +217,7 @@ impl FromStr for AllowedOrigins {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from_str(s))
+        Ok(Self::parse(s))
     }
 }
 
@@ -220,19 +227,28 @@ mod tests {
 
     #[test]
     fn test_allowed_origins_from_str() {
-        let origins = AllowedOrigins::from_str("http://localhost:3000,https://example.com");
-        assert_eq!(origins.0, vec!["http://localhost:3000", "https://example.com"]);
+        let origins = AllowedOrigins::parse("http://localhost:3000,https://example.com");
+        assert_eq!(
+            origins.0,
+            vec!["http://localhost:3000", "https://example.com"]
+        );
     }
 
     #[test]
     fn test_allowed_origins_trim_whitespace() {
-        let origins = AllowedOrigins::from_str(" http://localhost:3000 , https://example.com ");
-        assert_eq!(origins.0, vec!["http://localhost:3000", "https://example.com"]);
+        let origins = AllowedOrigins::parse(" http://localhost:3000 , https://example.com ");
+        assert_eq!(
+            origins.0,
+            vec!["http://localhost:3000", "https://example.com"]
+        );
     }
 
     #[test]
     fn test_allowed_origins_empty_values() {
-        let origins = AllowedOrigins::from_str("http://localhost:3000,,https://example.com");
-        assert_eq!(origins.0, vec!["http://localhost:3000", "https://example.com"]);
+        let origins = AllowedOrigins::parse("http://localhost:3000,,https://example.com");
+        assert_eq!(
+            origins.0,
+            vec!["http://localhost:3000", "https://example.com"]
+        );
     }
 }

@@ -49,11 +49,11 @@
 //! # }
 //! ```
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
 
 /// Actions that can be rate limited
 ///
@@ -86,11 +86,11 @@ impl LimitedAction {
 
     pub fn default_rate_seconds(&self) -> u64 {
         match self {
-            LimitedAction::ApiRequest => 1,         // 1 request per second
-            LimitedAction::LoginAttempt => 5,       // 1 login every 5 seconds
-            LimitedAction::PasswordReset => 60,     // 1 reset per minute
-            LimitedAction::FileUpload => 10,        // 1 upload every 10 seconds
-            LimitedAction::FormSubmission => 30,    // 1 form every 30 seconds
+            LimitedAction::ApiRequest => 1,      // 1 request per second
+            LimitedAction::LoginAttempt => 5,    // 1 login every 5 seconds
+            LimitedAction::PasswordReset => 60,  // 1 reset per minute
+            LimitedAction::FileUpload => 10,     // 1 upload every 10 seconds
+            LimitedAction::FormSubmission => 30, // 1 form every 30 seconds
         }
     }
 
@@ -116,18 +116,14 @@ impl LimitedAction {
 
     pub fn error_message(&self) -> &'static str {
         match self {
-            LimitedAction::ApiRequest => {
-                "Too many API requests. Please slow down."
-            }
+            LimitedAction::ApiRequest => "Too many API requests. Please slow down.",
             LimitedAction::LoginAttempt => {
                 "Too many login attempts. Please wait before trying again."
             }
             LimitedAction::PasswordReset => {
                 "Too many password reset requests. Please wait before trying again."
             }
-            LimitedAction::FileUpload => {
-                "Too many file uploads. Please wait before trying again."
-            }
+            LimitedAction::FileUpload => "Too many file uploads. Please wait before trying again.",
             LimitedAction::FormSubmission => {
                 "Too many form submissions. Please wait before trying again."
             }
@@ -182,10 +178,12 @@ impl RateLimiter {
         let mut buckets = self.buckets.write();
         let now = Instant::now();
 
-        let bucket = buckets.entry(bucket_key.clone()).or_insert_with(|| TokenBucket {
-            tokens: config.burst,
-            last_refill: now,
-        });
+        let bucket = buckets
+            .entry(bucket_key.clone())
+            .or_insert_with(|| TokenBucket {
+                tokens: config.burst,
+                last_refill: now,
+            });
 
         // Calculate tokens to add based on time elapsed
         let elapsed = now.duration_since(bucket.last_refill);
@@ -274,11 +272,17 @@ mod tests {
 
         // Should allow 5 requests
         for _ in 0..5 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
 
         // 6th request should be rate limited
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -297,15 +301,24 @@ mod tests {
 
         // Use all tokens
         for _ in 0..5 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_err());
 
         // Wait for refill
         tokio::time::sleep(Duration::from_millis(150)).await;
 
         // Should allow another request
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -325,13 +338,25 @@ mod tests {
 
         // Each IP should have independent limits
         for _ in 0..2 {
-            assert!(rate_limiter.check_by_ip(ip1, LimitedAction::ApiRequest).await.is_ok());
-            assert!(rate_limiter.check_by_ip(ip2, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip1, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip2, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
 
         // Both should be rate limited now
-        assert!(rate_limiter.check_by_ip(ip1, LimitedAction::ApiRequest).await.is_err());
-        assert!(rate_limiter.check_by_ip(ip2, LimitedAction::ApiRequest).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip1, LimitedAction::ApiRequest)
+            .await
+            .is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip2, LimitedAction::ApiRequest)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -357,15 +382,27 @@ mod tests {
 
         // API requests should be limited to 2
         for _ in 0..2 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_err());
 
         // Login attempts should still have 5 available
         for _ in 0..5 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::LoginAttempt).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::LoginAttempt)
+                .await
+                .is_ok());
         }
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::LoginAttempt).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::LoginAttempt)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -384,16 +421,25 @@ mod tests {
 
         // Use all tokens
         for _ in 0..2 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_err());
 
         // Clear the bucket
         rate_limiter.clear_key(&ip.to_string(), LimitedAction::ApiRequest);
 
         // Should allow requests again
         for _ in 0..2 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
     }
 
@@ -404,8 +450,14 @@ mod tests {
 
         // Should use default config for ApiRequest (burst: 10)
         for _ in 0..10 {
-            assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok());
+            assert!(rate_limiter
+                .check_by_ip(ip, LimitedAction::ApiRequest)
+                .await
+                .is_ok());
         }
-        assert!(rate_limiter.check_by_ip(ip, LimitedAction::ApiRequest).await.is_err());
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_err());
     }
 }

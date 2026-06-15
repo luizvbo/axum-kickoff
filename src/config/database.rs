@@ -24,8 +24,8 @@ impl DatabaseConfig {
 
     #[cfg(test)]
     pub fn test_config() -> Result<Self> {
-        let url = dotenvy::var("TEST_DATABASE_URL")
-            .unwrap_or_else(|_| "sqlite::memory:".to_string());
+        let url =
+            dotenvy::var("TEST_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
 
         Ok(Self { url })
     }

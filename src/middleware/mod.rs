@@ -1,5 +1,5 @@
-use axum::Router;
 use axum::middleware::from_fn;
+use axum::Router;
 use http::StatusCode;
 use std::time::Duration;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -8,8 +8,8 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 use tracing::Instrument;
 
-use crate::Env;
 use crate::app::AppState;
+use crate::Env;
 
 pub mod api_token;
 pub mod block_traffic;
@@ -21,6 +21,7 @@ pub mod require_user_agent;
 pub mod security_headers;
 pub mod session;
 
+pub use api_token::{api_token_auth, extract_api_token_auth, ApiTokenAuth};
 pub use block_traffic::middleware as block_traffic;
 pub use error_handler::middleware as error_handler;
 #[cfg(feature = "metrics")]
@@ -29,7 +30,6 @@ pub use real_ip::middleware as real_ip;
 pub use require_user_agent::require_user_agent;
 pub use security_headers::middleware as security_headers;
 pub use session::{middleware as session_middleware, SessionExtension};
-pub use api_token::{api_token_auth, extract_api_token_auth, ApiTokenAuth};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
@@ -52,7 +52,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
 
     #[cfg(feature = "metrics")]
-    let router = router.layer(from_fn_with_state(state.clone(), self::metrics::update_metrics));
+    let router = router.layer(from_fn(self::metrics::update_metrics));
 
     // Optionally print debug information for each request in development
     if env == Env::Development {

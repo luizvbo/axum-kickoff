@@ -146,10 +146,7 @@ impl TryFrom<&str> for BlockCriteria {
 }
 
 /// Block requests by IP address
-pub fn block_by_ip(
-    real_ip: &RealIp,
-    state: &AppState,
-) -> Result<(), impl IntoResponse> {
+pub fn block_by_ip(real_ip: &RealIp, state: &AppState) -> Result<(), impl IntoResponse> {
     if state.config.blocked_ips.contains(&real_ip.0) {
         return Err(rejection_response_from(state));
     }
@@ -192,7 +189,8 @@ pub fn block_routes(
 ) -> Result<(), impl IntoResponse> {
     if let Some(matched_path) = matched_path {
         if state.config.blocked_routes.contains(matched_path.as_str()) {
-            let body = "This route is temporarily blocked. Please check status page for more information.";
+            let body =
+                "This route is temporarily blocked. Please check status page for more information.";
             return Err((StatusCode::SERVICE_UNAVAILABLE, body));
         }
     }
@@ -201,11 +199,10 @@ pub fn block_routes(
 }
 
 fn rejection_response_from(_state: &AppState) -> impl IntoResponse {
-    let body = format!(
-        "We are unable to process your request at this time. \
+    let body = "We are unable to process your request at this time. \
          This usually means that you are in violation of our API data access policy. \
          Please contact support for assistance."
-    );
+        .to_string();
 
     (StatusCode::FORBIDDEN, body)
 }

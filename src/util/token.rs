@@ -91,9 +91,7 @@ impl ExposeSecret<str> for PlainToken {
 /// Generate a cryptographically secure random alphanumeric string
 fn generate_secure_alphanumeric_string(len: usize) -> String {
     let mut rng = rand::thread_rng();
-    (0..len)
-        .map(|_| rng.sample(Alphanumeric) as char)
-        .collect()
+    (0..len).map(|_| rng.sample(Alphanumeric) as char).collect()
 }
 
 #[cfg(test)]

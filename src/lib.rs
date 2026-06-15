@@ -16,9 +16,9 @@ pub mod app;
 pub mod config;
 pub mod controllers;
 pub mod db;
-pub mod middleware;
 #[cfg(feature = "metrics")]
 pub mod metrics;
+pub mod middleware;
 pub mod models;
 pub mod rate_limiter;
 mod router;

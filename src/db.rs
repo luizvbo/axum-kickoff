@@ -34,9 +34,7 @@ impl Database {
             .connect(&config.url)
             .await?;
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     /// Create a new database connection from configuration with custom pool settings
@@ -56,9 +54,7 @@ impl Database {
             .connect(&config.url)
             .await?;
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     /// Get a reference to the underlying Toasty Db

@@ -214,9 +214,7 @@ impl std::str::FromStr for CspMode {
         match s.to_lowercase().as_str() {
             "strict" => Ok(CspMode::Strict),
             "permissive" => Ok(CspMode::Permissive),
-            custom if custom.starts_with("custom:") => {
-                Ok(CspMode::Custom(custom[7..].to_string()))
-            }
+            custom if custom.starts_with("custom:") => Ok(CspMode::Custom(custom[7..].to_string())),
             _ => Err(format!("Invalid CSP mode: {}", s)),
         }
     }
@@ -382,7 +380,9 @@ fn generate_referrer_policy(config: &SecurityHeadersConfig) -> String {
         ReferrerPolicy::NoReferrer => "no-referrer".to_string(),
         ReferrerPolicy::NoReferrerWhenDowngrade => "no-referrer-when-downgrade".to_string(),
         ReferrerPolicy::UnsafeUrl => "unsafe-url".to_string(),
-        ReferrerPolicy::StrictOriginWhenCrossOrigin => "strict-origin-when-cross-origin".to_string(),
+        ReferrerPolicy::StrictOriginWhenCrossOrigin => {
+            "strict-origin-when-cross-origin".to_string()
+        }
         ReferrerPolicy::SameOrigin => "same-origin".to_string(),
         ReferrerPolicy::StrictOrigin => "strict-origin".to_string(),
         ReferrerPolicy::OriginWhenCrossOrigin => "origin-when-cross-origin".to_string(),
@@ -403,10 +403,7 @@ fn generate_permissions_policy(config: &SecurityHeadersConfig) -> String {
 }
 
 /// Middleware to add security headers to all responses
-pub async fn middleware(
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn middleware(req: Request, next: Next) -> Response {
     let config = SecurityHeadersConfig::from_environment();
     security_headers_middleware(config, req, next).await
 }
@@ -423,7 +420,8 @@ pub async fn security_headers_middleware(
     let csp = generate_csp(&config);
     response.headers_mut().insert(
         HeaderName::from_static("content-security-policy"),
-        HeaderValue::from_str(&csp).unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
+        HeaderValue::from_str(&csp)
+            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
     );
 
     // X-Frame-Options
@@ -460,9 +458,8 @@ pub async fn security_headers_middleware(
     let referrer_policy = generate_referrer_policy(&config);
     response.headers_mut().insert(
         HeaderName::from_static("referrer-policy"),
-        HeaderValue::from_str(&referrer_policy).unwrap_or_else(|_| {
-            HeaderValue::from_static("strict-origin-when-cross-origin")
-        }),
+        HeaderValue::from_str(&referrer_policy)
+            .unwrap_or_else(|_| HeaderValue::from_static("strict-origin-when-cross-origin")),
     );
 
     // Permissions-Policy
@@ -485,7 +482,10 @@ mod tests {
     #[test]
     fn test_csp_mode_from_str() {
         assert_eq!(CspMode::from_str("strict").unwrap(), CspMode::Strict);
-        assert_eq!(CspMode::from_str("permissive").unwrap(), CspMode::Permissive);
+        assert_eq!(
+            CspMode::from_str("permissive").unwrap(),
+            CspMode::Permissive
+        );
         assert_eq!(
             CspMode::from_str("custom:default-src 'self'").unwrap(),
             CspMode::Custom("default-src 'self'".to_string())

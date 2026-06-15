@@ -2,10 +2,10 @@
 
 use crate::config;
 use crate::db::Database;
-use crate::rate_limiter::{RateLimiter, RateLimiterConfig, LimitedAction};
-use crate::storage::Storage;
 #[cfg(feature = "metrics")]
 use crate::metrics::InstanceMetrics;
+use crate::rate_limiter::{LimitedAction, RateLimiter, RateLimiterConfig};
+use crate::storage::Storage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

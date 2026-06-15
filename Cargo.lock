@@ -329,7 +329,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tikv-jemallocator",
- "time",
  "toasty",
  "toasty-cli",
  "tokio",

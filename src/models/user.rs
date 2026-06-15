@@ -46,7 +46,13 @@ pub struct User {
 
 impl User {
     /// Create a new user from GitHub OAuth data
-    pub fn new_from_github(gh_id: i64, gh_login: String, name: Option<String>, email: Option<String>, gh_avatar: Option<String>) -> Self {
+    pub fn new_from_github(
+        gh_id: i64,
+        gh_login: String,
+        name: Option<String>,
+        email: Option<String>,
+        gh_avatar: Option<String>,
+    ) -> Self {
         let now = jiff::Timestamp::now();
         Self {
             id: 0, // Will be auto-generated
@@ -69,7 +75,12 @@ impl User {
     }
 
     /// Update user info from GitHub profile data
-    pub fn update_from_github(&mut self, name: Option<String>, email: Option<String>, gh_avatar: Option<String>) {
+    pub fn update_from_github(
+        &mut self,
+        name: Option<String>,
+        email: Option<String>,
+        gh_avatar: Option<String>,
+    ) {
         self.name = name;
         self.email = email;
         self.gh_avatar = gh_avatar;

@@ -1,8 +1,8 @@
-use axum_kickoff::{App, build_handler};
-use std::sync::Arc;
+use axum_kickoff::{build_handler, App};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{signal, SignalKind};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -55,7 +55,8 @@ fn main() -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to bind to address: {}", e))?;
 
-        let addr = listener.local_addr()
+        let addr = listener
+            .local_addr()
             .map_err(|e| anyhow::anyhow!("Failed to get local address: {}", e))?;
 
         info!("Listening at http://{}", addr);

@@ -2,13 +2,13 @@ use askama::Template;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use chrono::Utc;
 use http::{Method, StatusCode};
 use tower_http::services::ServeDir;
-use chrono::Utc;
 
-use crate::Env;
 use crate::app::AppState;
 use crate::controllers::auth::{github_authorize, github_callback, logout};
+use crate::Env;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
     let mut router = Router::new()

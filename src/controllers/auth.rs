@@ -2,16 +2,18 @@
 //!
 //! Handles GitHub OAuth authentication flow including authorize and callback endpoints.
 
-use axum::extract::{Query, State, Extension};
+use axum::extract::{Extension, Query, State};
 use axum::response::{Json, Redirect};
-use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, Scope, TokenUrl, TokenResponse};
+use oauth2::{
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, Scope, TokenResponse, TokenUrl,
+};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
 use crate::middleware::session::SessionExtension;
+use crate::util::errors::{bad_request, BoxedAppError};
 use crate::util::ReqwestClient;
-use crate::util::errors::{BoxedAppError, bad_request};
 
 /// OAuth authorize query parameters
 #[derive(Debug, Deserialize)]
@@ -47,9 +49,7 @@ struct GitHubUser {
 ///
 /// # Example
 ///
-/// ```
-/// GET /api/v1/auth/github/authorize?redirect_to=/dashboard
-/// ```
+/// `GET /api/v1/auth/github/authorize?redirect_to=/dashboard`
 pub async fn github_authorize(
     Query(query): Query<AuthorizeQuery>,
     State(state): State<AppState>,
@@ -76,7 +76,10 @@ pub async fn github_authorize(
         .url();
 
     // Store CSRF token in session for verification on callback
-    session.insert("github_oauth_state".to_string(), csrf_token.secret().clone());
+    session.insert(
+        "github_oauth_state".to_string(),
+        csrf_token.secret().clone(),
+    );
 
     // Store redirect URL in session
     if let Some(redirect_to) = query.redirect_to {
@@ -93,9 +96,7 @@ pub async fn github_authorize(
 ///
 /// # Example
 ///
-/// ```
-/// GET /api/v1/auth/github/callback?code=...&state=...
-/// ```
+/// `GET /api/v1/auth/github/callback?code=...&state=...`
 pub async fn github_callback(
     Query(query): Query<CallbackQuery>,
     State(state): State<AppState>,
@@ -104,7 +105,8 @@ pub async fn github_callback(
     let config = &state.0.config;
 
     // Verify CSRF state
-    let session_state = session.remove("github_oauth_state")
+    let session_state = session
+        .remove("github_oauth_state")
         .ok_or_else(|| bad_request("Missing OAuth state in session"))?;
 
     if session_state != query.state {
@@ -133,7 +135,10 @@ pub async fn github_callback(
     let http_client = reqwest::Client::new();
     let user_response = http_client
         .get("https://api.github.com/user")
-        .header("Authorization", format!("Bearer {}", token.access_token().secret()))
+        .header(
+            "Authorization",
+            format!("Bearer {}", token.access_token().secret()),
+        )
         .header("User-Agent", "axum-kickoff")
         .send()
         .await
@@ -165,7 +170,9 @@ pub async fn github_callback(
     session.insert("user_login".to_string(), github_user.login);
 
     // Redirect to the stored redirect URL or default to home
-    let redirect_to = session.remove("redirect_to").unwrap_or_else(|| "/".to_string());
+    let redirect_to = session
+        .remove("redirect_to")
+        .unwrap_or_else(|| "/".to_string());
 
     Ok(Redirect::to(&redirect_to))
 }
@@ -176,9 +183,7 @@ pub async fn github_callback(
 ///
 /// # Example
 ///
-/// ```
-/// POST /api/v1/auth/logout
-/// ```
+/// `POST /api/v1/auth/logout`
 pub async fn logout(
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Json<serde_json::Value>, BoxedAppError> {

@@ -4,8 +4,8 @@
 //! with in-memory SQLite database and simplified configuration.
 
 use crate::app::{App, AppState};
-use crate::config::Server;
 use crate::config::AllowedOrigins;
+use crate::config::Server;
 use crate::db::Database;
 use crate::storage::StorageConfig;
 use axum::Router;
@@ -72,14 +72,12 @@ impl TestApp {
         let session_key = cookie::Key::generate();
 
         Server {
-            base: Base {
-                env: Env::Test,
-            },
+            base: Base { env: Env::Test },
             ip: IpAddr::from([127, 0, 0, 1]),
             port: 8888,
             max_blocking_threads: None,
             domain_name: "localhost".to_string(),
-            allowed_origins: AllowedOrigins::from_str("http://localhost:3000"),
+            allowed_origins: AllowedOrigins::parse("http://localhost:3000"),
             blocked_ips: Default::default(),
             blocked_routes: Default::default(),
             blocked_traffic: Default::default(),

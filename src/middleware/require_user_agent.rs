@@ -63,8 +63,8 @@
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
-use axum_extra::TypedHeader;
 use axum_extra::headers::UserAgent;
+use axum_extra::TypedHeader;
 use http::StatusCode;
 
 pub async fn require_user_agent(

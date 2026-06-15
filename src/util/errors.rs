@@ -93,7 +93,10 @@ pub fn server_error(detail: impl Into<Cow<'static, str>>) -> Box<dyn AppError> {
 
 /// Return an error with status 503
 pub fn service_unavailable() -> Box<dyn AppError> {
-    Box::new(HttpError::new(StatusCode::SERVICE_UNAVAILABLE, "Service unavailable"))
+    Box::new(HttpError::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Service unavailable",
+    ))
 }
 
 /// Generic HTTP error with a status code and detail message
@@ -365,7 +368,10 @@ impl NotFoundError {
             NotFoundError::UserNotFound { user_id } => {
                 format!("User '{}' not found", user_id)
             }
-            NotFoundError::RecordNotFound { resource, identifier } => {
+            NotFoundError::RecordNotFound {
+                resource,
+                identifier,
+            } => {
                 format!("{} with identifier '{}' not found", resource, identifier)
             }
         }
@@ -465,9 +471,7 @@ pub fn not_found_record(
 ///
 /// This is useful for converting errors from external libraries (like database
 /// errors) into application-specific errors that can be returned to clients.
-pub fn convert_error<E: std::error::Error + Send + Sync + 'static>(
-    error: E,
-) -> Box<dyn AppError> {
+pub fn convert_error<E: std::error::Error + Send + Sync + 'static>(error: E) -> Box<dyn AppError> {
     server_error(error.to_string())
 }
 
@@ -604,9 +608,18 @@ mod tests {
         assert_eq!(bad_request("").response().status(), StatusCode::BAD_REQUEST);
         assert_eq!(forbidden("").response().status(), StatusCode::FORBIDDEN);
         assert_eq!(not_found().response().status(), StatusCode::NOT_FOUND);
-        assert_eq!(unauthorized("").response().status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(server_error("").response().status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(service_unavailable().response().status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            unauthorized("").response().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            server_error("").response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            service_unavailable().response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     #[test]
@@ -614,13 +627,18 @@ mod tests {
         // Test that standard errors are converted to server errors
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "test error");
         let app_error = convert_error(io_error);
-        assert_eq!(app_error.response().status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            app_error.response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
 
         // Test serde_json error conversion using a parse error
-        let json_error = serde_json::from_str::<serde_json::Value>("invalid json")
-            .unwrap_err();
+        let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
         let app_error = convert_error(json_error);
-        assert_eq!(app_error.response().status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            app_error.response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[test]

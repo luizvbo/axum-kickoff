@@ -56,10 +56,9 @@ impl ApiToken {
         let now = jiff::Timestamp::now();
 
         // Serialize scopes to JSON for storage
-        let crate_scopes_json = crate_scopes
-            .and_then(|scopes| serde_json::to_string(&scopes).ok());
-        let endpoint_scopes_json = endpoint_scopes
-            .and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let crate_scopes_json = crate_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let endpoint_scopes_json =
+            endpoint_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
 
         Self {
             id: 0, // Will be auto-generated
@@ -140,7 +139,7 @@ impl EndpointScope {
     }
 
     /// Parse from string
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    pub fn parse(s: &str) -> Result<Self, String> {
         match s {
             "read" => Ok(EndpointScope::Read),
             "create" => Ok(EndpointScope::Create),
@@ -301,12 +300,12 @@ mod tests {
 
     #[test]
     fn test_endpoint_scope_from_str() {
-        assert_eq!(EndpointScope::from_str("read"), Ok(EndpointScope::Read));
-        assert_eq!(EndpointScope::from_str("create"), Ok(EndpointScope::Create));
-        assert_eq!(EndpointScope::from_str("update"), Ok(EndpointScope::Update));
-        assert_eq!(EndpointScope::from_str("delete"), Ok(EndpointScope::Delete));
-        assert_eq!(EndpointScope::from_str("admin"), Ok(EndpointScope::Admin));
-        assert!(EndpointScope::from_str("invalid").is_err());
+        assert_eq!(EndpointScope::parse("read"), Ok(EndpointScope::Read));
+        assert_eq!(EndpointScope::parse("create"), Ok(EndpointScope::Create));
+        assert_eq!(EndpointScope::parse("update"), Ok(EndpointScope::Update));
+        assert_eq!(EndpointScope::parse("delete"), Ok(EndpointScope::Delete));
+        assert_eq!(EndpointScope::parse("admin"), Ok(EndpointScope::Admin));
+        assert!(EndpointScope::parse("invalid").is_err());
     }
 
     #[test]

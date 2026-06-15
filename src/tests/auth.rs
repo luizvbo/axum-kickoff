@@ -11,13 +11,20 @@ async fn github_authorize_redirects_to_github() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/authorize?redirect_to=/dashboard").await;
+    let response = anon
+        .get::<()>("/api/v1/auth/github/authorize?redirect_to=/dashboard")
+        .await;
 
     // Should redirect to GitHub OAuth
     response.assert_status(StatusCode::SEE_OTHER);
 
     // Check that the Location header points to GitHub
-    let location = response.headers().get("location").unwrap().to_str().unwrap();
+    let location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap();
     eprintln!("Location: {}", location);
     assert!(location.starts_with("https://github.com/login/oauth/authorize"));
     assert!(location.contains("client_id=test_client_id"));
@@ -33,7 +40,12 @@ async fn github_authorize_without_redirect_to_uses_default() {
 
     response.assert_status(StatusCode::SEE_OTHER);
 
-    let location = response.headers().get("location").unwrap().to_str().unwrap();
+    let location = response
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert!(location.starts_with("https://github.com/login/oauth/authorize"));
 }
 
@@ -42,7 +54,9 @@ async fn github_callback_without_state_returns_error() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/callback?code=test_code").await;
+    let response = anon
+        .get::<()>("/api/v1/auth/github/callback?code=test_code")
+        .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
 }
@@ -52,7 +66,9 @@ async fn github_callback_without_code_returns_error() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/callback?state=test_state").await;
+    let response = anon
+        .get::<()>("/api/v1/auth/github/callback?state=test_state")
+        .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
 }
@@ -62,7 +78,9 @@ async fn github_callback_with_invalid_state_returns_error() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/callback?code=test_code&state=invalid_state").await;
+    let response = anon
+        .get::<()>("/api/v1/auth/github/callback?code=test_code&state=invalid_state")
+        .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
 }

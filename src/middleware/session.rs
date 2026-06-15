@@ -7,7 +7,7 @@ use axum::extract::Request;
 use axum::http::header::SET_COOKIE;
 use axum::middleware::Next;
 use axum::response::Response;
-use base64::{Engine, engine::general_purpose};
+use base64::{engine::general_purpose, Engine};
 use cookie::Cookie;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -101,10 +101,7 @@ pub fn encode(h: &HashMap<String, String>) -> String {
 /// Extracts the session cookie from the request, decodes it, and provides
 /// a SessionExtension to handlers. After the handler runs, if the session
 /// was modified, it encodes it back to a cookie.
-pub async fn middleware(
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn middleware(req: Request, next: Next) -> Response {
     // Extract session cookie from request
     let session_data = req
         .headers()
@@ -154,10 +151,9 @@ pub async fn middleware(
             .build();
 
         // Add Set-Cookie header to response
-        response.headers_mut().insert(
-            SET_COOKIE,
-            cookie.to_string().parse().unwrap(),
-        );
+        response
+            .headers_mut()
+            .insert(SET_COOKIE, cookie.to_string().parse().unwrap());
     }
 
     response

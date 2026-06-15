@@ -87,7 +87,10 @@ mod tests {
     #[test]
     fn test_extract_real_ip_from_xff() {
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "203.0.113.1, 198.51.100.1".parse().unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.1, 198.51.100.1".parse().unwrap(),
+        );
 
         let socket_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
         let real_ip = extract_real_ip(&headers, socket_ip);

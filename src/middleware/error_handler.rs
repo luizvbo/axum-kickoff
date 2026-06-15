@@ -23,13 +23,10 @@
 //!
 //! # Example
 //!
-//! ```rust
-//! use axum_kickoff::util::{AppResult, not_found_user};
+//! The `not_found_user` function can be used to create a "user not found" error:
 //!
-//! async fn get_user(user_id: String) -> AppResult<User> {
-//!     let user = db.find_user(&user_id).await?;
-//!     Ok(user)
-//! }
+//! ```text
+//! not_found_user("user_123")
 //! ```
 
 use axum::extract::Request;
@@ -45,10 +42,7 @@ use tracing::error;
 ///
 /// This middleware primarily serves as a logging layer for errors that
 /// weren't handled by the application's error handling logic.
-pub async fn middleware(
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn middleware(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
 
@@ -80,6 +74,5 @@ mod tests {
     #[test]
     fn test_error_handler_middleware() {
         // This test verifies the middleware compiles and can be used
-        assert!(true);
     }
 }

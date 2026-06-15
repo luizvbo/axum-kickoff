@@ -86,17 +86,18 @@ pub async fn create_token(
     // 7. Return the plain token to the user (only shown once)
 
     // For now, return service unavailable
-    Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-        "error": "Token creation is temporarily unavailable due to database layer issues"
-    }))))
+    Ok((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "Token creation is temporarily unavailable due to database layer issues"
+        })),
+    ))
 }
 
 /// List all API tokens for the authenticated user
 ///
 /// This endpoint returns a list of all API tokens belonging to the authenticated user.
-pub async fn list_tokens(
-    State(_state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
+pub async fn list_tokens(State(_state): State<AppState>) -> AppResult<impl IntoResponse> {
     // TODO: Implement full token listing once Toasty proc macro ABI mismatch is resolved
     //
     // Full implementation should:
@@ -105,9 +106,12 @@ pub async fn list_tokens(
     // 3. Return list of tokens (without the actual token values)
 
     // For now, return service unavailable
-    Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-        "error": "Token listing is temporarily unavailable due to database layer issues"
-    }))))
+    Ok((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "Token listing is temporarily unavailable due to database layer issues"
+        })),
+    ))
 }
 
 /// Revoke an API token
@@ -126,9 +130,12 @@ pub async fn revoke_token(
     // 4. Return success
 
     // For now, return service unavailable
-    Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-        "error": "Token revocation is temporarily unavailable due to database layer issues"
-    }))))
+    Ok((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "Token revocation is temporarily unavailable due to database layer issues"
+        })),
+    ))
 }
 
 /// Get details of a specific API token
@@ -146,7 +153,10 @@ pub async fn get_token(
     // 3. Return token details (without the actual token value)
 
     // For now, return service unavailable
-    Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-        "error": "Token retrieval is temporarily unavailable due to database layer issues"
-    }))))
+    Ok((
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "Token retrieval is temporarily unavailable due to database layer issues"
+        })),
+    ))
 }

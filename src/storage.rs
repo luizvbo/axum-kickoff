@@ -45,9 +45,7 @@ impl StorageConfig {
     /// Create a local filesystem storage configuration
     pub fn local_filesystem(path: impl Into<PathBuf>) -> Self {
         Self {
-            backend: StorageBackend::LocalFileSystem {
-                path: path.into(),
-            },
+            backend: StorageBackend::LocalFileSystem { path: path.into() },
             cdn_prefix: None,
         }
     }
@@ -55,9 +53,7 @@ impl StorageConfig {
     /// Create a local filesystem storage configuration with CDN prefix
     pub fn local_filesystem_with_cdn(path: impl Into<PathBuf>, cdn_prefix: String) -> Self {
         Self {
-            backend: StorageBackend::LocalFileSystem {
-                path: path.into(),
-            },
+            backend: StorageBackend::LocalFileSystem { path: path.into() },
             cdn_prefix: Some(cdn_prefix),
         }
     }
@@ -68,14 +64,11 @@ impl StorageConfig {
     /// - `STORAGE_PATH`: Path for local filesystem storage (default: "./local_uploads")
     /// - `CDN_PREFIX`: Optional CDN prefix for generating URLs
     pub fn from_environment() -> Self {
-        let path = dotenvy::var("STORAGE_PATH")
-            .unwrap_or_else(|_| "./local_uploads".to_string());
+        let path = dotenvy::var("STORAGE_PATH").unwrap_or_else(|_| "./local_uploads".to_string());
         let cdn_prefix = dotenvy::var("CDN_PREFIX").ok();
 
         Self {
-            backend: StorageBackend::LocalFileSystem {
-                path: path.into(),
-            },
+            backend: StorageBackend::LocalFileSystem { path: path.into() },
             cdn_prefix,
         }
     }
@@ -191,7 +184,9 @@ impl Storage {
                 .await
                 .context("Failed to read directory")?;
 
-            while let Some(entry) = entries.next_entry().await
+            while let Some(entry) = entries
+                .next_entry()
+                .await
                 .context("Failed to read directory entry")?
             {
                 let path = entry.path();
@@ -202,7 +197,7 @@ impl Storage {
                         .await
                         .context("Failed to delete file")?;
 
-                    if let Some(rel_path) = path.strip_prefix(&self.base_path).ok() {
+                    if let Ok(rel_path) = path.strip_prefix(&self.base_path) {
                         deleted.push(rel_path.to_string_lossy().to_string());
                     }
                 }
@@ -245,14 +240,16 @@ impl Storage {
                 .await
                 .context("Failed to read directory")?;
 
-            while let Some(entry) = entries.next_entry().await
+            while let Some(entry) = entries
+                .next_entry()
+                .await
                 .context("Failed to read directory entry")?
             {
                 let path = entry.path();
                 if path.is_dir() {
                     stack.push(path);
                 } else {
-                    if let Some(rel_path) = path.strip_prefix(&self.base_path).ok() {
+                    if let Ok(rel_path) = path.strip_prefix(&self.base_path) {
                         files.push(rel_path.to_string_lossy().to_string());
                     }
                 }
@@ -334,8 +331,14 @@ mod tests {
         let (storage, _temp_dir) = prepare_storage().await;
 
         let bytes = Bytes::from_static(b"hello world");
-        storage.upload("dir/test1.txt", bytes.clone()).await.unwrap();
-        storage.upload("dir/test2.txt", bytes.clone()).await.unwrap();
+        storage
+            .upload("dir/test1.txt", bytes.clone())
+            .await
+            .unwrap();
+        storage
+            .upload("dir/test2.txt", bytes.clone())
+            .await
+            .unwrap();
         storage.upload("other/test3.txt", bytes).await.unwrap();
 
         let deleted = storage.delete_all_with_prefix("dir/").await.unwrap();
@@ -383,7 +386,8 @@ mod tests {
 
     #[test]
     fn test_public_url_with_cdn() {
-        let config = StorageConfig::local_filesystem_with_cdn("/tmp", "cdn.example.com".to_string());
+        let config =
+            StorageConfig::local_filesystem_with_cdn("/tmp", "cdn.example.com".to_string());
         let storage = Storage::from_config(&config);
 
         assert_eq!(
@@ -412,7 +416,7 @@ mod tests {
         let config = StorageConfig::from_environment();
         assert!(matches!(
             config.backend,
-            StorageBackend::LocalFileSystem { path } if path == PathBuf::from("/custom/path")
+            StorageBackend::LocalFileSystem { path } if path == *"/custom/path"
         ));
         assert_eq!(config.cdn_prefix, Some("cdn.example.com".to_string()));
 

@@ -47,8 +47,7 @@ pub async fn api_token_auth(
     let token_str = &auth_header[7..]; // Remove "Bearer " prefix
 
     // Parse and hash the token
-    let hashed_token = HashedToken::parse(token_str)
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let hashed_token = HashedToken::parse(token_str).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     // TODO: Look up token in database once Toasty proc macro ABI mismatch is resolved
     // For now, we'll implement a placeholder that validates the token format
@@ -67,7 +66,7 @@ pub async fn api_token_auth(
 
     // For now, return unauthorized since we can't validate against database
     // Once database layer is working, this will return the actual user_id and token_id
-    return Err(StatusCode::SERVICE_UNAVAILABLE);
+    Err(StatusCode::SERVICE_UNAVAILABLE)
 
     // Once database is working, the code would look like:
     // let db = state.database.db();
