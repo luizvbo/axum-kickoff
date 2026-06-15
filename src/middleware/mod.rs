@@ -4,6 +4,7 @@ use http::StatusCode;
 use std::time::Duration;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 use tracing::Instrument;
 
@@ -35,6 +36,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let env = config.env();
 
     let router = router
+        .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))

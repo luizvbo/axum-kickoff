@@ -38,6 +38,7 @@
 pub mod auth;
 pub mod builders;
 pub mod error_responses;
+pub mod middleware;
 pub mod request_helper;
 pub mod response;
 pub mod test_app;
