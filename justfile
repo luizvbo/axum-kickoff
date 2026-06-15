@@ -1,5 +1,5 @@
 # Justfile for axum-kickoff
-# 
+#
 # Install just: cargo install just
 # Run commands: just <command>
 # List all commands: just --list

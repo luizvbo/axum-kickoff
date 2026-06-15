@@ -64,16 +64,16 @@ impl Server {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(8888);
-        
+
         let max_blocking_threads = dotenvy::var("SERVER_THREADS")
             .ok()
             .and_then(|s| s.parse().ok());
-        
+
         let base = Base::from_environment()?;
-        
+
         let domain_name = dotenvy::var("DOMAIN_NAME")
             .unwrap_or_else(|_| "localhost".into());
-        
+
         let allowed_origins = AllowedOrigins::from_default_env()?;
 
         // Parse blocked IPs
@@ -160,17 +160,17 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
     for pair in blocked_traffic_str.split(',') {
         let pair = pair.trim();
         let parts: Vec<&str> = pair.split('=').collect();
-        
+
         if parts.len() != 2 {
             return Err(anyhow::anyhow!("Invalid BLOCKED_TRAFFIC format: {}", pair));
         }
 
         let header_name = parts[0].trim().to_string();
         let env_var_name = parts[1].trim();
-        
+
         let env_value = dotenvy::var(env_var_name)
             .map_err(|_| anyhow::anyhow!("Environment variable {} not found", env_var_name))?;
-        
+
         let blocked_values: Vec<BlockCriteria> = env_value
             .split(',')
             .map(|v| v.trim())

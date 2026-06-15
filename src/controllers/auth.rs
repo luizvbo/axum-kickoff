@@ -56,33 +56,33 @@ pub async fn github_authorize(
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Redirect, BoxedAppError> {
     let config = &state.0.config;
-    
+
     // Create OAuth2 client
     let auth_url = AuthUrl::new("https://github.com/login/oauth/authorize".to_string())
         .expect("Invalid authorization URL");
     let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
         .expect("Invalid token URL");
-    
+
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
         .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url);
-    
+
     // Generate CSRF state token
     let (auth_url, csrf_token) = client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("read:user".to_string()))
         .add_scope(Scope::new("user:email".to_string()))
         .url();
-    
+
     // Store CSRF token in session for verification on callback
     session.insert("github_oauth_state".to_string(), csrf_token.secret().clone());
-    
+
     // Store redirect URL in session
     if let Some(redirect_to) = query.redirect_to {
         session.insert("redirect_to".to_string(), redirect_to);
     }
-    
+
     Ok(Redirect::to(auth_url.as_str()))
 }
 
@@ -102,33 +102,33 @@ pub async fn github_callback(
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Redirect, BoxedAppError> {
     let config = &state.0.config;
-    
+
     // Verify CSRF state
     let session_state = session.remove("github_oauth_state")
         .ok_or_else(|| bad_request("Missing OAuth state in session"))?;
-    
+
     if session_state != query.state {
         return Err(bad_request("Invalid OAuth state - possible CSRF attack"));
     }
-    
+
     // Create OAuth2 client
     let auth_url = AuthUrl::new("https://github.com/login/oauth/authorize".to_string())
         .expect("Invalid authorization URL");
     let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
         .expect("Invalid token URL");
-    
+
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
         .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url);
-    
+
     // Exchange code for access token
     let token = client
         .exchange_code(oauth2::AuthorizationCode::new(query.code.clone()))
         .request_async(&ReqwestClient(reqwest::Client::new()))
         .await
         .map_err(|e| bad_request(format!("Failed to exchange authorization code: {}", e)))?;
-    
+
     // Fetch user profile from GitHub
     let http_client = reqwest::Client::new();
     let user_response = http_client
@@ -138,16 +138,16 @@ pub async fn github_callback(
         .send()
         .await
         .map_err(|e| bad_request(format!("Failed to fetch user profile: {}", e)))?;
-    
+
     if !user_response.status().is_success() {
         return Err(bad_request("Failed to fetch user profile from GitHub"));
     }
-    
+
     let github_user: GitHubUser = user_response
         .json()
         .await
         .map_err(|e| bad_request(format!("Failed to parse user profile: {}", e)))?;
-    
+
     // TODO: Implement full database persistence once Toasty proc macro ABI mismatch is resolved
     // The current toolchain (rustc 1.96.0) doesn't match the cached proc macros (rustc 1.94.0)
     // For now, store GitHub user ID in session for basic auth flow
@@ -159,14 +159,14 @@ pub async fn github_callback(
     // 4. Create or update user record
     // 5. Encrypt and store GitHub access token in oauth_github table
     // 6. Store user_id in session
-    
+
     // Set user_id in session (using GitHub ID as temporary user_id)
     session.insert("user_id".to_string(), github_user.id.to_string());
     session.insert("user_login".to_string(), github_user.login);
-    
+
     // Redirect to the stored redirect URL or default to home
     let redirect_to = session.remove("redirect_to").unwrap_or_else(|| "/".to_string());
-    
+
     Ok(Redirect::to(&redirect_to))
 }
 
@@ -187,6 +187,6 @@ pub async fn logout(
     session.remove("user_login");
     session.remove("github_oauth_state");
     session.remove("redirect_to");
-    
+
     Ok(Json(json!({"success": true})))
 }

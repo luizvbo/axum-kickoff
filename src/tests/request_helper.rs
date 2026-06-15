@@ -77,7 +77,7 @@ pub trait RequestHelper {
     /// Make a POST request with a JSON body
     async fn post<T>(&self, path: &str, body: impl Serialize) -> Response<T> {
         let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
-        
+
         let mut request = self.request_builder(Method::POST, path);
         request.headers_mut().insert(
             header::CONTENT_TYPE,
@@ -91,7 +91,7 @@ pub trait RequestHelper {
     /// Make a PUT request with a JSON body
     async fn put<T>(&self, path: &str, body: impl Serialize) -> Response<T> {
         let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
-        
+
         let mut request = self.request_builder(Method::PUT, path);
         request.headers_mut().insert(
             header::CONTENT_TYPE,
@@ -111,7 +111,7 @@ pub trait RequestHelper {
     /// Make a PATCH request with a JSON body
     async fn patch<T>(&self, path: &str, body: impl Serialize) -> Response<T> {
         let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
-        
+
         let mut request = self.request_builder(Method::PATCH, path);
         request.headers_mut().insert(
             header::CONTENT_TYPE,
@@ -175,7 +175,7 @@ impl RequestHelper for CookieUser {
 
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        
+
         // Encode session cookie
         let cookie = encode_session_header(&self.session_key, self.user_id);
         headers.insert(
@@ -212,7 +212,7 @@ impl RequestHelper for TokenUser {
 
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        
+
         let auth_value = format!("Bearer {}", self.token);
         headers.insert(
             header::AUTHORIZATION,

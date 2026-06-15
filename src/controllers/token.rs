@@ -75,7 +75,7 @@ pub async fn create_token(
 ) -> AppResult<impl IntoResponse> {
     // TODO: Implement full token creation once Toasty proc macro ABI mismatch is resolved
     // The current toolchain (rustc 1.96.0) doesn't match the cached proc macros (rustc 1.94.0)
-    // 
+    //
     // Full implementation should:
     // 1. Get user_id from session or API token auth
     // 2. Validate crate_scopes and endpoint_scopes
@@ -84,7 +84,7 @@ pub async fn create_token(
     // 5. Hash the token for storage
     // 6. Create ApiToken record in database
     // 7. Return the plain token to the user (only shown once)
-    
+
     // For now, return service unavailable
     Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
         "error": "Token creation is temporarily unavailable due to database layer issues"
@@ -98,12 +98,12 @@ pub async fn list_tokens(
     State(_state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
     // TODO: Implement full token listing once Toasty proc macro ABI mismatch is resolved
-    // 
+    //
     // Full implementation should:
     // 1. Get user_id from session or API token auth
     // 2. Query api_tokens table for user's tokens
     // 3. Return list of tokens (without the actual token values)
-    
+
     // For now, return service unavailable
     Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
         "error": "Token listing is temporarily unavailable due to database layer issues"
@@ -118,13 +118,13 @@ pub async fn revoke_token(
     Path(_token_id): Path<u64>,
 ) -> AppResult<impl IntoResponse> {
     // TODO: Implement full token revocation once Toasty proc macro ABI mismatch is resolved
-    // 
+    //
     // Full implementation should:
     // 1. Get user_id from session or API token auth
     // 2. Verify the token belongs to the user
     // 3. Mark the token as revoked in the database
     // 4. Return success
-    
+
     // For now, return service unavailable
     Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
         "error": "Token revocation is temporarily unavailable due to database layer issues"
@@ -139,12 +139,12 @@ pub async fn get_token(
     Path(_token_id): Path<u64>,
 ) -> AppResult<impl IntoResponse> {
     // TODO: Implement full token retrieval once Toasty proc macro ABI mismatch is resolved
-    // 
+    //
     // Full implementation should:
     // 1. Get user_id from session or API token auth
     // 2. Verify the token belongs to the user
     // 3. Return token details (without the actual token value)
-    
+
     // For now, return service unavailable
     Ok((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
         "error": "Token retrieval is temporarily unavailable due to database layer issues"

@@ -12,10 +12,10 @@ async fn github_authorize_redirects_to_github() {
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/v1/auth/github/authorize?redirect_to=/dashboard").await;
-    
+
     // Should redirect to GitHub OAuth
     response.assert_status(StatusCode::SEE_OTHER);
-    
+
     // Check that the Location header points to GitHub
     let location = response.headers().get("location").unwrap().to_str().unwrap();
     eprintln!("Location: {}", location);
@@ -30,9 +30,9 @@ async fn github_authorize_without_redirect_to_uses_default() {
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
-    
+
     response.assert_status(StatusCode::SEE_OTHER);
-    
+
     let location = response.headers().get("location").unwrap().to_str().unwrap();
     assert!(location.starts_with("https://github.com/login/oauth/authorize"));
 }
@@ -43,7 +43,7 @@ async fn github_callback_without_state_returns_error() {
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/v1/auth/github/callback?code=test_code").await;
-    
+
     response.assert_status(StatusCode::BAD_REQUEST);
 }
 
@@ -53,7 +53,7 @@ async fn github_callback_without_code_returns_error() {
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/v1/auth/github/callback?state=test_state").await;
-    
+
     response.assert_status(StatusCode::BAD_REQUEST);
 }
 
@@ -63,7 +63,7 @@ async fn github_callback_with_invalid_state_returns_error() {
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/v1/auth/github/callback?code=test_code&state=invalid_state").await;
-    
+
     response.assert_status(StatusCode::BAD_REQUEST);
 }
 
@@ -73,7 +73,7 @@ async fn logout_clears_session() {
     let anon = AnonymousUser::new(app);
 
     let response = anon.post::<()>("/api/v1/auth/logout", &[] as &[u8]).await;
-    
+
     // Debug: print response body if not 200
     let status = response.status();
     if status != StatusCode::OK {
@@ -81,9 +81,9 @@ async fn logout_clears_session() {
         eprintln!("Response body: {}", body);
         panic!("Expected status 200, got {}", status);
     }
-    
+
     response.assert_status(StatusCode::OK);
-    
+
     // Check that the Set-Cookie header clears the session
     let set_cookie = response.headers().get("set-cookie");
     assert!(set_cookie.is_some());
@@ -96,6 +96,6 @@ async fn session_middleware_adds_session_extension() {
 
     // Make a request to any endpoint that uses the session middleware
     let response = anon.get::<()>("/health").await;
-    
+
     response.assert_status(StatusCode::OK);
 }

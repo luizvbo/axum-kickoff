@@ -628,7 +628,7 @@ mod tests {
         // Test that error responses include detail field
         let error = bad_request("Invalid input");
         let response = error.response();
-        
+
         // The response should be JSON with a detail field
         // For now, we just verify the status code is correct
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);

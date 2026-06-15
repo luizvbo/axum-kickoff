@@ -51,9 +51,9 @@ pub async fn middleware(
 ) -> Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
-    
+
     let response = next.run(req).await;
-    
+
     // Log error responses for monitoring
     if response.status().is_server_error() {
         error!(
@@ -71,7 +71,7 @@ pub async fn middleware(
             response.status()
         );
     }
-    
+
     response
 }
 

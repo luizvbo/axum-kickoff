@@ -95,6 +95,6 @@ async fn debug_requests(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     tracing::debug!("Request: {:?}", req);
-    
+
     next.run(req).await
 }

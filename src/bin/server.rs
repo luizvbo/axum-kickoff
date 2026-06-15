@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
 
     // Load configuration from environment
     let config = axum_kickoff::config::Server::from_environment()?;
-    
+
     // Load database configuration
     let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
 

@@ -124,23 +124,23 @@ impl Storage {
     #[instrument(skip(self, bytes))]
     pub async fn upload(&self, path: &str, bytes: Bytes) -> anyhow::Result<()> {
         let file_path = self.base_path.join(path);
-        
+
         // Create parent directories if they don't exist
         if let Some(parent) = file_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .context("Failed to create parent directories")?;
         }
-        
+
         tokio::fs::write(&file_path, bytes)
             .await
             .context("Failed to write file")?;
-        
+
         Ok(())
     }
 
     /// Upload a file with custom content type
-    /// 
+    ///
     /// Note: Local filesystem doesn't support content-type metadata.
     /// This is a no-op for local storage but kept for API compatibility.
     #[instrument(skip(self, bytes))]
@@ -178,19 +178,19 @@ impl Storage {
     pub async fn delete_all_with_prefix(&self, prefix: &str) -> anyhow::Result<Vec<String>> {
         let prefix_path = self.base_path.join(prefix);
         let mut deleted = Vec::new();
-        
+
         if !prefix_path.exists() {
             return Ok(deleted);
         }
-        
+
         // Recursively delete all files and directories
         let mut stack = vec![prefix_path.clone()];
-        
+
         while let Some(current_path) = stack.pop() {
             let mut entries = tokio::fs::read_dir(&current_path)
                 .await
                 .context("Failed to read directory")?;
-            
+
             while let Some(entry) = entries.next_entry().await
                 .context("Failed to read directory entry")?
             {
@@ -201,17 +201,17 @@ impl Storage {
                     tokio::fs::remove_file(&path)
                         .await
                         .context("Failed to delete file")?;
-                    
+
                     if let Some(rel_path) = path.strip_prefix(&self.base_path).ok() {
                         deleted.push(rel_path.to_string_lossy().to_string());
                     }
                 }
             }
         }
-        
+
         // Remove the directory itself
         tokio::fs::remove_dir_all(&prefix_path).await.ok();
-        
+
         Ok(deleted)
     }
 
@@ -230,21 +230,21 @@ impl Storage {
         } else {
             self.base_path.clone()
         };
-        
+
         let mut files = Vec::new();
-        
+
         if !base_path.exists() {
             return Ok(files);
         }
-        
+
         // Recursively list all files
         let mut stack = vec![base_path];
-        
+
         while let Some(current_path) = stack.pop() {
             let mut entries = tokio::fs::read_dir(&current_path)
                 .await
                 .context("Failed to read directory")?;
-            
+
             while let Some(entry) = entries.next_entry().await
                 .context("Failed to read directory entry")?
             {
@@ -258,7 +258,7 @@ impl Storage {
                 }
             }
         }
-        
+
         files.sort();
         Ok(files)
     }

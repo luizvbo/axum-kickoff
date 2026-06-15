@@ -11,7 +11,7 @@ use thiserror::Error;
 const TOKEN_LENGTH: usize = 32;
 
 /// Token prefix for axum-kickoff API tokens
-/// 
+///
 /// NEVER CHANGE THE PREFIX OF EXISTING TOKENS!!! Doing so will implicitly
 /// revoke all the tokens, disrupting production users.
 const TOKEN_PREFIX: &str = "ako";
@@ -130,10 +130,10 @@ mod tests {
     fn test_hash_consistency() {
         let token = PlainToken::generate();
         let plaintext = token.expose_secret();
-        
+
         let hash1 = token.hashed();
         let hash2 = HashedToken::hash(plaintext);
-        
+
         assert_eq!(hash1.as_bytes(), hash2.as_slice());
     }
 
@@ -141,7 +141,7 @@ mod tests {
     fn test_different_tokens_different_hashes() {
         let token1 = PlainToken::generate();
         let token2 = PlainToken::generate();
-        
+
         assert_ne!(token1.expose_secret(), token2.expose_secret());
         assert_ne!(token1.hashed().as_bytes(), token2.hashed().as_bytes());
     }
@@ -150,10 +150,10 @@ mod tests {
     fn test_invalid_token_format() {
         // No prefix
         assert!(HashedToken::parse("randomstring").is_err());
-        
+
         // Wrong prefix
         assert!(HashedToken::parse("crs_randomstring").is_err());
-        
+
         // Empty string
         assert!(HashedToken::parse("").is_err());
     }

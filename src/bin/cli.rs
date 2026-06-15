@@ -13,17 +13,17 @@ use toasty_cli::{Config, ToastyCli};
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = Config::load()?;
-    
+
     // Load database configuration from environment
     let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
-    
+
     let db = toasty::Db::builder()
         .models(toasty::models!(crate::*))
         .connect(&db_config.url)
         .await?;
-    
+
     let cli = ToastyCli::with_config(db, config);
     cli.parse_and_run().await?;
-    
+
     Ok(())
 }

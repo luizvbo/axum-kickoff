@@ -54,7 +54,7 @@ impl ApiToken {
         expired_at: Option<jiff::Timestamp>,
     ) -> Self {
         let now = jiff::Timestamp::now();
-        
+
         // Serialize scopes to JSON for storage
         let crate_scopes_json = crate_scopes
             .and_then(|scopes| serde_json::to_string(&scopes).ok());
@@ -285,16 +285,16 @@ mod tests {
     fn test_endpoint_scope_deserialization() {
         let scope: EndpointScope = serde_json::from_str("\"read\"").unwrap();
         assert_eq!(scope, EndpointScope::Read);
-        
+
         let scope: EndpointScope = serde_json::from_str("\"create\"").unwrap();
         assert_eq!(scope, EndpointScope::Create);
-        
+
         let scope: EndpointScope = serde_json::from_str("\"update\"").unwrap();
         assert_eq!(scope, EndpointScope::Update);
-        
+
         let scope: EndpointScope = serde_json::from_str("\"delete\"").unwrap();
         assert_eq!(scope, EndpointScope::Delete);
-        
+
         let scope: EndpointScope = serde_json::from_str("\"admin\"").unwrap();
         assert_eq!(scope, EndpointScope::Admin);
     }
@@ -324,22 +324,22 @@ mod tests {
         assert!(EndpointScope::Admin.can_perform("create"));
         assert!(EndpointScope::Admin.can_perform("update"));
         assert!(EndpointScope::Admin.can_perform("delete"));
-        
+
         assert!(EndpointScope::Read.can_perform("read"));
         assert!(!EndpointScope::Read.can_perform("create"));
         assert!(!EndpointScope::Read.can_perform("update"));
         assert!(!EndpointScope::Read.can_perform("delete"));
-        
+
         assert!(!EndpointScope::Create.can_perform("read"));
         assert!(EndpointScope::Create.can_perform("create"));
         assert!(!EndpointScope::Create.can_perform("update"));
         assert!(!EndpointScope::Create.can_perform("delete"));
-        
+
         assert!(!EndpointScope::Update.can_perform("read"));
         assert!(!EndpointScope::Update.can_perform("create"));
         assert!(EndpointScope::Update.can_perform("update"));
         assert!(!EndpointScope::Update.can_perform("delete"));
-        
+
         assert!(!EndpointScope::Delete.can_perform("read"));
         assert!(!EndpointScope::Delete.can_perform("create"));
         assert!(!EndpointScope::Delete.can_perform("update"));
@@ -377,7 +377,7 @@ mod tests {
     fn test_crate_scope_pattern() {
         let scope = CrateScope::new("foo*".to_string()).unwrap();
         assert_eq!(scope.pattern(), "foo*");
-        
+
         let scope = CrateScope::new("bar".to_string()).unwrap();
         assert_eq!(scope.pattern(), "bar");
     }
@@ -407,7 +407,7 @@ mod tests {
     fn test_crate_scope_deserialization() {
         let scope: CrateScope = serde_json::from_str("\"foo*\"").unwrap();
         assert_eq!(scope.pattern(), "foo*");
-        
+
         assert!(serde_json::from_str::<CrateScope>("\"\"").is_err());
         assert!(serde_json::from_str::<CrateScope>("\"foo#\"").is_err());
     }

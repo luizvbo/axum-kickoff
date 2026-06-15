@@ -55,7 +55,7 @@ impl<T> Response<T> {
     /// Get the response body as bytes
     pub async fn into_bytes(self) -> Vec<u8> {
         use http_body_util::BodyExt;
-        
+
         let body = self.inner.into_body();
         let bytes = body
             .collect()

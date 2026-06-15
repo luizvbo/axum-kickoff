@@ -145,14 +145,14 @@ pub async fn middleware(
     if session.dirty {
         // Encode the session data
         let encoded = encode(&session.data);
-        
+
         // Create cookie with encoded value
         let cookie = Cookie::build((COOKIE_NAME, encoded))
             .path("/")
             .http_only(true)
             .same_site(cookie::SameSite::Lax)
             .build();
-        
+
         // Add Set-Cookie header to response
         response.headers_mut().insert(
             SET_COOKIE,

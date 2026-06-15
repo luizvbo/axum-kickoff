@@ -2,10 +2,13 @@
 
 use crate::config;
 use crate::db::Database;
+use crate::rate_limiter::{RateLimiter, RateLimiterConfig, LimitedAction};
 use crate::storage::Storage;
 #[cfg(feature = "metrics")]
 use crate::metrics::InstanceMetrics;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use derive_more::Deref;
 
@@ -23,6 +26,8 @@ pub struct App {
     pub metrics: InstanceMetrics,
     /// Session key for signing cookies
     pub session_key: cookie::Key,
+    /// Rate limiter for API request throttling
+    pub rate_limiter: RateLimiter,
 }
 
 impl App {
@@ -30,6 +35,20 @@ impl App {
     pub fn new(config: config::Server, database: Database) -> Self {
         let session_key = config.session_key.clone();
         let storage = Storage::from_config(&config.storage_config);
+
+        // Initialize rate limiter with default configuration
+        let mut rate_limit_config = HashMap::new();
+        for action in LimitedAction::VARIANTS {
+            rate_limit_config.insert(
+                action,
+                RateLimiterConfig {
+                    rate: Duration::from_secs(action.default_rate_seconds()),
+                    burst: action.default_burst(),
+                },
+            );
+        }
+        let rate_limiter = RateLimiter::new(rate_limit_config);
+
         Self {
             config: Arc::new(config),
             database,
@@ -37,6 +56,7 @@ impl App {
             #[cfg(feature = "metrics")]
             metrics: InstanceMetrics::new(),
             session_key,
+            rate_limiter,
         }
     }
 
