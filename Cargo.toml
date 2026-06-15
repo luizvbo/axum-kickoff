@@ -4,6 +4,7 @@ authors = ["Luiz Otavio V. B. Oliveira <luiz.vbo@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/luizvbo/axum-kickoff"
+license = "MIT OR Apache-2.0"
 
 [features]
 default = []
