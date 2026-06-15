@@ -2,6 +2,7 @@
 
 use crate::config;
 use crate::db::Database;
+use crate::storage::Storage;
 #[cfg(feature = "metrics")]
 use crate::metrics::InstanceMetrics;
 use std::sync::Arc;
@@ -15,6 +16,8 @@ pub struct App {
     pub config: Arc<config::Server>,
     /// The database connection pool
     pub database: Database,
+    /// Storage backend for file uploads and static assets
+    pub storage: Storage,
     /// Instance metrics for monitoring (available with `metrics` feature)
     #[cfg(feature = "metrics")]
     pub metrics: InstanceMetrics,
@@ -26,9 +29,11 @@ impl App {
     /// Create a new App instance with the given configuration and database
     pub fn new(config: config::Server, database: Database) -> Self {
         let session_key = config.session_key.clone();
+        let storage = Storage::from_config(&config.storage_config);
         Self {
             config: Arc::new(config),
             database,
+            storage,
             #[cfg(feature = "metrics")]
             metrics: InstanceMetrics::new(),
             session_key,
@@ -53,6 +58,11 @@ impl App {
     /// Get the database
     pub fn db(&self) -> &Database {
         &self.database
+    }
+
+    /// Get the storage backend
+    pub fn storage(&self) -> &Storage {
+        &self.storage
     }
 }
 

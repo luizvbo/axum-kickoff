@@ -22,6 +22,7 @@ pub mod metrics;
 pub mod models;
 pub mod rate_limiter;
 mod router;
+pub mod storage;
 pub mod util;
 
 #[cfg(test)]

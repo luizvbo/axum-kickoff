@@ -5,7 +5,9 @@
 
 use crate::app::{App, AppState};
 use crate::config::Server;
+use crate::config::AllowedOrigins;
 use crate::db::Database;
+use crate::storage::StorageConfig;
 use axum::Router;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -63,7 +65,6 @@ impl TestApp {
     /// Create test configuration with minimal required settings
     fn test_config() -> Server {
         use crate::config::base::Base;
-        use crate::config::AllowedOrigins;
         use crate::Env;
         use std::net::IpAddr;
 
@@ -85,6 +86,7 @@ impl TestApp {
             session_key,
             gh_client_id: "test_client_id".to_string(),
             gh_client_secret: "test_client_secret".to_string(),
+            storage_config: StorageConfig::local_filesystem("./test_uploads"),
         }
     }
 

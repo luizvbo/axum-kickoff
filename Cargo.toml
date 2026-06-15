@@ -56,6 +56,7 @@ rand = "0.8"
 sha2 = "0.10"
 aes-gcm = "0.10"
 hex = "0.4"
+bytes = "1"
 
 [dev-dependencies]
 insta = { version = "1.40", features = ["json"] }

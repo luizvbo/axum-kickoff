@@ -14,9 +14,12 @@
 //! - `BLOCKED_TRAFFIC`: Comma-separated list of header=value pairs for blocking traffic (optional).
 //! - `GH_CLIENT_ID`: GitHub OAuth client ID (required for OAuth).
 //! - `GH_CLIENT_SECRET`: GitHub OAuth client secret (required for OAuth).
+//! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
+//! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 
 use crate::Env;
 use crate::middleware::block_traffic::BlockCriteria;
+use crate::storage::StorageConfig;
 use http::HeaderValue;
 use std::collections::HashSet;
 use std::net::IpAddr;
@@ -38,6 +41,7 @@ pub struct Server {
     pub session_key: cookie::Key,
     pub gh_client_id: String,
     pub gh_client_secret: String,
+    pub storage_config: StorageConfig,
 }
 
 impl Server {
@@ -116,6 +120,9 @@ impl Server {
                 anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
             })?;
 
+        // Load storage configuration
+        let storage_config = StorageConfig::from_environment();
+
         Ok(Server {
             base,
             ip,
@@ -129,6 +136,7 @@ impl Server {
             session_key,
             gh_client_id,
             gh_client_secret,
+            storage_config,
         })
     }
 
