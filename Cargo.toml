@@ -16,7 +16,7 @@ path = "src/bin/server.rs"
 [dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["macros"] }
-axum-extra = { version = "0.12", features = ["typed-header", "cookie-signed"] }
+axum-extra = { version = "0.12", features = ["typed-header", "cookie-signed", "erased-json"] }
 chrono = { version = "0.4", features = ["serde"] }
 cookie = { version = "0.18", features = ["secure"] }
 base64 = "0.22"
@@ -44,6 +44,7 @@ tower-http = { version = "0.6", features = [
   "timeout",
   "catch-panic",
   "fs",
+  "normalize-path",
 ] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

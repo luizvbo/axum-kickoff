@@ -4,7 +4,7 @@
 
 use axum::{
     extract::{Request, State},
-    http::{header::AUTHORIZATION, StatusCode},
+    http::StatusCode,
     middleware::Next,
     response::Response,
 };
@@ -30,6 +30,8 @@ pub async fn api_token_auth(
     request: Request,
     _next: Next,
 ) -> Result<Response, StatusCode> {
+    use http::header::AUTHORIZATION;
+
     // Extract Authorization header
     let auth_header = request
         .headers()
@@ -57,6 +59,7 @@ pub async fn api_token_auth(
     // 4. If locked, return forbidden with lock reason
     // 5. Update last_used_at timestamp
     // 6. Extract user_id and token_id
+    // 7. Use AuthCheck to validate scopes if required
 
     // Placeholder: For now, we'll just validate the token format
     // In production, this would be a database lookup
@@ -87,6 +90,9 @@ pub async fn api_token_auth(
     //
     // if let Some(lock_until) = user.account_lock_until {
     //     if lock_until > jiff::Timestamp::now() {
+    //         // Return forbidden with lock reason if available
+    //         let reason = user.account_lock_reason.as_deref().unwrap_or("Account is locked");
+    //         // In production, this would return a proper error response
     //         return Err(StatusCode::FORBIDDEN);
     //     }
     // }

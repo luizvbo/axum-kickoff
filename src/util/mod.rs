@@ -1,10 +1,12 @@
 //! Utility modules
 
+pub mod auth;
 pub mod errors;
 pub mod gh_token_encryption;
 pub mod oauth;
 pub mod token;
 
+pub use auth::{AuthCheck, AuthHeader, Authentication};
 pub use errors::{
     AppError, AppResult, AuthError, NotFoundError, ValidationError,
     bad_request, forbidden, not_found, unauthorized, server_error, service_unavailable,

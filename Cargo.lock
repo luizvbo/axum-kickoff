@@ -287,9 +287,12 @@ dependencies = [
  "http-body-util",
  "mime",
  "pin-project-lite",
+ "serde_core",
+ "serde_json",
  "tower-layer",
  "tower-service",
  "tracing",
+ "typed-json",
 ]
 
 [[package]]
@@ -3621,6 +3624,16 @@ name = "twox-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
+
+[[package]]
+name = "typed-json"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6024a8d0025400b3f6b189366e9aa92012cf9c4fe1cd2620848dd61425c49eed"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "typenum"
