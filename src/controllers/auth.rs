@@ -148,13 +148,21 @@ pub async fn github_callback(
         .await
         .map_err(|e| bad_request(format!("Failed to parse user profile: {}", e)))?;
     
-    // TODO: Create or update user in database
-    // TODO: Create oauth_github record with encrypted token
-    // TODO: Set user_id in session
+    // TODO: Implement full database persistence once Toasty proc macro ABI mismatch is resolved
+    // The current toolchain (rustc 1.96.0) doesn't match the cached proc macros (rustc 1.94.0)
+    // For now, store GitHub user ID in session for basic auth flow
+    //
+    // Full implementation should:
+    // 1. Check if user exists by GitHub ID in database
+    // 2. Check if user account is locked (account_lock_until > now)
+    // 3. If locked, return forbidden with lock reason
+    // 4. Create or update user record
+    // 5. Encrypt and store GitHub access token in oauth_github table
+    // 6. Store user_id in session
     
-    // For now, just store the GitHub user ID in session
+    // Set user_id in session (using GitHub ID as temporary user_id)
     session.insert("user_id".to_string(), github_user.id.to_string());
-    session.insert("user_login".to_string(), github_user.login.clone());
+    session.insert("user_login".to_string(), github_user.login);
     
     // Redirect to the stored redirect URL or default to home
     let redirect_to = session.remove("redirect_to").unwrap_or_else(|| "/".to_string());

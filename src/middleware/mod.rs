@@ -10,6 +10,7 @@ use tracing::Instrument;
 use crate::Env;
 use crate::app::AppState;
 
+pub mod api_token;
 pub mod block_traffic;
 pub mod error_handler;
 #[cfg(feature = "metrics")]
@@ -27,6 +28,7 @@ pub use real_ip::middleware as real_ip;
 pub use require_user_agent::require_user_agent;
 pub use security_headers::middleware as security_headers;
 pub use session::{middleware as session_middleware, SessionExtension};
+pub use api_token::{api_token_auth, extract_api_token_auth, ApiTokenAuth};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;

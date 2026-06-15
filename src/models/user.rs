@@ -31,6 +31,12 @@ pub struct User {
     /// Whether the user account is active
     pub is_active: bool,
 
+    /// Reason for account lock (if locked)
+    pub account_lock_reason: Option<String>,
+
+    /// Timestamp when account lock expires (if locked)
+    pub account_lock_until: Option<jiff::Timestamp>,
+
     /// Timestamp when the user was created
     pub created_at: jiff::Timestamp,
 
@@ -50,6 +56,8 @@ impl User {
             email,
             gh_avatar,
             is_active: true,
+            account_lock_reason: None,
+            account_lock_until: None,
             created_at: now,
             updated_at: now,
         }

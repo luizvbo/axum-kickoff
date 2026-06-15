@@ -1,7 +1,9 @@
 //! Utility modules
 
 pub mod errors;
+pub mod gh_token_encryption;
 pub mod oauth;
+pub mod token;
 
 pub use errors::{
     AppError, AppResult, AuthError, NotFoundError, ValidationError,
@@ -11,4 +13,6 @@ pub use errors::{
     not_found_resource, not_found_user, not_found_record,
     convert_error,
 };
+pub use gh_token_encryption::GitHubTokenEncryption;
 pub use oauth::ReqwestClient;
+pub use token::{HashedToken, InvalidTokenError, PlainToken};
