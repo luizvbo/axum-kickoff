@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axum Kickoff - Rust Web Application Starter</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="logo">🚀</span>
+                <span>Axum Kickoff</span>
+            </div>
+            <div class="nav-links">
+                <a href="#about">About</a>
+                <a href="#features">Features</a>
+                <a href="#getting-started">Getting Started</a>
+                <a href="https://github.com/luizvbo/axum-kickoff" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <div class="hero-content">
+            <h1>Production-Ready Rust Web Applications</h1>
+            <p class="hero-subtitle">A solid foundation built on Axum, following crates.io best practices</p>
+            <div class="hero-actions">
+                <a href="#getting-started" class="btn btn-secondary">Get Started</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section id="about" class="section">
+            <h2 class="section-title">About</h2>
+            <p class="section-text">
+                Axum Kickoff provides a solid foundation for building web applications using
+                <strong>Axum</strong>, <strong>Toasty ORM</strong>, and other best-in-class Rust crates.
+                It follows the architectural patterns and best practices from
+                <a href="https://github.com/rust-lang/crates.io">crates.io</a>, the official Rust package registry.
+            </p>
+        </section>
+
+        <section id="features" class="section">
+            <h2 class="section-title">Tech Stack</h2>
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <div class="tech-icon">🌐</div>
+                    <h3>Axum 0.8</h3>
+                    <p>Modern, ergonomic web framework built on Tokio</p>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon">🗄️</div>
+                    <h3>Toasty 0.7</h3>
+                    <p>Type-safe ORM with SQLite support</p>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon">🎨</div>
+                    <h3>Askama 0.15</h3>
+                    <p>Type-safe, compile-time templating</p>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon">⚡</div>
+                    <h3>Tokio 1.x</h3>
+                    <p>Async runtime for Rust</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">Features</h2>
+            <div class="features-list">
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Structured configuration with environment variables</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Connection pooling with health checks</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Rate limiting (token bucket algorithm)</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Request logging and tracing</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Comprehensive middleware stack</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Real IP extraction</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Traffic blocking capabilities</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>CORS support</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>GZIP compression</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Request timeout handling</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Panic recovery</span>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">✓</span>
+                    <span>Development/Production environment modes</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="dynamic-content" class="section dynamic-section">
+            <h2 class="section-title">Dynamic Content Demo</h2>
+            <p class="section-text">Click the button below to see Askama rendering with HTMX in action!</p>
+            <button
+                class="btn btn-primary"
+                hx-get="/api/server-time"
+                hx-target="#server-response"
+                hx-swap="innerHTML"
+            >
+                Get Server Time
+            </button>
+            <div id="server-response" class="server-response"></div>
+        </section>
+
+        <section id="getting-started" class="section">
+            <h2 class="section-title">Getting Started</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Clone the repository</h3>
+                        <code>git clone https://github.com/luizvbo/axum-kickoff.git</code>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Set up environment variables</h3>
+                        <p>Copy <code>.env.sample</code> to <code>.env</code></p>
+                        <code>cp .env.sample .env</code>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Run the server</h3>
+                        <code>cargo run --bin server</code>
+                        <p>Server starts on <code>http://localhost:8888</code></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">Project Structure</h2>
+            <div class="code-block">
+                <pre><code>src/
+├── app.rs           # Application state and components
+├── config/          # Configuration management
+│   ├── base.rs
+│   ├── database.rs
+│   └── server.rs
+├── db.rs            # Database connection management
+├── lib.rs           # Library entry point
+├── middleware/      # Request middleware
+│   ├── block_traffic.rs
+│   ├── real_ip.rs
+│   └── require_user_agent.rs
+├── models/          # Data models
+├── rate_limiter.rs  # Rate limiting implementation
+└── router.rs        # Route definitions</code></pre>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">API Endpoints</h2>
+            <div class="endpoint-list">
+                <div class="endpoint">
+                    <span class="method">GET</span>
+                    <span class="path">/</span>
+                    <span class="description">Home page</span>
+                </div>
+                <div class="endpoint">
+                    <span class="method">GET</span>
+                    <span class="path">/health</span>
+                    <span class="description">Health check</span>
+                </div>
+                <div class="endpoint">
+                    <span class="method">GET</span>
+                    <span class="path">/api/server-time</span>
+                    <span class="description">Server time (HTMX demo)</span>
+                </div>
+                <div class="endpoint">
+                    <span class="method">GET</span>
+                    <span class="path">/debug</span>
+                    <span class="description">Debug info (dev only)</span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <p>Built with ❤️ using Rust and Axum</p>
+            <p>Inspired by <a href="https://crates.io">crates.io</a></p>
+        </div>
+    </footer>
+</body>
+</html>

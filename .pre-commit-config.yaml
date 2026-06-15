@@ -1,0 +1,61 @@
+# Pre-commit hooks for axum-kickoff
+# Install pre-commit: pip install pre-commit
+# Run: pre-commit install
+# Skip: SKIP=cargo-fmt git commit ...
+
+repos:
+  # Rust formatting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        pass_filenames: false
+
+  # Rust clippy linting
+  - repo: local
+    hooks:
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --all-targets --all-features
+        language: system
+        pass_filenames: false
+
+  # Rust documentation check
+  - repo: local
+    hooks:
+      - id: cargo-doc
+        name: cargo doc
+        entry: cargo doc --no-deps --document-private-items
+        language: system
+        pass_filenames: false
+
+  # Cargo deny check (dependencies)
+  - repo: local
+    hooks:
+      - id: cargo-deny
+        name: cargo deny
+        entry: cargo deny check
+        language: system
+        pass_filenames: false
+
+  # Cargo machete (unused dependencies)
+  - repo: local
+    hooks:
+      - id: cargo-machete
+        name: cargo machete
+        entry: cargo machete
+        language: system
+        pass_filenames: false
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']

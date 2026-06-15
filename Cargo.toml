@@ -1,0 +1,64 @@
+[package]
+name = "axum-kickoff"
+authors = ["Luiz Otavio V. B. Oliveira <luiz.vbo@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/luizvbo/axum-kickoff"
+license = "MIT OR Apache-2.0"
+
+[features]
+default = []
+metrics = ["dep:prometheus"]
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["macros"] }
+axum-extra = { version = "0.12", features = ["typed-header", "cookie-signed", "erased-json"] }
+chrono = { version = "0.4", features = ["serde"] }
+cookie = { version = "0.18", features = ["secure"] }
+base64 = "0.22"
+parking_lot = "0.12"
+prometheus = { version = "0.13", optional = true }
+derive_more = { version = "2", features = ["deref"] }
+dotenvy = "0.15"
+http = "1"
+num_cpus = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tikv-jemallocator = "0.7"
+jiff = { version = "0.2", features = ["serde"] }
+toasty = { version = "0.7", features = ["sqlite", "jiff"] }
+toasty-cli = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+  "trace",
+  "cors",
+  "compression-gzip",
+  "timeout",
+  "catch-panic",
+  "fs",
+  "normalize-path",
+] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+askama = "0.15"
+oauth2 = "5"
+reqwest = { version = "0.12", features = ["json"] }
+secrecy = "0.10"
+rand = "0.8"
+sha2 = "0.10"
+aes-gcm = "0.10"
+hex = "0.4"
+bytes = "1"
+
+[dev-dependencies]
+insta = { version = "1.40", features = ["json"] }
+tempfile = "3"
+http-body-util = "0.1"
