@@ -108,45 +108,74 @@ impl ApiToken {
 /// Endpoint scopes for API tokens
 ///
 /// These scopes control which endpoints a token can access.
+/// This is a generic scope system suitable for any web application.
+///
+/// For resource-specific scopes, use the format: `resource:action`
+/// Examples: `posts:read`, `users:write`, `settings:admin`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EndpointScope {
-    /// Can publish new crates
-    PublishNew,
-    /// Can publish updates to existing crates
-    PublishUpdate,
-    /// Can yank/unyank crate versions
-    Yank,
-    /// Can change crate owners
-    ChangeOwners,
+    /// Can read resources
+    Read,
+    /// Can create resources
+    Create,
+    /// Can update resources
+    Update,
+    /// Can delete resources
+    Delete,
+    /// Full administrative access
+    Admin,
 }
 
 impl EndpointScope {
     /// Convert to string representation
     pub fn as_str(&self) -> &'static str {
         match self {
-            EndpointScope::PublishNew => "publish-new",
-            EndpointScope::PublishUpdate => "publish-update",
-            EndpointScope::Yank => "yank",
-            EndpointScope::ChangeOwners => "change-owners",
+            EndpointScope::Read => "read",
+            EndpointScope::Create => "create",
+            EndpointScope::Update => "update",
+            EndpointScope::Delete => "delete",
+            EndpointScope::Admin => "admin",
         }
     }
 
     /// Parse from string
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s {
-            "publish-new" => Ok(EndpointScope::PublishNew),
-            "publish-update" => Ok(EndpointScope::PublishUpdate),
-            "yank" => Ok(EndpointScope::Yank),
-            "change-owners" => Ok(EndpointScope::ChangeOwners),
+            "read" => Ok(EndpointScope::Read),
+            "create" => Ok(EndpointScope::Create),
+            "update" => Ok(EndpointScope::Update),
+            "delete" => Ok(EndpointScope::Delete),
+            "admin" => Ok(EndpointScope::Admin),
             _ => Err(format!("Invalid endpoint scope: {}", s)),
+        }
+    }
+
+    /// Check if this scope grants permission for a given action
+    ///
+    /// Admin scope grants all permissions.
+    /// Read scope grants read access.
+    /// Create/Update/Delete scopes grant their respective permissions.
+    pub fn can_perform(&self, action: &str) -> bool {
+        match self {
+            EndpointScope::Admin => true,
+            EndpointScope::Read => action == "read",
+            EndpointScope::Create => action == "create",
+            EndpointScope::Update => action == "update",
+            EndpointScope::Delete => action == "delete",
         }
     }
 }
 
-/// Crate scope pattern for API tokens
+/// Resource scope pattern for API tokens
 ///
-/// Controls which crates a token can access. Supports wildcards.
+/// Controls which resources a token can access. Supports wildcards.
+/// This is a generic resource scoping system suitable for any web application.
+///
+/// Examples:
+/// - `posts` - access to posts resource only
+/// - `posts*` - access to posts and any sub-resources
+/// - `*` - access to all resources
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct CrateScope {
@@ -154,12 +183,12 @@ pub struct CrateScope {
 }
 
 impl CrateScope {
-    /// Create a new crate scope from a pattern
+    /// Create a new resource scope from a pattern
     pub fn new(pattern: String) -> Result<Self, String> {
         if Self::is_valid_pattern(&pattern) {
             Ok(CrateScope { pattern })
         } else {
-            Err("Invalid crate scope pattern".to_string())
+            Err("Invalid resource scope pattern".to_string())
         }
     }
 
@@ -174,21 +203,21 @@ impl CrateScope {
         }
 
         let name_without_wildcard = pattern.strip_suffix('*').unwrap_or(pattern);
-        // Basic validation: alphanumeric, hyphens, underscores
+        // Basic validation: alphanumeric, hyphens, underscores, colons (for resource:action format)
         name_without_wildcard
             .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':')
     }
 
-    /// Check if this scope matches a crate name
-    pub fn matches(&self, crate_name: &str) -> bool {
+    /// Check if this scope matches a resource name
+    pub fn matches(&self, resource_name: &str) -> bool {
         if self.pattern == "*" {
             return true;
         }
 
         match self.pattern.strip_suffix('*') {
-            Some(prefix) => crate_name.starts_with(prefix),
-            None => crate_name == self.pattern,
+            Some(prefix) => resource_name.starts_with(prefix),
+            None => resource_name == self.pattern,
         }
     }
 
@@ -231,39 +260,90 @@ mod tests {
     #[test]
     fn test_endpoint_scope_serialization() {
         assert_eq!(
-            serde_json::to_string(&EndpointScope::ChangeOwners).unwrap(),
-            "\"change-owners\""
+            serde_json::to_string(&EndpointScope::Read).unwrap(),
+            "\"read\""
         );
         assert_eq!(
-            serde_json::to_string(&EndpointScope::PublishNew).unwrap(),
-            "\"publish-new\""
+            serde_json::to_string(&EndpointScope::Create).unwrap(),
+            "\"create\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointScope::Update).unwrap(),
+            "\"update\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointScope::Delete).unwrap(),
+            "\"delete\""
+        );
+        assert_eq!(
+            serde_json::to_string(&EndpointScope::Admin).unwrap(),
+            "\"admin\""
         );
     }
 
     #[test]
     fn test_endpoint_scope_deserialization() {
-        let scope: EndpointScope = serde_json::from_str("\"change-owners\"").unwrap();
-        assert_eq!(scope, EndpointScope::ChangeOwners);
+        let scope: EndpointScope = serde_json::from_str("\"read\"").unwrap();
+        assert_eq!(scope, EndpointScope::Read);
         
-        let scope: EndpointScope = serde_json::from_str("\"publish-new\"").unwrap();
-        assert_eq!(scope, EndpointScope::PublishNew);
+        let scope: EndpointScope = serde_json::from_str("\"create\"").unwrap();
+        assert_eq!(scope, EndpointScope::Create);
+        
+        let scope: EndpointScope = serde_json::from_str("\"update\"").unwrap();
+        assert_eq!(scope, EndpointScope::Update);
+        
+        let scope: EndpointScope = serde_json::from_str("\"delete\"").unwrap();
+        assert_eq!(scope, EndpointScope::Delete);
+        
+        let scope: EndpointScope = serde_json::from_str("\"admin\"").unwrap();
+        assert_eq!(scope, EndpointScope::Admin);
     }
 
     #[test]
     fn test_endpoint_scope_from_str() {
-        assert_eq!(EndpointScope::from_str("publish-new"), Ok(EndpointScope::PublishNew));
-        assert_eq!(EndpointScope::from_str("publish-update"), Ok(EndpointScope::PublishUpdate));
-        assert_eq!(EndpointScope::from_str("yank"), Ok(EndpointScope::Yank));
-        assert_eq!(EndpointScope::from_str("change-owners"), Ok(EndpointScope::ChangeOwners));
+        assert_eq!(EndpointScope::from_str("read"), Ok(EndpointScope::Read));
+        assert_eq!(EndpointScope::from_str("create"), Ok(EndpointScope::Create));
+        assert_eq!(EndpointScope::from_str("update"), Ok(EndpointScope::Update));
+        assert_eq!(EndpointScope::from_str("delete"), Ok(EndpointScope::Delete));
+        assert_eq!(EndpointScope::from_str("admin"), Ok(EndpointScope::Admin));
         assert!(EndpointScope::from_str("invalid").is_err());
     }
 
     #[test]
     fn test_endpoint_scope_as_str() {
-        assert_eq!(EndpointScope::PublishNew.as_str(), "publish-new");
-        assert_eq!(EndpointScope::PublishUpdate.as_str(), "publish-update");
-        assert_eq!(EndpointScope::Yank.as_str(), "yank");
-        assert_eq!(EndpointScope::ChangeOwners.as_str(), "change-owners");
+        assert_eq!(EndpointScope::Read.as_str(), "read");
+        assert_eq!(EndpointScope::Create.as_str(), "create");
+        assert_eq!(EndpointScope::Update.as_str(), "update");
+        assert_eq!(EndpointScope::Delete.as_str(), "delete");
+        assert_eq!(EndpointScope::Admin.as_str(), "admin");
+    }
+
+    #[test]
+    fn test_endpoint_scope_can_perform() {
+        assert!(EndpointScope::Admin.can_perform("read"));
+        assert!(EndpointScope::Admin.can_perform("create"));
+        assert!(EndpointScope::Admin.can_perform("update"));
+        assert!(EndpointScope::Admin.can_perform("delete"));
+        
+        assert!(EndpointScope::Read.can_perform("read"));
+        assert!(!EndpointScope::Read.can_perform("create"));
+        assert!(!EndpointScope::Read.can_perform("update"));
+        assert!(!EndpointScope::Read.can_perform("delete"));
+        
+        assert!(!EndpointScope::Create.can_perform("read"));
+        assert!(EndpointScope::Create.can_perform("create"));
+        assert!(!EndpointScope::Create.can_perform("update"));
+        assert!(!EndpointScope::Create.can_perform("delete"));
+        
+        assert!(!EndpointScope::Update.can_perform("read"));
+        assert!(!EndpointScope::Update.can_perform("create"));
+        assert!(EndpointScope::Update.can_perform("update"));
+        assert!(!EndpointScope::Update.can_perform("delete"));
+        
+        assert!(!EndpointScope::Delete.can_perform("read"));
+        assert!(!EndpointScope::Delete.can_perform("create"));
+        assert!(!EndpointScope::Delete.can_perform("update"));
+        assert!(EndpointScope::Delete.can_perform("delete"));
     }
 
     #[test]
