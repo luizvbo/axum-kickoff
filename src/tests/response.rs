@@ -85,6 +85,11 @@ impl<T> Response<T> {
         &self.inner
     }
 
+    /// Get the response headers
+    pub fn headers(&self) -> &http::HeaderMap {
+        self.inner.headers()
+    }
+
     /// Get the content-type header if present
     pub fn content_type(&self) -> Option<&str> {
         self.inner

@@ -1,6 +1,7 @@
 //! User model
 //!
 //! Represents a user in the system with authentication and profile information.
+//! This model is designed for GitHub OAuth authentication.
 
 use toasty::Model;
 
@@ -11,15 +12,21 @@ pub struct User {
     #[auto]
     pub id: u64,
 
-    /// Unique email address for authentication
+    /// GitHub account ID (unique identifier from GitHub)
     #[unique]
-    pub email: String,
+    pub gh_id: i64,
 
-    /// User's display name
-    pub name: String,
+    /// GitHub username (login)
+    pub gh_login: String,
 
-    /// Hashed password (never store plain text passwords)
-    pub password_hash: String,
+    /// User's display name (from GitHub profile)
+    pub name: Option<String>,
+
+    /// User's email (from GitHub profile)
+    pub email: Option<String>,
+
+    /// Avatar URL from GitHub
+    pub gh_avatar: Option<String>,
 
     /// Whether the user account is active
     pub is_active: bool,
@@ -32,14 +39,16 @@ pub struct User {
 }
 
 impl User {
-    /// Create a new user with the given email, name, and password hash
-    pub fn new(email: String, name: String, password_hash: String) -> Self {
+    /// Create a new user from GitHub OAuth data
+    pub fn new_from_github(gh_id: i64, gh_login: String, name: Option<String>, email: Option<String>, gh_avatar: Option<String>) -> Self {
         let now = jiff::Timestamp::now();
         Self {
             id: 0, // Will be auto-generated
-            email,
+            gh_id,
+            gh_login,
             name,
-            password_hash,
+            email,
+            gh_avatar,
             is_active: true,
             created_at: now,
             updated_at: now,
@@ -49,5 +58,13 @@ impl User {
     /// Update the updated_at timestamp to the current time
     pub fn touch(&mut self) {
         self.updated_at = jiff::Timestamp::now();
+    }
+
+    /// Update user info from GitHub profile data
+    pub fn update_from_github(&mut self, name: Option<String>, email: Option<String>, gh_avatar: Option<String>) {
+        self.name = name;
+        self.email = email;
+        self.gh_avatar = gh_avatar;
+        self.touch();
     }
 }

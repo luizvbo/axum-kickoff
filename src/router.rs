@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use http::{Method, StatusCode};
 use tower_http::services::ServeDir;
@@ -8,12 +8,16 @@ use chrono::Utc;
 
 use crate::Env;
 use crate::app::AppState;
+use crate::controllers::auth::{github_authorize, github_callback, logout};
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
     let mut router = Router::new()
         .route("/", get(home))
         .route("/health", get(health_check))
         .route("/api/server-time", get(server_time))
+        .route("/api/v1/auth/github/authorize", get(github_authorize))
+        .route("/api/v1/auth/github/callback", get(github_callback))
+        .route("/api/v1/auth/logout", post(logout))
         .nest_service("/static", ServeDir::new("static"));
 
     // Add development-only routes

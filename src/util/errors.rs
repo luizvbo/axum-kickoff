@@ -19,8 +19,11 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::fmt;
 
+/// Type alias for boxed app errors
+pub type BoxedAppError = Box<dyn AppError>;
+
 /// Type alias for results that can be converted to HTTP responses
-pub type AppResult<T> = Result<T, Box<dyn AppError>>;
+pub type AppResult<T> = Result<T, BoxedAppError>;
 
 /// Trait for errors that can be converted to HTTP responses
 ///
@@ -119,6 +122,28 @@ impl AppError for HttpError {
     fn response(&self) -> Response {
         let error_response = ErrorResponse::new(self.detail.to_string());
         (self.status, Json(error_response)).into_response()
+    }
+}
+
+impl AppError for BoxedAppError {
+    fn response(&self) -> Response {
+        (**self).response()
+    }
+
+    fn get_type_id(&self) -> TypeId {
+        (**self).get_type_id()
+    }
+}
+
+impl IntoResponse for BoxedAppError {
+    fn into_response(self) -> Response {
+        self.response()
+    }
+}
+
+impl<E: std::error::Error + Send + 'static> AppError for E {
+    fn response(&self) -> Response {
+        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
     }
 }
 

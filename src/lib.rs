@@ -14,6 +14,7 @@ static ALLOC: Jemalloc = Jemalloc;
 
 pub mod app;
 pub mod config;
+pub mod controllers;
 pub mod db;
 pub mod middleware;
 #[cfg(feature = "metrics")]

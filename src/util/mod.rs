@@ -1,6 +1,7 @@
 //! Utility modules
 
 pub mod errors;
+pub mod oauth;
 
 pub use errors::{
     AppError, AppResult, AuthError, NotFoundError, ValidationError,
@@ -10,3 +11,4 @@ pub use errors::{
     not_found_resource, not_found_user, not_found_record,
     convert_error,
 };
+pub use oauth::ReqwestClient;

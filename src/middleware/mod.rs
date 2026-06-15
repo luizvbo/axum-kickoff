@@ -26,7 +26,7 @@ pub use metrics::update_metrics;
 pub use real_ip::middleware as real_ip;
 pub use require_user_agent::require_user_agent;
 pub use security_headers::middleware as security_headers;
-pub use session::SessionExtension;
+pub use session::{middleware as session_middleware, SessionExtension};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
@@ -36,6 +36,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))
+        .layer(from_fn(self::session_middleware))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
         .layer(from_fn(self::security_headers::middleware))

@@ -7,7 +7,7 @@ use crate::tests::{AnonymousUser, RequestHelper, TestApp};
 
 #[tokio::test]
 async fn visiting_unknown_route_returns_404() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/does-not-exist").await;
@@ -16,7 +16,7 @@ async fn visiting_unknown_route_returns_404() {
 
 #[tokio::test]
 async fn visiting_unknown_api_route_returns_404() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/v1/does-not-exist").await;
@@ -25,7 +25,7 @@ async fn visiting_unknown_api_route_returns_404() {
 
 #[tokio::test]
 async fn health_endpoint_returns_200() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/health").await;

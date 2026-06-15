@@ -12,6 +12,8 @@
 //! - `BLOCKED_IPS`: Comma-separated list of blocked IP addresses (optional).
 //! - `BLOCKED_ROUTES`: Comma-separated list of blocked route patterns (optional).
 //! - `BLOCKED_TRAFFIC`: Comma-separated list of header=value pairs for blocking traffic (optional).
+//! - `GH_CLIENT_ID`: GitHub OAuth client ID (required for OAuth).
+//! - `GH_CLIENT_SECRET`: GitHub OAuth client secret (required for OAuth).
 
 use crate::Env;
 use crate::middleware::block_traffic::BlockCriteria;
@@ -34,6 +36,8 @@ pub struct Server {
     pub blocked_routes: HashSet<String>,
     pub blocked_traffic: Vec<(String, Vec<BlockCriteria>)>,
     pub session_key: cookie::Key,
+    pub gh_client_id: String,
+    pub gh_client_secret: String,
 }
 
 impl Server {
@@ -100,6 +104,18 @@ impl Server {
                 anyhow::anyhow!("Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.", e)
             })?;
 
+        // Load GitHub OAuth credentials
+        let gh_client_id = dotenvy::var("GH_CLIENT_ID")
+            .map_err(|_| {
+                tracing::error!("Required environment variable 'GH_CLIENT_ID' is not set");
+                anyhow::anyhow!("Required environment variable 'GH_CLIENT_ID' is not set")
+            })?;
+        let gh_client_secret = dotenvy::var("GH_CLIENT_SECRET")
+            .map_err(|_| {
+                tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
+                anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
+            })?;
+
         Ok(Server {
             base,
             ip,
@@ -111,6 +127,8 @@ impl Server {
             blocked_routes,
             blocked_traffic,
             session_key,
+            gh_client_id,
+            gh_client_secret,
         })
     }
 

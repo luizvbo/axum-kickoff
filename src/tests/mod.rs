@@ -35,6 +35,7 @@
 //! cargo insta accept
 //! ```
 
+pub mod auth;
 pub mod builders;
 pub mod error_responses;
 pub mod request_helper;

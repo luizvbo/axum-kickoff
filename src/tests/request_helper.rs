@@ -35,6 +35,7 @@ pub trait RequestHelper {
         let mut request = Request::builder()
             .method(method)
             .uri(uri)
+            .header(header::USER_AGENT, "axum-kickoff-test")
             .body(Body::empty())
             .expect("Failed to build request");
 
