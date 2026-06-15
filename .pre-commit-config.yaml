@@ -3,15 +3,47 @@
 # Run: pre-commit install
 # Skip: SKIP=cargo-fmt git commit ...
 
+fail_fast: false
+
 repos:
+  # Priority 0: Read-only hooks and file type-specific fixers
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+
+  # Spell checking
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.47.1
+    hooks:
+      - id: typos
+
+  # GitHub Actions workflow validation
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.2
+    hooks:
+      - id: check-github-workflows
+
+  # GitHub Actions linting
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
   # Rust formatting
   - repo: local
     hooks:
-      - id: cargo-fmt
-        name: cargo fmt
-        entry: cargo fmt --all
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt
         language: system
-        pass_filenames: false
+        types: [rust]
 
   # Rust clippy linting
   - repo: local
@@ -48,14 +80,3 @@ repos:
         entry: cargo machete
         language: system
         pass_filenames: false
-
-  # General file checks
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-toml
-      - id: check-added-large-files
-        args: ['--maxkb=1000']
