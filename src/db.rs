@@ -66,4 +66,9 @@ impl Database {
     pub fn db_arc(&self) -> Arc<Db> {
         self.db.clone()
     }
+
+    /// Get a cloned Db handle for mutations
+    pub fn db_clone(&self) -> Db {
+        self.db.as_ref().clone()
+    }
 }

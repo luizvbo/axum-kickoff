@@ -8,6 +8,7 @@ use crate::config::AllowedOrigins;
 use crate::config::Server;
 use crate::db::Database;
 use crate::storage::StorageConfig;
+use crate::tests::builders::{ApiTokenBuilder, UserBuilder};
 use axum::Router;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -100,6 +101,16 @@ impl TestApp {
         // For now, we'll create a new state from the existing components
         let app = App::new(self.config.clone(), self.db.clone());
         AppState(Arc::new(app))
+    }
+
+    /// Create a new user builder
+    pub fn user_builder(&self, gh_login: &str) -> UserBuilder {
+        UserBuilder::new(gh_login)
+    }
+
+    /// Create a new API token builder
+    pub fn token_builder(&self, user_id: u64, name: &str) -> ApiTokenBuilder {
+        ApiTokenBuilder::new(user_id, name)
     }
 }
 
