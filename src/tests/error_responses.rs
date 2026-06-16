@@ -1,7 +1,7 @@
 //! Error response integration tests
 //!
-//! Adapted from crates.io's error response tests to verify that
-//! the application returns proper error responses for various scenarios.
+//! Verifies that the application returns proper error responses for various scenarios,
+//! with snapshot assertions to track exact JSON outputs.
 
 use crate::tests::{AnonymousUser, RequestHelper, TestApp};
 
@@ -10,8 +10,15 @@ async fn visiting_unknown_route_returns_404() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/does-not-exist").await;
+    let response = anon.get::<serde_json::Value>("/does-not-exist").await;
     response.assert_status(http::StatusCode::NOT_FOUND);
+
+    let json = response.into_json::<serde_json::Value>().await;
+    insta::assert_json_snapshot!(json, @r###"
+    {
+      "detail": "Not Found"
+    }
+    "###);
 }
 
 #[tokio::test]
@@ -19,8 +26,17 @@ async fn visiting_unknown_api_route_returns_404() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/does-not-exist").await;
+    let response = anon
+        .get::<serde_json::Value>("/api/v1/does-not-exist")
+        .await;
     response.assert_status(http::StatusCode::NOT_FOUND);
+
+    let json = response.into_json::<serde_json::Value>().await;
+    insta::assert_json_snapshot!(json, @r###"
+    {
+      "detail": "Not Found"
+    }
+    "###);
 }
 
 #[tokio::test]

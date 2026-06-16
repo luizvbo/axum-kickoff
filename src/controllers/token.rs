@@ -3,14 +3,17 @@
 //! Provides endpoints for creating, listing, and revoking API tokens.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
-use crate::util::errors::AppResult;
+use crate::middleware::SessionExtension;
+use crate::models::ApiToken;
+use crate::util::errors::{server_error, unauthorized, AppResult};
+use crate::util::PlainToken;
 
 /// Request body for creating a new API token
 #[derive(Debug, Deserialize)]
@@ -70,27 +73,63 @@ pub struct TokenListItem {
 /// This endpoint creates a new API token for the authenticated user.
 /// The token is returned in plain text and should be stored securely by the client.
 pub async fn create_token(
-    State(_state): State<AppState>,
-    Json(_req): Json<CreateTokenRequest>,
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionExtension>,
+    Json(req): Json<CreateTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
-    // TODO: Implement full token creation once Toasty proc macro ABI mismatch is resolved
-    // The current toolchain (rustc 1.96.0) doesn't match the cached proc macros (rustc 1.94.0)
-    //
-    // Full implementation should:
-    // 1. Get user_id from session or API token auth
-    // 2. Validate crate_scopes and endpoint_scopes
-    // 3. Parse expired_at if provided
-    // 4. Generate a new PlainToken
-    // 5. Hash the token for storage
-    // 6. Create ApiToken record in database
-    // 7. Return the plain token to the user (only shown once)
+    let user_id = session
+        .get("user_id")
+        .ok_or_else(|| unauthorized("Not logged in"))?;
+    let user_id = user_id
+        .parse::<u64>()
+        .map_err(|_| unauthorized("Invalid session"))?;
 
-    // For now, return service unavailable
+    let plain_token = PlainToken::generate();
+    let hashed_token = plain_token.hashed();
+
+    let crate_scopes = req
+        .crate_scopes
+        .as_ref()
+        .map(|s| serde_json::to_string(s).unwrap());
+    let endpoint_scopes = req
+        .endpoint_scopes
+        .as_ref()
+        .map(|s| serde_json::to_string(s).unwrap());
+
+    let expired_at = req.expired_at.as_ref().map(|s| {
+        jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s)
+            .unwrap_or_else(|_| jiff::Timestamp::now())
+    });
+
+    let mut db = state.0.database.db_clone();
+
+    let token_record = toasty::create!(ApiToken {
+        user_id,
+        name: req.name.clone(),
+        token: hashed_token.as_bytes().to_vec(),
+        created_at: jiff::Timestamp::now(),
+        last_used_at: None,
+        revoked: false,
+        crate_scopes,
+        endpoint_scopes,
+        expired_at,
+    })
+    .exec(&mut db)
+    .await
+    .map_err(|e| server_error(e.to_string()))?;
+
+    use secrecy::ExposeSecret;
     Ok((
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({
-            "error": "Token creation is temporarily unavailable due to database layer issues"
-        })),
+        StatusCode::CREATED,
+        Json(CreateTokenResponse {
+            token: plain_token.expose_secret().to_string(),
+            id: token_record.id,
+            name: token_record.name,
+            created_at: token_record.created_at.to_string(),
+            crate_scopes: req.crate_scopes,
+            endpoint_scopes: req.endpoint_scopes,
+            expired_at: req.expired_at,
+        }),
     ))
 }
 

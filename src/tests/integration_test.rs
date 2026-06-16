@@ -80,3 +80,30 @@ async fn test_response_content_type() {
     let content_type = response.content_type();
     assert!(content_type.is_some());
 }
+
+#[tokio::test]
+async fn test_builders_and_database() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    // 1. Build and insert the user
+    let user = app
+        .user_builder("mona_lisa")
+        .email("octocat@github.com")
+        .build(&mut db)
+        .await
+        .expect("Failed to insert user");
+
+    assert_eq!(user.gh_login, "mona_lisa");
+
+    // 2. Build and insert a token for the user
+    let (token, plain_token) = app
+        .token_builder(user.id, "my-test-token")
+        .build(&mut db)
+        .await
+        .expect("Failed to insert token");
+
+    assert_eq!(token.name, "my-test-token");
+    assert_eq!(token.user_id, user.id);
+    assert!(plain_token.starts_with("ako"));
+}

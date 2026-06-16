@@ -28,7 +28,10 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
     router
         .fallback(async |method: Method| match method {
             Method::HEAD => StatusCode::NOT_FOUND.into_response(),
-            _ => not_found().into_response(),
+            _ => {
+                use crate::util::errors::not_found;
+                not_found().into_response()
+            }
         })
         .with_state(state)
 }
@@ -50,10 +53,6 @@ async fn server_time() -> impl IntoResponse {
     let time = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
     let template = ServerTimeTemplate { time };
     HtmlTemplate(template)
-}
-
-fn not_found() -> (StatusCode, &'static str) {
-    (StatusCode::NOT_FOUND, "Not Found")
 }
 
 #[derive(Template)]

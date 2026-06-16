@@ -12,7 +12,8 @@ use serde_json::json;
 
 use crate::app::AppState;
 use crate::middleware::session::SessionExtension;
-use crate::util::errors::{bad_request, BoxedAppError};
+use crate::models::User;
+use crate::util::errors::{bad_request, forbidden, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 
 /// OAuth authorize query parameters
@@ -153,21 +154,59 @@ pub async fn github_callback(
         .await
         .map_err(|e| bad_request(format!("Failed to parse user profile: {}", e)))?;
 
-    // TODO: Implement full database persistence once Toasty proc macro ABI mismatch is resolved
-    // The current toolchain (rustc 1.96.0) doesn't match the cached proc macros (rustc 1.94.0)
-    // For now, store GitHub user ID in session for basic auth flow
-    //
-    // Full implementation should:
-    // 1. Check if user exists by GitHub ID in database
-    // 2. Check if user account is locked (account_lock_until > now)
-    // 3. If locked, return forbidden with lock reason
-    // 4. Create or update user record
-    // 5. Encrypt and store GitHub access token in oauth_github table
-    // 6. Store user_id in session
+    let mut db = state.0.database.db_clone();
 
-    // Set user_id in session (using GitHub ID as temporary user_id)
-    session.insert("user_id".to_string(), github_user.id.to_string());
-    session.insert("user_login".to_string(), github_user.login);
+    let user = match User::get_by_gh_id(&mut db, &github_user.id).await {
+        Ok(mut existing_user) => {
+            // Check if locked
+            if let Some(lock_until) = &existing_user.account_lock_until {
+                if lock_until > &jiff::Timestamp::now() {
+                    let reason = existing_user
+                        .account_lock_reason
+                        .clone()
+                        .unwrap_or_else(|| "Account is locked".into());
+                    return Err(forbidden(reason));
+                }
+            }
+
+            // Update existing user
+            existing_user.gh_login = github_user.login.clone();
+            existing_user.name = github_user.name.clone();
+            existing_user.email = github_user.email.clone();
+            existing_user.gh_avatar = github_user.avatar_url.clone();
+            existing_user.updated_at = jiff::Timestamp::now();
+
+            existing_user
+                .update()
+                .exec(&mut db)
+                .await
+                .map_err(|e| server_error(e.to_string()))?;
+
+            existing_user
+        }
+        Err(_) => {
+            // Create new user
+            toasty::create!(User {
+                gh_id: github_user.id,
+                gh_login: github_user.login.clone(),
+                name: github_user.name.clone(),
+                email: github_user.email.clone(),
+                gh_avatar: github_user.avatar_url.clone(),
+                is_active: true,
+                account_lock_reason: None,
+                account_lock_until: None,
+                created_at: jiff::Timestamp::now(),
+                updated_at: jiff::Timestamp::now(),
+            })
+            .exec(&mut db)
+            .await
+            .map_err(|e| server_error(e.to_string()))?
+        }
+    };
+
+    // Set user_id in session
+    session.insert("user_id".to_string(), user.id.to_string());
+    session.insert("user_login".to_string(), user.gh_login);
 
     // Redirect to the stored redirect URL or default to home
     let redirect_to = session
