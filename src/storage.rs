@@ -26,7 +26,7 @@
 
 use anyhow::Context;
 use bytes::Bytes;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::instrument;
 
 /// Storage configuration
@@ -80,6 +80,31 @@ pub struct Storage {
     base_path: PathBuf,
 }
 
+/// Validate that a storage path is safe and doesn't escape the base directory
+fn safe_storage_path(base: &Path, input: &str) -> anyhow::Result<PathBuf> {
+    let path = Path::new(input);
+
+    // Reject absolute paths
+    if path.is_absolute() {
+        anyhow::bail!("Invalid storage path: absolute paths not allowed");
+    }
+
+    // Reject paths with parent directory components (..)
+    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        anyhow::bail!("Invalid storage path: parent directory references not allowed");
+    }
+
+    // Normalize the path and join with base
+    let full_path = base.join(path);
+
+    // Verify the resulting path is still within the base directory
+    if !full_path.starts_with(base) {
+        anyhow::bail!("Invalid storage path: path escapes base directory");
+    }
+
+    Ok(full_path)
+}
+
 impl Storage {
     /// Create storage from configuration
     pub fn from_config(config: &StorageConfig) -> Self {
@@ -116,7 +141,7 @@ impl Storage {
     /// Upload a file
     #[instrument(skip(self, bytes))]
     pub async fn upload(&self, path: &str, bytes: Bytes) -> anyhow::Result<()> {
-        let file_path = self.base_path.join(path);
+        let file_path = safe_storage_path(&self.base_path, path)?;
 
         // Create parent directories if they don't exist
         if let Some(parent) = file_path.parent() {
@@ -149,7 +174,7 @@ impl Storage {
     /// Download a file
     #[instrument(skip(self))]
     pub async fn download(&self, path: &str) -> anyhow::Result<Bytes> {
-        let file_path = self.base_path.join(path);
+        let file_path = safe_storage_path(&self.base_path, path)?;
         let data = tokio::fs::read(&file_path)
             .await
             .context("Failed to read file")?;
@@ -159,7 +184,7 @@ impl Storage {
     /// Delete a file
     #[instrument(skip(self))]
     pub async fn delete(&self, path: &str) -> anyhow::Result<()> {
-        let file_path = self.base_path.join(path);
+        let file_path = safe_storage_path(&self.base_path, path)?;
         tokio::fs::remove_file(&file_path)
             .await
             .context("Failed to delete file")?;
@@ -169,7 +194,7 @@ impl Storage {
     /// Delete all files with a given prefix
     #[instrument(skip(self))]
     pub async fn delete_all_with_prefix(&self, prefix: &str) -> anyhow::Result<Vec<String>> {
-        let prefix_path = self.base_path.join(prefix);
+        let prefix_path = safe_storage_path(&self.base_path, prefix)?;
         let mut deleted = Vec::new();
 
         if !prefix_path.exists() {
@@ -213,7 +238,7 @@ impl Storage {
     /// Check if a file exists
     #[instrument(skip(self))]
     pub async fn exists(&self, path: &str) -> anyhow::Result<bool> {
-        let file_path = self.base_path.join(path);
+        let file_path = safe_storage_path(&self.base_path, path)?;
         Ok(tokio::fs::try_exists(&file_path).await.unwrap_or(false))
     }
 
@@ -221,7 +246,7 @@ impl Storage {
     #[instrument(skip(self))]
     pub async fn list(&self, prefix: Option<&str>) -> anyhow::Result<Vec<String>> {
         let base_path = if let Some(prefix) = prefix {
-            self.base_path.join(prefix)
+            safe_storage_path(&self.base_path, prefix)?
         } else {
             self.base_path.clone()
         };

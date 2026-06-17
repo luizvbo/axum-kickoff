@@ -314,7 +314,7 @@ fn generate_csp(config: &SecurityHeadersConfig) -> String {
         CspMode::Strict => {
             let mut directives = vec![
                 "default-src 'self'".to_string(),
-                "script-src 'self'".to_string(),
+                "script-src 'self' https://unpkg.com".to_string(),
                 "style-src 'self'".to_string(),
                 "img-src 'self' data: https:".to_string(),
                 "font-src 'self' data:".to_string(),
