@@ -52,7 +52,7 @@ impl CreateTokenRequest {
             .map(|scopes| {
                 scopes
                     .into_iter()
-                    .map(|s| ResourceScope::try_from(s))
+                    .map(ResourceScope::try_from)
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()
@@ -158,7 +158,7 @@ pub async fn create_token(
         .map_err(|_| unauthorized("Invalid session"))?;
 
     // Validate the request
-    let validated = req.validate().map_err(|e| bad_request(e))?;
+    let validated = req.validate().map_err(bad_request)?;
 
     let plain_token = PlainToken::generate();
     let hashed_token = plain_token.hashed();

@@ -79,7 +79,7 @@ pub async fn show_post(
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?
-        .ok_or_else(|| not_found())?;
+        .ok_or_else(not_found)?;
 
     let post_response = PostResponse {
         id: post.id,
@@ -158,7 +158,7 @@ pub async fn update_post(
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?
-        .ok_or_else(|| not_found())?;
+        .ok_or_else(not_found)?;
 
     let new_title = req.title.clone();
     let new_content = req.content.clone();
@@ -199,7 +199,7 @@ pub async fn delete_post(
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?
-        .ok_or_else(|| not_found())?;
+        .ok_or_else(not_found)?;
 
     post.delete()
         .exec(&mut db)
@@ -223,7 +223,7 @@ pub async fn publish_post(
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?
-        .ok_or_else(|| not_found())?;
+        .ok_or_else(not_found)?;
 
     let new_published = true;
     let new_updated_at = jiff::Timestamp::now();
@@ -262,7 +262,7 @@ pub async fn unpublish_post(
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?
-        .ok_or_else(|| not_found())?;
+        .ok_or_else(not_found)?;
 
     let new_published = false;
     let new_updated_at = jiff::Timestamp::now();
