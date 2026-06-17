@@ -92,3 +92,17 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // Note: Server binary tests are typically integration tests
+    // Unit tests for binary entry points are limited
+    // Consider adding integration tests in tests/ directory
+
+    #[test]
+    fn test_placeholder() {
+        // Placeholder to indicate test module exists
+        // Real server testing requires integration tests with HTTP requests
+        assert!(true);
+    }
+}

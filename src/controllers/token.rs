@@ -224,3 +224,87 @@ pub async fn revoke_token(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_token_request_deserialize() {
+        let json = r#"{
+            "name": "test-token",
+            "crate_scopes": ["crate1", "crate2"],
+            "endpoint_scopes": ["api1", "api2"],
+            "expired_at": "2024-12-31T23:59:59Z"
+        }"#;
+
+        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(req.name, "test-token");
+        assert_eq!(req.crate_scopes, Some(vec!["crate1".to_string(), "crate2".to_string()]));
+        assert_eq!(req.endpoint_scopes, Some(vec!["api1".to_string(), "api2".to_string()]));
+        assert_eq!(req.expired_at, Some("2024-12-31T23:59:59Z".to_string()));
+    }
+
+    #[test]
+    fn test_create_token_request_minimal() {
+        let json = r#"{"name": "test-token"}"#;
+
+        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(req.name, "test-token");
+        assert!(req.crate_scopes.is_none());
+        assert!(req.endpoint_scopes.is_none());
+        assert!(req.expired_at.is_none());
+    }
+
+    #[test]
+    fn test_create_token_response_serialize() {
+        let response = CreateTokenResponse {
+            token: "ako_test_token".to_string(),
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            crate_scopes: Some(vec!["crate1".to_string()]),
+            endpoint_scopes: Some(vec!["api1".to_string()]),
+            expired_at: Some("2024-12-31T23:59:59Z".to_string()),
+        };
+
+        let json = serde_json::to_string(&response).expect("Failed to serialize");
+        assert!(json.contains("test-token"));
+        assert!(json.contains("ako_test_token"));
+    }
+
+    #[test]
+    fn test_token_list_item_serialize() {
+        let item = TokenListItem {
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            last_used_at: Some("2024-01-02T00:00:00Z".to_string()),
+            revoked: false,
+            crate_scopes: Some(vec!["crate1".to_string()]),
+            endpoint_scopes: Some(vec!["api1".to_string()]),
+            expired_at: Some("2024-12-31T23:59:59Z".to_string()),
+        };
+
+        let json = serde_json::to_string(&item).expect("Failed to serialize");
+        assert!(json.contains("test-token"));
+        assert!(json.contains("last_used_at"));
+    }
+
+    #[test]
+    fn test_token_list_item_no_last_used() {
+        let item = TokenListItem {
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            last_used_at: None,
+            revoked: false,
+            crate_scopes: None,
+            endpoint_scopes: None,
+            expired_at: None,
+        };
+
+        let json = serde_json::to_string(&item).expect("Failed to serialize");
+        assert!(json.contains("test-token"));
+    }
+}

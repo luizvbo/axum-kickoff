@@ -37,3 +37,16 @@ impl<'c> oauth2::AsyncHttpClient<'c> for ReqwestClient {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reqwest_client_creation() {
+        let client = reqwest::Client::new();
+        let _reqwest_client = ReqwestClient(client);
+        // Just verify it creates successfully
+        assert!(true);
+    }
+}

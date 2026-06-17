@@ -97,3 +97,60 @@ pub async fn api_token_auth(
 pub fn extract_api_token_auth(request: &Request) -> Option<&ApiTokenAuth> {
     request.extensions().get::<ApiTokenAuth>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use http::Request;
+
+    #[test]
+    fn test_api_token_auth_debug() {
+        let auth = ApiTokenAuth {
+            user_id: 123,
+            token_id: 456,
+        };
+        let debug_str = format!("{:?}", auth);
+        assert!(debug_str.contains("123"));
+        assert!(debug_str.contains("456"));
+    }
+
+    #[test]
+    fn test_api_token_auth_clone() {
+        let auth = ApiTokenAuth {
+            user_id: 123,
+            token_id: 456,
+        };
+        let cloned = auth.clone();
+        assert_eq!(auth.user_id, cloned.user_id);
+        assert_eq!(auth.token_id, cloned.token_id);
+    }
+
+    #[test]
+    fn test_extract_api_token_auth_none() {
+        let request = Request::builder()
+            .body(Body::empty())
+            .unwrap();
+
+        let auth = extract_api_token_auth(&request);
+        assert!(auth.is_none());
+    }
+
+    #[test]
+    fn test_extract_api_token_auth_some() {
+        let auth = ApiTokenAuth {
+            user_id: 123,
+            token_id: 456,
+        };
+
+        let mut request = Request::builder()
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(auth);
+
+        let extracted = extract_api_token_auth(&request);
+        assert!(extracted.is_some());
+        assert_eq!(extracted.unwrap().user_id, 123);
+        assert_eq!(extracted.unwrap().token_id, 456);
+    }
+}

@@ -27,3 +27,17 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    // Note: CLI binary tests are typically integration tests
+    // Unit tests for binary entry points are limited
+    // Consider adding integration tests in tests/ directory
+
+    #[test]
+    fn test_placeholder() {
+        // Placeholder to indicate test module exists
+        // Real CLI testing requires integration tests with subprocess execution
+        assert!(true);
+    }
+}
