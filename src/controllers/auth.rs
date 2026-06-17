@@ -445,7 +445,10 @@ mod tests {
     #[test]
     fn test_is_valid_redirect_relative_with_encoded_chars() {
         assert!(is_valid_redirect("/path%20with%20spaces", "localhost"));
-        assert!(is_valid_redirect("/path?query=value%20encoded", "localhost"));
+        assert!(is_valid_redirect(
+            "/path?query=value%20encoded",
+            "localhost"
+        ));
     }
 
     #[test]
@@ -458,12 +461,18 @@ mod tests {
     #[test]
     fn test_is_valid_redirect_domain_with_subpath() {
         assert!(is_valid_redirect("http://localhost/api/v1", "localhost"));
-        assert!(is_valid_redirect("https://example.com/deep/nested/path", "example.com"));
+        assert!(is_valid_redirect(
+            "https://example.com/deep/nested/path",
+            "example.com"
+        ));
     }
 
     #[test]
     fn test_is_valid_redirect_data_url() {
-        assert!(!is_valid_redirect("data:text/html,<script>alert(1)</script>", "localhost"));
+        assert!(!is_valid_redirect(
+            "data:text/html,<script>alert(1)</script>",
+            "localhost"
+        ));
     }
 
     #[test]
@@ -481,9 +490,7 @@ mod tests {
 
     #[test]
     fn test_authorize_query_fields_none() {
-        let query = AuthorizeQuery {
-            redirect_to: None,
-        };
+        let query = AuthorizeQuery { redirect_to: None };
         assert!(query.redirect_to.is_none());
     }
 

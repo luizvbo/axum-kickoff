@@ -35,13 +35,6 @@ mod tests {
     // Consider adding integration tests in tests/ directory
 
     #[test]
-    fn test_placeholder() {
-        // Placeholder to indicate test module exists
-        // Real CLI testing requires integration tests with subprocess execution
-        assert!(true);
-    }
-
-    #[test]
     fn test_config_load_compiles() {
         // Verify that Config::load compiles
         // We can't actually run it without proper environment setup

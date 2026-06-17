@@ -100,13 +100,6 @@ mod tests {
     // Consider adding integration tests in tests/ directory
 
     #[test]
-    fn test_placeholder() {
-        // Placeholder to indicate test module exists
-        // Real server testing requires integration tests with HTTP requests
-        assert!(true);
-    }
-
-    #[test]
     fn test_server_config_from_environment_compiles() {
         // Verify that Server::from_environment compiles
         // This is a compile-time check

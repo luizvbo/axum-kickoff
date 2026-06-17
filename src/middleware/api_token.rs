@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn test_extract_api_token_auth_empty_extensions() {
         let request = Request::builder().body(Body::empty()).unwrap();
-        
+
         // Extensions should be empty initially
         let extracted = extract_api_token_auth(&request);
         assert!(extracted.is_none());

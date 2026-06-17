@@ -46,8 +46,6 @@ mod tests {
     fn test_reqwest_client_creation() {
         let client = reqwest::Client::new();
         let _reqwest_client = ReqwestClient(client);
-        // Just verify it creates successfully
-        assert!(true);
     }
 
     #[test]

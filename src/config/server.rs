@@ -380,7 +380,7 @@ mod tests {
         let origins = AllowedOrigins::parse("http://localhost:3000");
         let header = HeaderValue::from_static("http://localhost:3000");
         assert!(origins.contains(&header));
-        
+
         let header_upper = HeaderValue::from_static("HTTP://LOCALHOST:3000");
         assert!(!origins.contains(&header_upper));
     }
@@ -401,16 +401,19 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_multiple_pairs() {
-        std::env::set_var("BLOCKED_TRAFFIC", "User-Agent=BLOCKED_AGENTS,Referer=BLOCKED_REFERERS");
+        std::env::set_var(
+            "BLOCKED_TRAFFIC",
+            "User-Agent=BLOCKED_AGENTS,Referer=BLOCKED_REFERRERS",
+        );
         std::env::set_var("BLOCKED_AGENTS", "bot1,bot2");
-        std::env::set_var("BLOCKED_REFERERS", "spam1,spam2");
+        std::env::set_var("BLOCKED_REFERRERS", "spam1,spam2");
         let result = parse_blocked_traffic();
         assert!(result.is_ok());
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 2);
         std::env::remove_var("BLOCKED_TRAFFIC");
         std::env::remove_var("BLOCKED_AGENTS");
-        std::env::remove_var("BLOCKED_REFERERS");
+        std::env::remove_var("BLOCKED_REFERRERS");
     }
 
     #[test]

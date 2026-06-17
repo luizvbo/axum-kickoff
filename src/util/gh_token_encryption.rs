@@ -89,8 +89,6 @@ mod tests {
     #[test]
     fn test_for_testing() {
         let _encryption = GitHubTokenEncryption::for_testing();
-        // Just verify it creates successfully
-        assert!(true);
     }
 
     #[test]
