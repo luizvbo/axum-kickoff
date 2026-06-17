@@ -8,7 +8,7 @@ use http::{Method, StatusCode};
 use tower_http::services::ServeDir;
 
 use crate::app::AppState;
-use crate::controllers::auth::{github_authorize, github_callback, logout};
+use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
 use crate::middleware::{get_or_create_csrf_token, protect, SessionExtension};
 use crate::Env;
@@ -20,7 +20,8 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/api/server-time", get(server_time))
         .route("/api/v1/auth/github/authorize", get(github_authorize))
         .route("/api/v1/auth/github/callback", get(github_callback))
-        .route("/api/v1/auth/logout", post(logout))
+        .route("/api/v1/auth/logout", post(logout_api))
+        .route("/logout", post(logout_html))
         .layer(axum::middleware::from_fn(protect))
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))

@@ -247,14 +247,15 @@ pub async fn github_callback(
     Ok(Redirect::to(&redirect_to))
 }
 
-/// Logout endpoint
+/// Logout endpoint (API)
 ///
-/// Clears the session and returns success.
+/// Clears the session and returns JSON success.
+/// For HTML logout, use the /logout route which redirects.
 ///
 /// # Example
 ///
 /// `POST /api/v1/auth/logout`
-pub async fn logout(
+pub async fn logout_api(
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Json<serde_json::Value>, BoxedAppError> {
     // Clear all session data
@@ -265,6 +266,27 @@ pub async fn logout(
     session.remove("redirect_to");
 
     Ok(Json(json!({"success": true})))
+}
+
+/// Logout endpoint (HTML)
+///
+/// Clears the session and redirects to home.
+/// This is for browser-based logout via forms.
+///
+/// # Example
+///
+/// `POST /logout`
+pub async fn logout_html(
+    Extension(session): Extension<SessionExtension>,
+) -> Result<Redirect, BoxedAppError> {
+    // Clear all session data
+    session.remove("user_id");
+    session.remove("user_login");
+    session.remove("github_oauth_state");
+    session.remove("github_pkce_verifier");
+    session.remove("redirect_to");
+
+    Ok(Redirect::to("/"))
 }
 
 /// Validates a redirect URL to prevent open redirect attacks

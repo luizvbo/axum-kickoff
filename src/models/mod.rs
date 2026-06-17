@@ -4,8 +4,10 @@
 //! annotated with #[derive(toasty::Model)] which generates query builders,
 //! CRUD operations, and relationship accessors at compile time.
 
+pub mod post;
 pub mod token;
 pub mod user;
 
+pub use post::Post;
 pub use token::{ApiToken, ResourceScope, ActionScope};
 pub use user::User;

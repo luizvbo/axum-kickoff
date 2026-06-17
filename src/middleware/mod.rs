@@ -14,6 +14,7 @@ use crate::app::AppState;
 use crate::Env;
 
 pub mod api_token;
+pub mod auth;
 pub mod block_traffic;
 pub mod csrf;
 pub mod error_handler;
@@ -25,6 +26,7 @@ pub mod security_headers;
 pub mod session;
 
 pub use api_token::{api_token_auth, extract_api_token_auth, ApiTokenAuth};
+pub use auth::{CurrentUserId, OptionalCurrentUserId, require_login};
 pub use block_traffic::middleware as block_traffic;
 pub use csrf::{ensure_token, get_or_create_csrf_token, protect, validate_csrf_token};
 pub use error_handler::middleware as error_handler;
