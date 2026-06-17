@@ -216,6 +216,10 @@ impl AllowedOrigins {
     pub fn contains(&self, value: &HeaderValue) -> bool {
         self.0.iter().any(|it| it == value)
     }
+
+    pub fn origins(&self) -> &[String] {
+        &self.0
+    }
 }
 
 impl FromStr for AllowedOrigins {

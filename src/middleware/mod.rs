@@ -5,6 +5,7 @@ use http::StatusCode;
 use std::time::Duration;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 use tracing::Instrument;
@@ -37,8 +38,15 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let env = config.env();
     let session_key = state.0.session_key.clone();
 
+    // Build CORS layer from allowed origins
+    let cors = CorsLayer::new()
+        .allow_origin(config.allowed_origins.origins().iter().map(|s| s.parse().unwrap()).collect::<Vec<_>>())
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let router = router
         .layer(NormalizePathLayer::trim_trailing_slash())
+        .layer(cors)
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))
@@ -100,3 +108,4 @@ async fn debug_requests(
 
     next.run(req).await
 }
+

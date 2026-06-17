@@ -8,6 +8,7 @@ use tower_http::services::ServeDir;
 
 use crate::app::AppState;
 use crate::controllers::auth::{github_authorize, github_callback, logout};
+use crate::controllers::token::{create_token, list_tokens, revoke_token};
 use crate::Env;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
@@ -18,6 +19,9 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/api/v1/auth/github/authorize", get(github_authorize))
         .route("/api/v1/auth/github/callback", get(github_callback))
         .route("/api/v1/auth/logout", post(logout))
+        .route("/api/v1/tokens", post(create_token))
+        .route("/api/v1/tokens", get(list_tokens))
+        .route("/api/v1/tokens/{token_id}", post(revoke_token))
         .nest_service("/static", ServeDir::new("static"));
 
     // Add development-only routes

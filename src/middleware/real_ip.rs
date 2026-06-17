@@ -62,14 +62,21 @@ pub async fn middleware(
 
 /// Extract the real IP from X-Forwarded-For headers or fall back to socket address
 fn extract_real_ip(headers: &http::HeaderMap, socket_ip: IpAddr) -> IpAddr {
-    if let Some(xff) = headers.get("x-forwarded-for") {
-        if let Ok(xff_str) = xff.to_str() {
-            // X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
-            // The leftmost IP is the original client
-            if let Some(first_ip) = xff_str.split(',').next() {
-                if let Ok(ip) = first_ip.trim().parse::<std::net::IpAddr>() {
-                    debug!(target: "real_ip", "Using X-Forwarded-For header as real IP: {}", ip);
-                    return ip;
+    // Only trust X-Forwarded-For if the request comes from a trusted proxy
+    // For now, we only trust localhost (127.0.0.1 and ::1) as a trusted proxy
+    // In production, you should configure this based on your proxy infrastructure
+    let is_trusted_proxy = is_trusted_proxy(socket_ip);
+
+    if is_trusted_proxy {
+        if let Some(xff) = headers.get("x-forwarded-for") {
+            if let Ok(xff_str) = xff.to_str() {
+                // X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+                // The leftmost IP is the original client
+                if let Some(first_ip) = xff_str.split(',').next() {
+                    if let Ok(ip) = first_ip.trim().parse::<std::net::IpAddr>() {
+                        debug!(target: "real_ip", "Using X-Forwarded-For header as real IP: {} (from trusted proxy)", ip);
+                        return ip;
+                    }
                 }
             }
         }
@@ -77,6 +84,15 @@ fn extract_real_ip(headers: &http::HeaderMap, socket_ip: IpAddr) -> IpAddr {
 
     debug!(target: "real_ip", "Using socket address as real IP: {}", socket_ip);
     socket_ip
+}
+
+fn is_trusted_proxy(ip: IpAddr) -> bool {
+    // Trust localhost as a trusted proxy
+    // In production, configure this based on your proxy infrastructure
+    match ip {
+        IpAddr::V4(ipv4) => ipv4.is_loopback(),
+        IpAddr::V6(ipv6) => ipv6.is_loopback(),
+    }
 }
 
 #[cfg(test)]
@@ -92,7 +108,8 @@ mod tests {
             "203.0.113.1, 198.51.100.1".parse().unwrap(),
         );
 
-        let socket_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
+        // Use localhost as socket IP since it's a trusted proxy
+        let socket_ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
         let real_ip = extract_real_ip(&headers, socket_ip);
 
         assert_eq!(real_ip, "203.0.113.1".parse::<std::net::IpAddr>().unwrap());
@@ -104,6 +121,22 @@ mod tests {
         let socket_ip = "10.0.0.1".parse().unwrap();
         let real_ip = extract_real_ip(&headers, socket_ip);
 
+        assert_eq!(real_ip, socket_ip);
+    }
+
+    #[test]
+    fn test_extract_real_ip_ignores_xff_from_untrusted_proxy() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.1".parse().unwrap(),
+        );
+
+        // Use a non-localhost IP as socket IP (untrusted proxy)
+        let socket_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
+        let real_ip = extract_real_ip(&headers, socket_ip);
+
+        // Should ignore X-Forwarded-For and use socket IP
         assert_eq!(real_ip, socket_ip);
     }
 

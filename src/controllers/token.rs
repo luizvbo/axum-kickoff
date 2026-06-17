@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::AppState;
 use crate::middleware::SessionExtension;
 use crate::models::ApiToken;
-use crate::util::errors::{server_error, unauthorized, AppResult};
+use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
 use crate::util::PlainToken;
 
 /// Request body for creating a new API token
@@ -96,10 +96,14 @@ pub async fn create_token(
         .as_ref()
         .map(|s| serde_json::to_string(s).unwrap());
 
-    let expired_at = req.expired_at.as_ref().map(|s| {
-        jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s)
-            .unwrap_or_else(|_| jiff::Timestamp::now())
-    });
+    let expired_at = if let Some(s) = req.expired_at.as_ref() {
+        Some(
+            jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s)
+                .map_err(|_| bad_request("Invalid expired_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ"))?,
+        )
+    } else {
+        None
+    };
 
     let mut db = state.0.database.db_clone();
 
