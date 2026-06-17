@@ -164,3 +164,175 @@ pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next
 
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_decode_empty() {
+        let data = HashMap::new();
+        let encoded = encode(&data);
+        let decoded = decode(Cookie::new(COOKIE_NAME.to_string(), encoded));
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_encode_decode_single_pair() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "value1".to_string());
+        let encoded = encode(&data);
+        let decoded = decode(Cookie::new(COOKIE_NAME.to_string(), encoded));
+        assert_eq!(decoded.get("key1"), Some(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_encode_decode_multiple_pairs() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "value1".to_string());
+        data.insert("key2".to_string(), "value2".to_string());
+        data.insert("key3".to_string(), "value3".to_string());
+        let encoded = encode(&data);
+        let decoded = decode(Cookie::new(COOKIE_NAME.to_string(), encoded));
+        assert_eq!(decoded.get("key1"), Some(&"value1".to_string()));
+        assert_eq!(decoded.get("key2"), Some(&"value2".to_string()));
+        assert_eq!(decoded.get("key3"), Some(&"value3".to_string()));
+    }
+
+    #[test]
+    fn test_encode_decode_special_characters() {
+        let mut data = HashMap::new();
+        data.insert("key".to_string(), "value with spaces".to_string());
+        data.insert("key2".to_string(), "special:chars=123".to_string());
+        let encoded = encode(&data);
+        let decoded = decode(Cookie::new(COOKIE_NAME.to_string(), encoded));
+        assert_eq!(decoded.get("key"), Some(&"value with spaces".to_string()));
+        assert_eq!(decoded.get("key2"), Some(&"special:chars=123".to_string()));
+    }
+
+    #[test]
+    fn test_encode_decode_unicode() {
+        let mut data = HashMap::new();
+        data.insert("key".to_string(), "value with emoji 🎉".to_string());
+        data.insert("key2".to_string(), "中文".to_string());
+        let encoded = encode(&data);
+        let decoded = decode(Cookie::new(COOKIE_NAME.to_string(), encoded));
+        assert_eq!(decoded.get("key"), Some(&"value with emoji 🎉".to_string()));
+        assert_eq!(decoded.get("key2"), Some(&"中文".to_string()));
+    }
+
+    #[test]
+    fn test_session_extension_get() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "value1".to_string());
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        assert_eq!(extension.get("key1"), Some("value1".to_string()));
+        assert_eq!(extension.get("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_session_extension_insert() {
+        let data = HashMap::new();
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        assert_eq!(extension.insert("key1".to_string(), "value1".to_string()), None);
+        assert_eq!(extension.get("key1"), Some("value1".to_string()));
+        assert!(extension.is_dirty());
+    }
+
+    #[test]
+    fn test_session_extension_insert_overwrite() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "old_value".to_string());
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        assert_eq!(
+            extension.insert("key1".to_string(), "new_value".to_string()),
+            Some("old_value".to_string())
+        );
+        assert_eq!(extension.get("key1"), Some("new_value".to_string()));
+    }
+
+    #[test]
+    fn test_session_extension_remove() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "value1".to_string());
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        assert_eq!(extension.remove("key1"), Some("value1".to_string()));
+        assert_eq!(extension.get("key1"), None);
+        assert!(extension.is_dirty());
+    }
+
+    #[test]
+    fn test_session_extension_remove_nonexistent() {
+        let data = HashMap::new();
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        assert_eq!(extension.remove("nonexistent"), None);
+        assert!(extension.is_dirty());
+    }
+
+    #[test]
+    fn test_session_extension_is_dirty_initial() {
+        let data = HashMap::new();
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        assert!(!extension.is_dirty());
+    }
+
+    #[test]
+    fn test_session_extension_is_dirty_after_insert() {
+        let data = HashMap::new();
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        extension.insert("key".to_string(), "value".to_string());
+        assert!(extension.is_dirty());
+    }
+
+    #[test]
+    fn test_session_extension_encode() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "value1".to_string());
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        let encoded = extension.encode();
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn test_session_new() {
+        let mut data = HashMap::new();
+        data.insert("key".to_string(), "value".to_string());
+        let session = Session::new(data);
+        assert_eq!(session.data.get("key"), Some(&"value".to_string()));
+        assert!(!session.dirty);
+    }
+
+    #[test]
+    fn test_encode_roundtrip() {
+        let mut data = HashMap::new();
+        data.insert("user_id".to_string(), "123".to_string());
+        data.insert("username".to_string(), "testuser".to_string());
+        let encoded = encode(&data);
+        let decoded = decode(Cookie::new(COOKIE_NAME.to_string(), encoded));
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded.get("user_id"), Some(&"123".to_string()));
+        assert_eq!(decoded.get("username"), Some(&"testuser".to_string()));
+    }
+
+    #[test]
+    fn test_decode_invalid_base64() {
+        let cookie = Cookie::new(COOKIE_NAME.to_string(), "invalid_base64!!!");
+        let decoded = decode(cookie);
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_decode_empty_value() {
+        let cookie = Cookie::new(COOKIE_NAME.to_string(), "");
+        let decoded = decode(cookie);
+        assert!(decoded.is_empty());
+    }
+}

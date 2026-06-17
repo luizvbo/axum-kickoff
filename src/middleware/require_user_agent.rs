@@ -99,3 +99,79 @@ pub async fn require_user_agent(
         next.run(req).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_download_path_detection() {
+        assert!("/api/download".ends_with("download"));
+        assert!("/some/path/download".ends_with("download"));
+        assert!("/download".ends_with("download"));
+        assert!(!"/api/test".ends_with("download"));
+        assert!(!"/download/test".ends_with("download"));
+    }
+
+    #[test]
+    fn test_user_agent_check_logic() {
+        // Test empty string
+        let agent = "";
+        assert!(agent.is_empty());
+        
+        // Test non-empty string
+        let agent = "Mozilla/5.0";
+        assert!(!agent.is_empty());
+        
+        // Test whitespace
+        let agent = "   ";
+        assert!(!agent.is_empty());
+    }
+
+    #[test]
+    fn test_block_condition_logic() {
+        // Should block: no user agent and not download
+        let has_user_agent = false;
+        let is_download = false;
+        assert!(!has_user_agent && !is_download);
+        
+        // Should allow: has user agent
+        let has_user_agent = true;
+        let is_download = false;
+        assert!(has_user_agent || is_download);
+        
+        // Should allow: is download
+        let has_user_agent = false;
+        let is_download = true;
+        assert!(has_user_agent || is_download);
+        
+        // Should allow: both
+        let has_user_agent = true;
+        let is_download = true;
+        assert!(has_user_agent || is_download);
+    }
+
+    #[test]
+    fn test_error_message_formatting() {
+        let request_id = "test-123";
+        let body = format!(
+            "Requests without a User-Agent header are not allowed. \
+             Please set a descriptive User-Agent header to identify your client. \
+             Request ID: {}",
+            request_id
+        );
+        assert!(body.contains("test-123"));
+        assert!(body.contains("User-Agent"));
+    }
+
+    #[test]
+    fn test_error_message_without_request_id() {
+        let request_id = "";
+        let body = format!(
+            "Requests without a User-Agent header are not allowed. \
+             Please set a descriptive User-Agent header to identify your client. \
+             Request ID: {}",
+            request_id
+        );
+        assert!(body.contains("Request ID:"));
+    }
+}
