@@ -5,7 +5,8 @@
 use axum::extract::{Extension, Query, State};
 use axum::response::{Json, Redirect};
 use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
+    PkceCodeVerifier, Scope, TokenResponse, TokenUrl,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -46,6 +47,7 @@ struct GitHubUser {
 /// GitHub OAuth authorize endpoint
 ///
 /// Redirects the user to GitHub's OAuth authorization page.
+/// Uses PKCE (Proof Key for Code Exchange) for enhanced security.
 /// The state parameter is stored in the session for CSRF protection.
 ///
 /// # Example
@@ -69,17 +71,27 @@ pub async fn github_authorize(
         .set_auth_uri(auth_url)
         .set_token_uri(token_url);
 
+    // Generate PKCE code verifier and challenge
+    let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
+
     // Generate CSRF state token
     let (auth_url, csrf_token) = client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("read:user".to_string()))
         .add_scope(Scope::new("user:email".to_string()))
+        .set_pkce_challenge(pkce_code_challenge)
         .url();
 
     // Store CSRF token in session for verification on callback
     session.insert(
         "github_oauth_state".to_string(),
         csrf_token.secret().clone(),
+    );
+
+    // Store PKCE code verifier in session for token exchange
+    session.insert(
+        "github_pkce_verifier".to_string(),
+        pkce_code_verifier.secret().clone(),
     );
 
     // Store redirect URL in session (validate to prevent open redirect)
@@ -98,6 +110,7 @@ pub async fn github_authorize(
 /// GitHub OAuth callback endpoint
 ///
 /// Handles the callback from GitHub after user authorization.
+/// Uses PKCE (Proof Key for Code Exchange) for enhanced security.
 /// Exchanges the authorization code for an access token and fetches user profile.
 ///
 /// # Example
@@ -119,6 +132,12 @@ pub async fn github_callback(
         return Err(bad_request("Invalid OAuth state - possible CSRF attack"));
     }
 
+    // Retrieve PKCE code verifier from session
+    let pkce_verifier_secret = session
+        .remove("github_pkce_verifier")
+        .ok_or_else(|| bad_request("Missing PKCE verifier in session"))?;
+    let pkce_verifier = PkceCodeVerifier::new(pkce_verifier_secret);
+
     // Create OAuth2 client
     let auth_url = AuthUrl::new("https://github.com/login/oauth/authorize".to_string())
         .expect("Invalid authorization URL");
@@ -130,9 +149,10 @@ pub async fn github_callback(
         .set_auth_uri(auth_url)
         .set_token_uri(token_url);
 
-    // Exchange code for access token
+    // Exchange code for access token with PKCE verifier
     let token = client
         .exchange_code(oauth2::AuthorizationCode::new(query.code.clone()))
+        .set_pkce_verifier(pkce_verifier)
         .request_async(&ReqwestClient(reqwest::Client::new()))
         .await
         .map_err(|e| bad_request(format!("Failed to exchange authorization code: {}", e)))?;
@@ -241,6 +261,7 @@ pub async fn logout(
     session.remove("user_id");
     session.remove("user_login");
     session.remove("github_oauth_state");
+    session.remove("github_pkce_verifier");
     session.remove("redirect_to");
 
     Ok(Json(json!({"success": true})))
@@ -249,24 +270,35 @@ pub async fn logout(
 /// Validates a redirect URL to prevent open redirect attacks
 ///
 /// Only allows:
-/// - Relative URLs (starting with /)
-/// - URLs that start with the configured domain name
+/// - Relative URLs (starting with / but not //)
+/// - Absolute URLs with http/https scheme and exact host match
 fn is_valid_redirect(url: &str, domain_name: &str) -> bool {
     // Reject protocol-relative URLs (security risk) - must check before relative URLs
     if url.starts_with("//") {
         return false;
     }
 
-    // Allow relative URLs
+    // Allow relative URLs (but not protocol-relative)
     if url.starts_with('/') {
         return true;
     }
 
-    // Allow URLs that start with the configured domain
-    let allowed_prefix = format!("http://{}", domain_name);
-    let allowed_prefix_https = format!("https://{}", domain_name);
+    // Parse as absolute URL and validate
+    match url::Url::parse(url) {
+        Ok(parsed) => {
+            // Only allow http and https schemes
+            if parsed.scheme() != "http" && parsed.scheme() != "https" {
+                return false;
+            }
 
-    url.starts_with(&allowed_prefix) || url.starts_with(&allowed_prefix_https)
+            // Host must exactly match the configured domain
+            match parsed.host_str() {
+                Some(host) => host == domain_name,
+                None => false,
+            }
+        }
+        Err(_) => false, // Invalid URL
+    }
 }
 
 #[cfg(test)]
@@ -311,24 +343,33 @@ mod tests {
     fn test_is_valid_redirect_malicious_redirect() {
         // Protocol-relative URLs are not allowed (they would inherit the protocol)
         assert!(!is_valid_redirect("//evil.com", "localhost"));
+        // Exact host match prevents subdomain attacks like example.com.evil.com
+        assert!(!is_valid_redirect(
+            "https://example.com.evil.com/path",
+            "example.com"
+        ));
+        assert!(!is_valid_redirect("http://localhost.evil.com", "localhost"));
     }
 
     #[test]
     fn test_is_valid_redirect_subdomain() {
-        // Subdomains should not be allowed unless explicitly configured
+        // Subdomains should not be allowed - exact host match required
         assert!(!is_valid_redirect("http://sub.localhost.com", "localhost"));
         assert!(!is_valid_redirect("https://api.example.com", "example.com"));
+        assert!(!is_valid_redirect("https://sub.example.com", "example.com"));
     }
 
     #[test]
     fn test_is_valid_redirect_with_port() {
-        // URLs with ports on the same domain are allowed
+        // URLs with ports are allowed since the host part matches exactly
+        // (port is separate from host in URL parsing)
         assert!(is_valid_redirect("http://localhost:8080", "localhost"));
         assert!(is_valid_redirect("https://example.com:443", "example.com"));
     }
 
     #[test]
     fn test_is_valid_redirect_with_path() {
+        // Exact host match required, paths are allowed
         assert!(is_valid_redirect(
             "http://localhost/path/to/page",
             "localhost"
@@ -341,6 +382,7 @@ mod tests {
 
     #[test]
     fn test_is_valid_redirect_with_query() {
+        // Exact host match required, query strings are allowed
         assert!(is_valid_redirect(
             "http://localhost/?param=value",
             "localhost"
@@ -353,6 +395,7 @@ mod tests {
 
     #[test]
     fn test_is_valid_redirect_with_fragment() {
+        // Exact host match required, fragments are allowed
         assert!(is_valid_redirect("http://localhost/#section", "localhost"));
         assert!(is_valid_redirect(
             "https://example.com/page#anchor",
@@ -453,13 +496,15 @@ mod tests {
 
     #[test]
     fn test_is_valid_redirect_case_sensitive() {
+        // Hostnames are case-insensitive per RFC, so these should match
         assert!(is_valid_redirect("http://localhost", "localhost"));
-        assert!(!is_valid_redirect("http://Localhost", "localhost"));
-        assert!(!is_valid_redirect("http://LOCALHOST", "localhost"));
+        assert!(is_valid_redirect("http://Localhost", "localhost"));
+        assert!(is_valid_redirect("http://LOCALHOST", "localhost"));
     }
 
     #[test]
     fn test_is_valid_redirect_domain_with_subpath() {
+        // Exact host match required, deep paths are allowed
         assert!(is_valid_redirect("http://localhost/api/v1", "localhost"));
         assert!(is_valid_redirect(
             "https://example.com/deep/nested/path",
