@@ -127,10 +127,7 @@ mod tests {
     #[test]
     fn test_extract_real_ip_ignores_xff_from_untrusted_proxy() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-forwarded-for",
-            "203.0.113.1".parse().unwrap(),
-        );
+        headers.insert("x-forwarded-for", "203.0.113.1".parse().unwrap());
 
         // Use a non-localhost IP as socket IP (untrusted proxy)
         let socket_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();

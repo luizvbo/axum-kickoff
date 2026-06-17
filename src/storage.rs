@@ -90,7 +90,10 @@ fn safe_storage_path(base: &Path, input: &str) -> anyhow::Result<PathBuf> {
     }
 
     // Reject paths with parent directory components (..)
-    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         anyhow::bail!("Invalid storage path: parent directory references not allowed");
     }
 

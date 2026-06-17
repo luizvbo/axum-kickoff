@@ -53,12 +53,16 @@ pub async fn api_token_auth(
     let mut db = state.0.database.db_clone();
 
     // Query api_tokens table by hashed token
-    let mut api_token = ApiToken::filter(ApiToken::fields().token().eq(hashed_token.as_bytes().to_vec()))
-        .first()
-        .exec(&mut db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let mut api_token = ApiToken::filter(
+        ApiToken::fields()
+            .token()
+            .eq(hashed_token.as_bytes().to_vec()),
+    )
+    .first()
+    .exec(&mut db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Check if token is revoked
     if api_token.revoked {

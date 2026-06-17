@@ -260,6 +260,6 @@ fn is_valid_redirect(url: &str, domain_name: &str) -> bool {
     // Allow URLs that start with the configured domain
     let allowed_prefix = format!("http://{}", domain_name);
     let allowed_prefix_https = format!("https://{}", domain_name);
-    
+
     url.starts_with(&allowed_prefix) || url.starts_with(&allowed_prefix_https)
 }

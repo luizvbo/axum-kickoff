@@ -122,8 +122,12 @@ impl Server {
             tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
             anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
         })?;
-        let gh_redirect_uri = dotenvy::var("GH_REDIRECT_URI")
-            .unwrap_or_else(|_| format!("http://{}:{}/api/v1/auth/github/callback", domain_name, port));
+        let gh_redirect_uri = dotenvy::var("GH_REDIRECT_URI").unwrap_or_else(|_| {
+            format!(
+                "http://{}:{}/api/v1/auth/github/callback",
+                domain_name, port
+            )
+        });
 
         // Load storage configuration
         let storage_config = StorageConfig::from_environment();

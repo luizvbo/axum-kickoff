@@ -101,11 +101,7 @@ pub fn encode(h: &HashMap<String, String>) -> String {
 /// Extracts the session cookie from the request, decodes it, and provides
 /// a SessionExtension to handlers. After the handler runs, if the session
 /// was modified, it encodes it back to a signed cookie.
-pub async fn middleware(
-    State(session_key): State<Key>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next) -> Response {
     // Extract session cookie from request
     let session_data = req
         .headers()

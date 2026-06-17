@@ -98,8 +98,9 @@ pub async fn create_token(
 
     let expired_at = if let Some(s) = req.expired_at.as_ref() {
         Some(
-            jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s)
-                .map_err(|_| bad_request("Invalid expired_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ"))?,
+            jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s).map_err(|_| {
+                bad_request("Invalid expired_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ")
+            })?,
         )
     } else {
         None
@@ -162,9 +163,12 @@ pub async fn list_tokens(
     let token_list: Vec<TokenListItem> = tokens
         .into_iter()
         .map(|token| {
-            let crate_scopes = token
-                .parse_crate_scopes()
-                .map(|scopes| scopes.into_iter().map(|s| s.pattern().to_string()).collect());
+            let crate_scopes = token.parse_crate_scopes().map(|scopes| {
+                scopes
+                    .into_iter()
+                    .map(|s| s.pattern().to_string())
+                    .collect()
+            });
             let endpoint_scopes = token
                 .parse_endpoint_scopes()
                 .map(|scopes| scopes.into_iter().map(|s| s.as_str().to_string()).collect());
@@ -220,4 +224,3 @@ pub async fn revoke_token(
 
     Ok(StatusCode::NO_CONTENT)
 }
-

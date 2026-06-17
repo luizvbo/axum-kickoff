@@ -40,7 +40,14 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
 
     // Build CORS layer from allowed origins
     let cors = CorsLayer::new()
-        .allow_origin(config.allowed_origins.origins().iter().map(|s| s.parse().unwrap()).collect::<Vec<_>>())
+        .allow_origin(
+            config
+                .allowed_origins
+                .origins()
+                .iter()
+                .map(|s| s.parse().unwrap())
+                .collect::<Vec<_>>(),
+        )
         .allow_methods(Any)
         .allow_headers(Any);
 
@@ -108,4 +115,3 @@ async fn debug_requests(
 
     next.run(req).await
 }
-
