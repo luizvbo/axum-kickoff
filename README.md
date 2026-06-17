@@ -6,12 +6,12 @@ A production-ready Rust web application starter template built on [Axum](https:/
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
 - **Database**: Toasty ORM with SQLite (zero-setup) with PostgreSQL migration path
-- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens (planned)
+- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens
 - **Frontend**: Server-side rendering with Askama, HTMX, and Alpine.js
 - **Security**: Comprehensive middleware (security headers, rate limiting, etc.)
-- **Observability**: Structured logging with tracing, Prometheus metrics (feature-gated, planned)
+- **Observability**: Structured logging with tracing
 - **Testing**: Integration test infrastructure with snapshot testing
-- **Storage**: Pluggable storage backends (local filesystem implemented, S3 planned)
+- **Storage**: Local filesystem storage (pluggable architecture for future backends)
 - **Cost-Conscious**: Designed for self-hosting with minimal external dependencies
 
 ## Quick Start
@@ -32,7 +32,7 @@ cd axum-kickoff
 cp .env.sample .env
 
 # Edit .env with your configuration
-# Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY
+# Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY, WEB_ALLOWED_ORIGINS
 
 # Run the server
 cargo run --bin server
@@ -46,7 +46,6 @@ Set the following environment variables in `.env`:
 
 ```bash
 # Server
-SERVER_IP=127.0.0.1
 PORT=8888
 DOMAIN_NAME=localhost
 
@@ -59,6 +58,10 @@ SESSION_KEY=your-secret-key-min-32-bytes
 # GitHub OAuth
 GH_CLIENT_ID=your-github-client-id
 GH_CLIENT_SECRET=your-github-client-secret
+GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
+
+# CORS
+WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
 
 # Storage
 STORAGE_PATH=./local_uploads
@@ -69,17 +72,17 @@ See [Configuration Documentation](docs/CONFIGURATION.md) for all available optio
 ## Documentation
 
 - **[Getting Started Guide](docs/GETTING_STARTED.md)** - Detailed setup and first steps
+- **[How-to Guides](docs/HOW_TO_GUIDES.md)** - Common tasks and patterns
 - **[Architecture](docs/ARCHITECTURE.md)** - System architecture and design decisions
 - **[Authentication](docs/AUTHENTICATION.md)** - Authentication system overview
 - **[Configuration](docs/CONFIGURATION.md)** - Complete configuration reference
 - **[Deployment](docs/DEPLOYMENT.md)** - Deployment guide for production
+- **[Production Checklist](docs/PRODUCTION_CHECKLIST.md)** - Production deployment checklist
 - **[Development](docs/DEVELOPMENT.md)** - Development workflow and contributing
 - **[Testing](docs/TESTING.md)** - Testing guide and conventions
 - **[Storage](docs/STORAGE.md)** - Storage abstraction guide
 - **[Middleware](docs/MIDDLEWARE.md)** - Middleware documentation
-- **[Rate Limiting](docs/RATE_LIMITING.md)** - Rate limiting configuration and Redis upgrade
 - **[API Token Scopes](docs/api-token-scopes.md)** - API token permission system
-- **[QuickWit Integration](docs/quickwit-integration.md)** - Log analytics with QuickWit
 - **[Roadmap](docs/ROADMAP.md)** - Future development plans
 
 ## Project Structure
@@ -132,16 +135,31 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 
 ### Middleware Stack
 
-- **Security Headers**: CSP, HSTS, X-Frame-Options, etc. (implemented)
-- **CORS**: Configurable cross-origin resource sharing (planned)
-- **Rate Limiting**: Request throttling (infrastructure exists, not wired globally)
-- **Request Logging**: Structured logging with tracing (implemented)
-- **Error Handling**: Centralized error handling (implemented)
-- **Session Management**: Cookie-based session middleware (implemented)
-- **API Token Auth**: Bearer token authentication (infrastructure exists, not wired globally)
-- **Real IP Extraction**: Trust proxy configuration (implemented)
-- **User Agent Validation**: Block requests without User-Agent (implemented)
-- **Traffic Blocking**: Advanced traffic filtering (infrastructure exists, not wired globally)
+| Component | Status |
+|---|---|
+| GitHub OAuth | Implemented |
+| Session Management | Implemented |
+| Security Headers | Implemented |
+| Request Logging | Implemented |
+| Error Handling | Implemented |
+| Real IP Extraction | Implemented |
+| User Agent Validation | Implemented |
+| API Token Creation/List/Revoke | Implemented |
+| API Token Auth Middleware | Partial / not wired globally |
+| Rate Limiting | Core implemented / not applied globally |
+| Traffic Blocking | Infrastructure exists / not wired globally |
+| CSRF Protection | Not implemented |
+| CORS | Planned |
+| Metrics Endpoint | Feature-gated / partial |
+| S3 Storage | Planned |
+| Redis Rate Limiting | Planned |
+| Database-backed Rate Limiting | Planned |
+| QuickWit Integration | Planned |
+| OpenAPI | Planned |
+| Background Worker | Planned |
+| Email System | Planned |
+| Webhooks | Planned |
+| Read Replicas | Planned |
 
 See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 
@@ -216,7 +234,7 @@ axum-kickoff is designed with these principles:
 
 This project adapts crates.io's production-grade patterns while simplifying for general web applications:
 
-- **Single crate** vs 25+ crate workspace
+- **Single-crate application** vs 25+ crate workspace
 - **Toasty/SQLite** vs Diesel/PostgreSQL (with migration path)
 - **HTMX/Alpine.js** vs SvelteKit SPA
 - **In-memory rate limiting** vs database-backed (with upgrade path)

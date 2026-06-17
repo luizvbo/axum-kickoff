@@ -61,6 +61,7 @@ name = "cargo clippy"
 entry = "cargo clippy --all-targets --all-features --manifest-path Cargo.toml"
 language = "system"
 pass_filenames = false
+env = { RUSTFLAGS = "-D warnings", RUSTDOCFLAGS = "-D warnings" }
 
 # Rust documentation check
 [[repos]]

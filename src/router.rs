@@ -1,4 +1,5 @@
 use askama::Template;
+use axum::extract::Extension;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -7,8 +8,9 @@ use http::{Method, StatusCode};
 use tower_http::services::ServeDir;
 
 use crate::app::AppState;
-use crate::controllers::auth::{github_authorize, github_callback, logout};
+use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
+use crate::middleware::{get_or_create_csrf_token, protect, SessionExtension};
 use crate::Env;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
@@ -18,10 +20,13 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/api/server-time", get(server_time))
         .route("/api/v1/auth/github/authorize", get(github_authorize))
         .route("/api/v1/auth/github/callback", get(github_callback))
-        .route("/api/v1/auth/logout", post(logout))
+        .route("/api/v1/auth/logout", post(logout_api))
+        .route("/logout", post(logout_html))
+        .layer(axum::middleware::from_fn(protect))
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))
         .route("/api/v1/tokens/{token_id}", post(revoke_token))
+        .layer(axum::middleware::from_fn(protect))
         .nest_service("/static", ServeDir::new("static"));
 
     // Add development-only routes
@@ -40,8 +45,9 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .with_state(state)
 }
 
-async fn home() -> impl IntoResponse {
-    let template = IndexTemplate {};
+async fn home(Extension(session): Extension<SessionExtension>) -> impl IntoResponse {
+    let csrf_token = get_or_create_csrf_token(&session);
+    let template = IndexTemplate { csrf_token };
     HtmlTemplate(template)
 }
 
@@ -61,7 +67,10 @@ async fn server_time() -> impl IntoResponse {
 
 #[derive(Template)]
 #[template(path = "index.html")]
-struct IndexTemplate {}
+struct IndexTemplate {
+    #[allow(dead_code)]
+    csrf_token: String,
+}
 
 #[derive(Template)]
 #[template(path = "server_time.html")]
@@ -93,7 +102,9 @@ mod tests {
 
     #[test]
     fn test_index_template_fields() {
-        let template = IndexTemplate {};
+        let template = IndexTemplate {
+            csrf_token: "test_token".to_string(),
+        };
         // Just verify the struct can be created
         let _ = template;
     }
@@ -108,7 +119,9 @@ mod tests {
 
     #[test]
     fn test_html_template_creation() {
-        let template = IndexTemplate {};
+        let template = IndexTemplate {
+            csrf_token: "test_token".to_string(),
+        };
         let html_template = HtmlTemplate(template);
         let _ = html_template;
     }
@@ -156,8 +169,12 @@ mod tests {
 
     #[test]
     fn test_index_template_multiple() {
-        let template1 = IndexTemplate {};
-        let template2 = IndexTemplate {};
+        let template1 = IndexTemplate {
+            csrf_token: "test_token".to_string(),
+        };
+        let template2 = IndexTemplate {
+            csrf_token: "test_token".to_string(),
+        };
         let _ = (template1, template2);
     }
 

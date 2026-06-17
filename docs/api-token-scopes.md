@@ -6,12 +6,12 @@ This document explains the generic API token scope system used in axum-kickoff.
 
 API tokens support fine-grained permissions through two types of scopes:
 
-1. **Endpoint Scopes** - Control what actions a token can perform
+1. **Action Scopes** - Control what actions a token can perform
 2. **Resource Scopes** - Control which resources a token can access
 
-## Endpoint Scopes
+## Action Scopes
 
-Endpoint scopes define what actions a token can perform:
+Action scopes define what actions a token can perform:
 
 | Scope | Description | Example Actions |
 |-------|-------------|----------------|
@@ -25,19 +25,19 @@ Endpoint scopes define what actions a token can perform:
 
 ```rust
 use crate::util::auth::AuthCheck;
-use crate::models::token::EndpointScope;
+use crate::models::token::ActionScope;
 
 // Require read scope for listing posts
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Read);
+    .with_action_scope(ActionScope::Read);
 
 // Require create scope for creating posts
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Create);
+    .with_action_scope(ActionScope::Create);
 
 // Admin scope grants all permissions
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Admin);
+    .with_action_scope(ActionScope::Admin);
 ```
 
 ## Resource Scopes
@@ -75,12 +75,12 @@ You can combine endpoint and resource scopes for fine-grained control:
 ```rust
 // Token can read posts but not modify them
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Read)
+    .with_action_scope(ActionScope::Read)
     .for_crate("posts");
 
 // Token can create and update posts but not delete them
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Create)
+    .with_action_scope(ActionScope::Create)
     .for_crate("posts*");
 ```
 
@@ -89,9 +89,9 @@ let check = AuthCheck::default()
 When creating an API token, you can specify scopes:
 
 ```rust
-use crate::models::token::{ApiToken, EndpointScope, CrateScope};
+use crate::models::token::{ApiToken, ActionScope, ResourceScope};
 
-let endpoint_scopes = vec![EndpointScope::Read, EndpointScope::Create];
+let action_scopes = vec![ActionScope::Read, ActionScope::Create];
 let resource_scopes = vec!["posts".to_string(), "users".to_string()];
 
 let token = ApiToken::new(
@@ -99,7 +99,7 @@ let token = ApiToken::new(
     "My Token".to_string(),
     hashed_token,
     Some(resource_scopes),
-    Some(endpoint_scopes),
+    Some(action_scopes),
     None, // no expiration
 );
 ```
@@ -120,25 +120,25 @@ Tokens without scopes (legacy tokens) are granted full access for backward compa
 
 ### Read-Only API Token
 ```rust
-let endpoint_scopes = vec![EndpointScope::Read];
+let action_scopes = vec![ActionScope::Read];
 let resource_scopes = vec!["*".to_string()]; // All resources
 ```
 
 ### Content Management Token
 ```rust
-let endpoint_scopes = vec![EndpointScope::Create, EndpointScope::Update];
+let action_scopes = vec![ActionScope::Create, ActionScope::Update];
 let resource_scopes = vec!["posts*".to_string(), "pages*".to_string()];
 ```
 
 ### Admin Token
 ```rust
-let endpoint_scopes = vec![EndpointScope::Admin];
+let action_scopes = vec![ActionScope::Admin];
 let resource_scopes = None; // Admin doesn't need resource restrictions
 ```
 
 ### Third-Party Integration Token
 ```rust
-let endpoint_scopes = vec![EndpointScope::Read];
+let action_scopes = vec![ActionScope::Read];
 let resource_scopes = vec!["api*".to_string()]; // Only API endpoints
 ```
 

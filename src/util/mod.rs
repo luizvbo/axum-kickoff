@@ -4,6 +4,7 @@ pub mod auth;
 pub mod errors;
 pub mod gh_token_encryption;
 pub mod oauth;
+pub mod response;
 pub mod token;
 
 pub use auth::{AuthCheck, AuthHeader, Authentication};
@@ -16,4 +17,5 @@ pub use errors::{
 };
 pub use gh_token_encryption::GitHubTokenEncryption;
 pub use oauth::ReqwestClient;
+pub use response::{error_response, response, ApiResponse, ErrorResponse};
 pub use token::{HashedToken, InvalidTokenError, PlainToken};

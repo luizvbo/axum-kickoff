@@ -131,7 +131,7 @@ Set to any value to indicate running in Docker.
 ### Client ID
 
 ```bash
-GITHUB_CLIENT_ID=your_github_client_id
+GH_CLIENT_ID=your_github_client_id
 ```
 
 Your GitHub OAuth application client ID.
@@ -139,7 +139,7 @@ Your GitHub OAuth application client ID.
 ### Client Secret
 
 ```bash
-GITHUB_CLIENT_SECRET=your_github_client_secret
+GH_CLIENT_SECRET=your_github_client_secret
 ```
 
 Your GitHub OAuth application client secret.
@@ -147,45 +147,36 @@ Your GitHub OAuth application client secret.
 ### Redirect URI
 
 ```bash
-GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
 ```
 
 The OAuth callback URL. Must match exactly what you configured in your GitHub OAuth app settings.
 
+**Default:** `http://{DOMAIN_NAME}:{PORT}/api/v1/auth/github/callback`
+
 ## Storage Configuration
 
-### Storage Backend
+### Storage Path
 
 ```bash
-STORAGE_BACKEND=local
+STORAGE_PATH=./local_uploads
 ```
 
-The storage backend to use.
+Directory path for local filesystem storage.
 
-**Options:**
-- `local`: Local filesystem
-- `s3`: AWS S3 or S3-compatible storage
-- `memory`: In-memory storage (for testing)
+**Default:** `./local_uploads`
 
-### Local Storage Path
+### CDN Prefix
 
 ```bash
-STORAGE_LOCAL_PATH=./uploads
+CDN_PREFIX=cdn.example.com
 ```
 
-Directory path for local filesystem storage. Used when `STORAGE_BACKEND=local`.
+Optional CDN prefix for generating public URLs. If set, file URLs will use this prefix instead of the local path.
 
-### S3 Configuration
+**Example:** With `CDN_PREFIX=cdn.example.com`, a file at `uploads/image.jpg` will be accessible as `https://cdn.example.com/uploads/image.jpg`.
 
-```bash
-STORAGE_S3_BUCKET=your-bucket-name
-STORAGE_S3_REGION=us-east-1
-STORAGE_S3_ACCESS_KEY=your-access-key
-STORAGE_S3_SECRET_KEY=your-secret-key
-STORAGE_S3_ENDPOINT=https://s3.amazonaws.com
-```
-
-S3 configuration for AWS S3 or S3-compatible services (MinIO, DigitalOcean Spaces, etc.).
+**Note:** S3 storage backend is planned but not yet implemented.
 
 ## Rate Limiting Configuration
 
@@ -426,19 +417,16 @@ DOMAIN_NAME=example.com
 SERVER_IP=0.0.0.0
 
 # GitHub OAuth
-GITHUB_CLIENT_ID=your_production_client_id
-GITHUB_CLIENT_SECRET=your_production_client_secret
-GITHUB_REDIRECT_URI=https://example.com/auth/github/callback
+GH_CLIENT_ID=your_production_client_id
+GH_CLIENT_SECRET=your_production_client_secret
+GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
 
 # CORS
 WEB_ALLOWED_ORIGINS=https://example.com
 
 # Storage
-STORAGE_BACKEND=s3
-STORAGE_S3_BUCKET=production-bucket
-STORAGE_S3_REGION=us-east-1
-STORAGE_S3_ACCESS_KEY=your_access_key
-STORAGE_S3_SECRET_KEY=your_secret_key
+STORAGE_PATH=/var/lib/axum-kickoff/uploads
+CDN_PREFIX=cdn.example.com
 
 # Security
 SECURITY_HSTS_ENABLED=true
@@ -471,21 +459,20 @@ DATABASE_URL=sqlite:./axum_kickoff.db
 SESSION_KEY=dev-session-key-for-local-development-only
 
 # Server
-PORT=3000
+PORT=8888
 DOMAIN_NAME=localhost
 SERVER_IP=127.0.0.1
 
 # GitHub OAuth (use dev app)
-GITHUB_CLIENT_ID=your_dev_client_id
-GITHUB_CLIENT_SECRET=your_dev_client_secret
-GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+GH_CLIENT_ID=your_dev_client_id
+GH_CLIENT_SECRET=your_dev_client_secret
+GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
 
 # CORS
-WEB_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
 
 # Storage
-STORAGE_BACKEND=local
-STORAGE_LOCAL_PATH=./uploads
+STORAGE_PATH=./local_uploads
 
 # Security (relaxed for development)
 SECURITY_HSTS_ENABLED=false

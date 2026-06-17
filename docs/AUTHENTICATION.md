@@ -132,7 +132,7 @@ API tokens have the following properties:
 
 - **Name**: Human-readable name for the token
 - **Token Hash**: SHA-256 hash of the token (stored in database)
-- **Endpoint Scopes**: Permissions for actions (read, create, update, delete, admin)
+- **Action Scopes**: Permissions for actions (read, create, update, delete, admin)
 - **Resource Scopes**: Permissions for specific resources
 - **Expiration**: Optional expiration date
 - **Last Used**: Timestamp of last use
@@ -147,7 +147,7 @@ curl -X POST http://localhost:3000/api/tokens \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Token",
-    "endpoint_scopes": ["read"],
+    "action_scopes": ["read"],
     "resource_scopes": ["posts"],
     "expires_at": "2024-12-31T23:59:59Z"
   }'
@@ -160,7 +160,7 @@ curl -X POST http://localhost:3000/api/tokens \
   "id": "token_id",
   "name": "My Token",
   "token": "axk_abc123...",  // Only shown on creation
-  "endpoint_scopes": ["read"],
+  "action_scopes": ["read"],
   "resource_scopes": ["posts"],
   "expires_at": "2024-12-31T23:59:59Z",
   "created_at": "2024-01-01T00:00:00Z"
@@ -182,7 +182,7 @@ curl http://localhost:3000/api/posts \
 
 See [API Token Scopes Documentation](api-token-scopes.md) for detailed information about the scope system.
 
-#### Endpoint Scopes
+#### Action Scopes
 
 - `read`: Can read resources
 - `create`: Can create new resources
@@ -253,16 +253,16 @@ The `AuthCheck` pattern in `src/util/auth.rs` provides a declarative way to spec
 
 ```rust
 use crate::util::auth::AuthCheck;
-use crate::models::token::EndpointScope;
+use crate::models::token::ActionScope;
 
 // Require read scope for listing posts
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Read)
+    .with_action_scope(ActionScope::Read)
     .for_crate("posts");
 
 // Admin scope grants all permissions
 let check = AuthCheck::default()
-    .with_endpoint_scope(EndpointScope::Admin);
+    .with_action_scope(ActionScope::Admin);
 ```
 
 ## User Model

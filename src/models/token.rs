@@ -33,11 +33,11 @@ pub struct ApiToken {
     /// Whether the token has been revoked
     pub revoked: bool,
 
-    /// Crate scope patterns (JSON serialized)
-    pub crate_scopes: Option<String>,
+    /// Resource scope patterns (JSON serialized)
+    pub resource_scopes: Option<String>,
 
-    /// Endpoint scopes (JSON serialized)
-    pub endpoint_scopes: Option<String>,
+    /// Action scopes (JSON serialized)
+    pub action_scopes: Option<String>,
 
     /// The date and time when the token will expire
     pub expired_at: Option<jiff::Timestamp>,
@@ -49,16 +49,17 @@ impl ApiToken {
         user_id: u64,
         name: String,
         hashed_token: HashedToken,
-        crate_scopes: Option<Vec<CrateScope>>,
-        endpoint_scopes: Option<Vec<EndpointScope>>,
+        resource_scopes: Option<Vec<ResourceScope>>,
+        action_scopes: Option<Vec<ActionScope>>,
         expired_at: Option<jiff::Timestamp>,
     ) -> Self {
         let now = jiff::Timestamp::now();
 
         // Serialize scopes to JSON for storage
-        let crate_scopes_json = crate_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
-        let endpoint_scopes_json =
-            endpoint_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let resource_scopes_json =
+            resource_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let action_scopes_json =
+            action_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
 
         Self {
             id: 0, // Will be auto-generated
@@ -68,8 +69,8 @@ impl ApiToken {
             created_at: now,
             last_used_at: None,
             revoked: false,
-            crate_scopes: crate_scopes_json,
-            endpoint_scopes: endpoint_scopes_json,
+            resource_scopes: resource_scopes_json,
+            action_scopes: action_scopes_json,
             expired_at,
         }
     }
@@ -89,31 +90,30 @@ impl ApiToken {
         true
     }
 
-    /// Parse crate scopes from JSON
-    pub fn parse_crate_scopes(&self) -> Option<Vec<CrateScope>> {
-        self.crate_scopes
+    /// Parse resource scopes from JSON
+    pub fn parse_resource_scopes(&self) -> Option<Vec<ResourceScope>> {
+        self.resource_scopes
             .as_ref()
             .and_then(|json| serde_json::from_str(json).ok())
     }
 
-    /// Parse endpoint scopes from JSON
-    pub fn parse_endpoint_scopes(&self) -> Option<Vec<EndpointScope>> {
-        self.endpoint_scopes
+    /// Parse action scopes from JSON
+    pub fn parse_action_scopes(&self) -> Option<Vec<ActionScope>> {
+        self.action_scopes
             .as_ref()
             .and_then(|json| serde_json::from_str(json).ok())
     }
 }
 
-/// Endpoint scopes for API tokens
+/// Action scopes for API tokens
 ///
-/// These scopes control which endpoints a token can access.
+/// These scopes control which actions a token can perform.
 /// This is a generic scope system suitable for any web application.
 ///
-/// For resource-specific scopes, use the format: `resource:action`
-/// Examples: `posts:read`, `users:write`, `settings:admin`
+/// Examples: `read`, `create`, `update`, `delete`, `admin`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum EndpointScope {
+pub enum ActionScope {
     /// Can read resources
     Read,
     /// Can create resources
@@ -126,27 +126,27 @@ pub enum EndpointScope {
     Admin,
 }
 
-impl EndpointScope {
+impl ActionScope {
     /// Convert to string representation
     pub fn as_str(&self) -> &'static str {
         match self {
-            EndpointScope::Read => "read",
-            EndpointScope::Create => "create",
-            EndpointScope::Update => "update",
-            EndpointScope::Delete => "delete",
-            EndpointScope::Admin => "admin",
+            ActionScope::Read => "read",
+            ActionScope::Create => "create",
+            ActionScope::Update => "update",
+            ActionScope::Delete => "delete",
+            ActionScope::Admin => "admin",
         }
     }
 
     /// Parse from string
     pub fn parse(s: &str) -> Result<Self, String> {
         match s {
-            "read" => Ok(EndpointScope::Read),
-            "create" => Ok(EndpointScope::Create),
-            "update" => Ok(EndpointScope::Update),
-            "delete" => Ok(EndpointScope::Delete),
-            "admin" => Ok(EndpointScope::Admin),
-            _ => Err(format!("Invalid endpoint scope: {}", s)),
+            "read" => Ok(ActionScope::Read),
+            "create" => Ok(ActionScope::Create),
+            "update" => Ok(ActionScope::Update),
+            "delete" => Ok(ActionScope::Delete),
+            "admin" => Ok(ActionScope::Admin),
+            _ => Err(format!("Invalid action scope: {}", s)),
         }
     }
 
@@ -157,11 +157,11 @@ impl EndpointScope {
     /// Create/Update/Delete scopes grant their respective permissions.
     pub fn can_perform(&self, action: &str) -> bool {
         match self {
-            EndpointScope::Admin => true,
-            EndpointScope::Read => action == "read",
-            EndpointScope::Create => action == "create",
-            EndpointScope::Update => action == "update",
-            EndpointScope::Delete => action == "delete",
+            ActionScope::Admin => true,
+            ActionScope::Read => action == "read",
+            ActionScope::Create => action == "create",
+            ActionScope::Update => action == "update",
+            ActionScope::Delete => action == "delete",
         }
     }
 }
@@ -177,15 +177,15 @@ impl EndpointScope {
 /// - `*` - access to all resources
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct CrateScope {
+pub struct ResourceScope {
     pattern: String,
 }
 
-impl CrateScope {
+impl ResourceScope {
     /// Create a new resource scope from a pattern
     pub fn new(pattern: String) -> Result<Self, String> {
         if Self::is_valid_pattern(&pattern) {
-            Ok(CrateScope { pattern })
+            Ok(ResourceScope { pattern })
         } else {
             Err("Invalid resource scope pattern".to_string())
         }
@@ -226,29 +226,29 @@ impl CrateScope {
     }
 }
 
-impl<'de> Deserialize<'de> for CrateScope {
+impl<'de> Deserialize<'de> for ResourceScope {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let pattern = String::deserialize(deserializer)?;
-        CrateScope::new(pattern).map_err(serde::de::Error::custom)
+        ResourceScope::new(pattern).map_err(serde::de::Error::custom)
     }
 }
 
-impl TryFrom<&str> for CrateScope {
+impl TryFrom<&str> for ResourceScope {
     type Error = String;
 
     fn try_from(pattern: &str) -> Result<Self, Self::Error> {
-        CrateScope::new(pattern.to_string())
+        ResourceScope::new(pattern.to_string())
     }
 }
 
-impl TryFrom<String> for CrateScope {
+impl TryFrom<String> for ResourceScope {
     type Error = String;
 
     fn try_from(pattern: String) -> Result<Self, Self::Error> {
-        CrateScope::new(pattern)
+        ResourceScope::new(pattern)
     }
 }
 
@@ -257,109 +257,109 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_endpoint_scope_serialization() {
+    fn test_action_scope_serialization() {
         assert_eq!(
-            serde_json::to_string(&EndpointScope::Read).unwrap(),
+            serde_json::to_string(&ActionScope::Read).unwrap(),
             "\"read\""
         );
         assert_eq!(
-            serde_json::to_string(&EndpointScope::Create).unwrap(),
+            serde_json::to_string(&ActionScope::Create).unwrap(),
             "\"create\""
         );
         assert_eq!(
-            serde_json::to_string(&EndpointScope::Update).unwrap(),
+            serde_json::to_string(&ActionScope::Update).unwrap(),
             "\"update\""
         );
         assert_eq!(
-            serde_json::to_string(&EndpointScope::Delete).unwrap(),
+            serde_json::to_string(&ActionScope::Delete).unwrap(),
             "\"delete\""
         );
         assert_eq!(
-            serde_json::to_string(&EndpointScope::Admin).unwrap(),
+            serde_json::to_string(&ActionScope::Admin).unwrap(),
             "\"admin\""
         );
     }
 
     #[test]
-    fn test_endpoint_scope_deserialization() {
-        let scope: EndpointScope = serde_json::from_str("\"read\"").unwrap();
-        assert_eq!(scope, EndpointScope::Read);
+    fn test_action_scope_deserialization() {
+        let scope: ActionScope = serde_json::from_str("\"read\"").unwrap();
+        assert_eq!(scope, ActionScope::Read);
 
-        let scope: EndpointScope = serde_json::from_str("\"create\"").unwrap();
-        assert_eq!(scope, EndpointScope::Create);
+        let scope: ActionScope = serde_json::from_str("\"create\"").unwrap();
+        assert_eq!(scope, ActionScope::Create);
 
-        let scope: EndpointScope = serde_json::from_str("\"update\"").unwrap();
-        assert_eq!(scope, EndpointScope::Update);
+        let scope: ActionScope = serde_json::from_str("\"update\"").unwrap();
+        assert_eq!(scope, ActionScope::Update);
 
-        let scope: EndpointScope = serde_json::from_str("\"delete\"").unwrap();
-        assert_eq!(scope, EndpointScope::Delete);
+        let scope: ActionScope = serde_json::from_str("\"delete\"").unwrap();
+        assert_eq!(scope, ActionScope::Delete);
 
-        let scope: EndpointScope = serde_json::from_str("\"admin\"").unwrap();
-        assert_eq!(scope, EndpointScope::Admin);
+        let scope: ActionScope = serde_json::from_str("\"admin\"").unwrap();
+        assert_eq!(scope, ActionScope::Admin);
     }
 
     #[test]
-    fn test_endpoint_scope_from_str() {
-        assert_eq!(EndpointScope::parse("read"), Ok(EndpointScope::Read));
-        assert_eq!(EndpointScope::parse("create"), Ok(EndpointScope::Create));
-        assert_eq!(EndpointScope::parse("update"), Ok(EndpointScope::Update));
-        assert_eq!(EndpointScope::parse("delete"), Ok(EndpointScope::Delete));
-        assert_eq!(EndpointScope::parse("admin"), Ok(EndpointScope::Admin));
-        assert!(EndpointScope::parse("invalid").is_err());
+    fn test_action_scope_from_str() {
+        assert_eq!(ActionScope::parse("read"), Ok(ActionScope::Read));
+        assert_eq!(ActionScope::parse("create"), Ok(ActionScope::Create));
+        assert_eq!(ActionScope::parse("update"), Ok(ActionScope::Update));
+        assert_eq!(ActionScope::parse("delete"), Ok(ActionScope::Delete));
+        assert_eq!(ActionScope::parse("admin"), Ok(ActionScope::Admin));
+        assert!(ActionScope::parse("invalid").is_err());
     }
 
     #[test]
-    fn test_endpoint_scope_as_str() {
-        assert_eq!(EndpointScope::Read.as_str(), "read");
-        assert_eq!(EndpointScope::Create.as_str(), "create");
-        assert_eq!(EndpointScope::Update.as_str(), "update");
-        assert_eq!(EndpointScope::Delete.as_str(), "delete");
-        assert_eq!(EndpointScope::Admin.as_str(), "admin");
+    fn test_action_scope_as_str() {
+        assert_eq!(ActionScope::Read.as_str(), "read");
+        assert_eq!(ActionScope::Create.as_str(), "create");
+        assert_eq!(ActionScope::Update.as_str(), "update");
+        assert_eq!(ActionScope::Delete.as_str(), "delete");
+        assert_eq!(ActionScope::Admin.as_str(), "admin");
     }
 
     #[test]
-    fn test_endpoint_scope_can_perform() {
-        assert!(EndpointScope::Admin.can_perform("read"));
-        assert!(EndpointScope::Admin.can_perform("create"));
-        assert!(EndpointScope::Admin.can_perform("update"));
-        assert!(EndpointScope::Admin.can_perform("delete"));
+    fn test_action_scope_can_perform() {
+        assert!(ActionScope::Admin.can_perform("read"));
+        assert!(ActionScope::Admin.can_perform("create"));
+        assert!(ActionScope::Admin.can_perform("update"));
+        assert!(ActionScope::Admin.can_perform("delete"));
 
-        assert!(EndpointScope::Read.can_perform("read"));
-        assert!(!EndpointScope::Read.can_perform("create"));
-        assert!(!EndpointScope::Read.can_perform("update"));
-        assert!(!EndpointScope::Read.can_perform("delete"));
+        assert!(ActionScope::Read.can_perform("read"));
+        assert!(!ActionScope::Read.can_perform("create"));
+        assert!(!ActionScope::Read.can_perform("update"));
+        assert!(!ActionScope::Read.can_perform("delete"));
 
-        assert!(!EndpointScope::Create.can_perform("read"));
-        assert!(EndpointScope::Create.can_perform("create"));
-        assert!(!EndpointScope::Create.can_perform("update"));
-        assert!(!EndpointScope::Create.can_perform("delete"));
+        assert!(!ActionScope::Create.can_perform("read"));
+        assert!(ActionScope::Create.can_perform("create"));
+        assert!(!ActionScope::Create.can_perform("update"));
+        assert!(!ActionScope::Create.can_perform("delete"));
 
-        assert!(!EndpointScope::Update.can_perform("read"));
-        assert!(!EndpointScope::Update.can_perform("create"));
-        assert!(EndpointScope::Update.can_perform("update"));
-        assert!(!EndpointScope::Update.can_perform("delete"));
+        assert!(!ActionScope::Update.can_perform("read"));
+        assert!(!ActionScope::Update.can_perform("create"));
+        assert!(ActionScope::Update.can_perform("update"));
+        assert!(!ActionScope::Update.can_perform("delete"));
 
-        assert!(!EndpointScope::Delete.can_perform("read"));
-        assert!(!EndpointScope::Delete.can_perform("create"));
-        assert!(!EndpointScope::Delete.can_perform("update"));
-        assert!(EndpointScope::Delete.can_perform("delete"));
+        assert!(!ActionScope::Delete.can_perform("read"));
+        assert!(!ActionScope::Delete.can_perform("create"));
+        assert!(!ActionScope::Delete.can_perform("update"));
+        assert!(ActionScope::Delete.can_perform("delete"));
     }
 
     #[test]
-    fn test_crate_scope_validation() {
-        assert!(CrateScope::new("foo".to_string()).is_ok());
-        assert!(CrateScope::new("foo*".to_string()).is_ok());
-        assert!(CrateScope::new("*".to_string()).is_ok());
-        assert!(CrateScope::new("foo-bar".to_string()).is_ok());
-        assert!(CrateScope::new("foo_bar".to_string()).is_ok());
-        assert!(CrateScope::new("".to_string()).is_err());
-        assert!(CrateScope::new("foo#".to_string()).is_err());
-        assert!(CrateScope::new("foo@".to_string()).is_err());
+    fn test_resource_scope_validation() {
+        assert!(ResourceScope::new("foo".to_string()).is_ok());
+        assert!(ResourceScope::new("foo*".to_string()).is_ok());
+        assert!(ResourceScope::new("*".to_string()).is_ok());
+        assert!(ResourceScope::new("foo-bar".to_string()).is_ok());
+        assert!(ResourceScope::new("foo_bar".to_string()).is_ok());
+        assert!(ResourceScope::new("".to_string()).is_err());
+        assert!(ResourceScope::new("foo#".to_string()).is_err());
+        assert!(ResourceScope::new("foo@".to_string()).is_err());
     }
 
     #[test]
-    fn test_crate_scope_matching() {
-        let scope = |pattern: &str| CrateScope::new(pattern.to_string()).unwrap();
+    fn test_resource_scope_matching() {
+        let scope = |pattern: &str| ResourceScope::new(pattern.to_string()).unwrap();
 
         assert!(scope("foo").matches("foo"));
         assert!(!scope("foo").matches("bar"));
@@ -373,41 +373,41 @@ mod tests {
     }
 
     #[test]
-    fn test_crate_scope_pattern() {
-        let scope = CrateScope::new("foo*".to_string()).unwrap();
+    fn test_resource_scope_pattern() {
+        let scope = ResourceScope::new("foo*".to_string()).unwrap();
         assert_eq!(scope.pattern(), "foo*");
 
-        let scope = CrateScope::new("bar".to_string()).unwrap();
+        let scope = ResourceScope::new("bar".to_string()).unwrap();
         assert_eq!(scope.pattern(), "bar");
     }
 
     #[test]
-    fn test_crate_scope_try_from_str() {
-        assert!(CrateScope::try_from("foo").is_ok());
-        assert!(CrateScope::try_from("foo*").is_ok());
-        assert!(CrateScope::try_from("").is_err());
+    fn test_resource_scope_try_from_str() {
+        assert!(ResourceScope::try_from("foo").is_ok());
+        assert!(ResourceScope::try_from("foo*").is_ok());
+        assert!(ResourceScope::try_from("").is_err());
     }
 
     #[test]
-    fn test_crate_scope_try_from_string() {
-        assert!(CrateScope::try_from("foo".to_string()).is_ok());
-        assert!(CrateScope::try_from("foo*".to_string()).is_ok());
-        assert!(CrateScope::try_from("".to_string()).is_err());
+    fn test_resource_scope_try_from_string() {
+        assert!(ResourceScope::try_from("foo".to_string()).is_ok());
+        assert!(ResourceScope::try_from("foo*".to_string()).is_ok());
+        assert!(ResourceScope::try_from("".to_string()).is_err());
     }
 
     #[test]
-    fn test_crate_scope_serialization() {
-        let scope = CrateScope::new("foo*".to_string()).unwrap();
+    fn test_resource_scope_serialization() {
+        let scope = ResourceScope::new("foo*".to_string()).unwrap();
         let json = serde_json::to_string(&scope).unwrap();
         assert_eq!(json, "\"foo*\"");
     }
 
     #[test]
-    fn test_crate_scope_deserialization() {
-        let scope: CrateScope = serde_json::from_str("\"foo*\"").unwrap();
+    fn test_resource_scope_deserialization() {
+        let scope: ResourceScope = serde_json::from_str("\"foo*\"").unwrap();
         assert_eq!(scope.pattern(), "foo*");
 
-        assert!(serde_json::from_str::<CrateScope>("\"\"").is_err());
-        assert!(serde_json::from_str::<CrateScope>("\"foo#\"").is_err());
+        assert!(serde_json::from_str::<ResourceScope>("\"\"").is_err());
+        assert!(serde_json::from_str::<ResourceScope>("\"foo#\"").is_err());
     }
 }

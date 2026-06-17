@@ -88,6 +88,30 @@ pub trait RequestHelper {
         self.run(request).await
     }
 
+    /// Make a POST request with a JSON body and custom headers
+    async fn post_with_headers<T>(
+        &self,
+        path: &str,
+        body: impl Serialize,
+        extra_headers: HeaderMap,
+    ) -> Response<T> {
+        let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
+
+        let mut request = self.request_builder(Method::POST, path);
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        *request.body_mut() = Body::from(json_body);
+
+        // Add extra headers
+        for (name, value) in extra_headers.iter() {
+            request.headers_mut().insert(name, value.clone());
+        }
+
+        self.run(request).await
+    }
+
     /// Make a PUT request with a JSON body
     async fn put<T>(&self, path: &str, body: impl Serialize) -> Response<T> {
         let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
