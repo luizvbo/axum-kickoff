@@ -6,12 +6,12 @@ A production-ready Rust web application starter template built on [Axum](https:/
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
 - **Database**: Toasty ORM with SQLite (zero-setup) with PostgreSQL migration path
-- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens (planned)
+- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens
 - **Frontend**: Server-side rendering with Askama, HTMX, and Alpine.js
 - **Security**: Comprehensive middleware (security headers, rate limiting, etc.)
-- **Observability**: Structured logging with tracing, Prometheus metrics (feature-gated, planned)
+- **Observability**: Structured logging with tracing
 - **Testing**: Integration test infrastructure with snapshot testing
-- **Storage**: Pluggable storage backends (local filesystem implemented, S3 planned)
+- **Storage**: Local filesystem storage (pluggable architecture for future backends)
 - **Cost-Conscious**: Designed for self-hosting with minimal external dependencies
 
 ## Quick Start
@@ -72,17 +72,17 @@ See [Configuration Documentation](docs/CONFIGURATION.md) for all available optio
 ## Documentation
 
 - **[Getting Started Guide](docs/GETTING_STARTED.md)** - Detailed setup and first steps
+- **[How-to Guides](docs/HOW_TO_GUIDES.md)** - Common tasks and patterns
 - **[Architecture](docs/ARCHITECTURE.md)** - System architecture and design decisions
 - **[Authentication](docs/AUTHENTICATION.md)** - Authentication system overview
 - **[Configuration](docs/CONFIGURATION.md)** - Complete configuration reference
 - **[Deployment](docs/DEPLOYMENT.md)** - Deployment guide for production
+- **[Production Checklist](docs/PRODUCTION_CHECKLIST.md)** - Production deployment checklist
 - **[Development](docs/DEVELOPMENT.md)** - Development workflow and contributing
 - **[Testing](docs/TESTING.md)** - Testing guide and conventions
 - **[Storage](docs/STORAGE.md)** - Storage abstraction guide
 - **[Middleware](docs/MIDDLEWARE.md)** - Middleware documentation
-- **[Rate Limiting](docs/RATE_LIMITING.md)** - Rate limiting configuration and Redis upgrade
 - **[API Token Scopes](docs/api-token-scopes.md)** - API token permission system
-- **[QuickWit Integration](docs/quickwit-integration.md)** - Log analytics with QuickWit
 - **[Roadmap](docs/ROADMAP.md)** - Future development plans
 
 ## Project Structure
@@ -138,20 +138,28 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 | Component | Status |
 |---|---|
 | GitHub OAuth | Implemented |
-| Session middleware | Implemented |
-| CSRF protection | Implemented |
-| API token creation/list/revoke | Implemented |
-| API token auth middleware | Infrastructure exists, not wired globally |
-| Rate limiting | Infrastructure exists, not applied globally |
-| Metrics endpoint | Feature-gated, partial |
-| S3 storage | Planned |
+| Session Management | Implemented |
 | Security Headers | Implemented |
-| CORS | Planned |
 | Request Logging | Implemented |
 | Error Handling | Implemented |
 | Real IP Extraction | Implemented |
 | User Agent Validation | Implemented |
-| Traffic Blocking | Infrastructure exists, not wired globally |
+| API Token Creation/List/Revoke | Implemented |
+| API Token Auth Middleware | Partial / not wired globally |
+| Rate Limiting | Core implemented / not applied globally |
+| Traffic Blocking | Infrastructure exists / not wired globally |
+| CSRF Protection | Not implemented |
+| CORS | Planned |
+| Metrics Endpoint | Feature-gated / partial |
+| S3 Storage | Planned |
+| Redis Rate Limiting | Planned |
+| Database-backed Rate Limiting | Planned |
+| QuickWit Integration | Planned |
+| OpenAPI | Planned |
+| Background Worker | Planned |
+| Email System | Planned |
+| Webhooks | Planned |
+| Read Replicas | Planned |
 
 See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 
@@ -226,7 +234,7 @@ axum-kickoff is designed with these principles:
 
 This project adapts crates.io's production-grade patterns while simplifying for general web applications:
 
-- **Single crate** vs 25+ crate workspace
+- **Single-crate application** vs 25+ crate workspace
 - **Toasty/SQLite** vs Diesel/PostgreSQL (with migration path)
 - **HTMX/Alpine.js** vs SvelteKit SPA
 - **In-memory rate limiting** vs database-backed (with upgrade path)
