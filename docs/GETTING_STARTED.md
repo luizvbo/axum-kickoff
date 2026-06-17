@@ -50,8 +50,7 @@ Edit `.env` with your configuration. The minimum required variables are:
 
 ```bash
 # Server Configuration
-SERVER_IP=127.0.0.1
-SERVER_PORT=3000
+PORT=8888
 DOMAIN_NAME=localhost
 
 # Database
@@ -61,13 +60,15 @@ DATABASE_URL=sqlite:axum-kickoff.db
 SESSION_KEY=your-secret-key-minimum-32-bytes-long
 
 # GitHub OAuth (required for authentication)
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+GH_CLIENT_ID=your_github_client_id
+GH_CLIENT_SECRET=your_github_client_secret
+GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
+
+# CORS (required)
+WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
 
 # Storage
-STORAGE_BACKEND=local
-STORAGE_LOCAL_PATH=./uploads
+STORAGE_PATH=./local_uploads
 ```
 
 ### 3. Generate GitHub OAuth Credentials
@@ -78,8 +79,8 @@ To enable GitHub OAuth authentication:
 2. Click "New OAuth App"
 3. Fill in the form:
    - **Application name**: axum-kickoff (or your app name)
-   - **Homepage URL**: `http://localhost:3000`
-   - **Authorization callback URL**: `http://localhost:3000/auth/github/callback`
+   - **Homepage URL**: `http://localhost:8888`
+   - **Authorization callback URL**: `http://localhost:8888/api/v1/auth/github/callback`
 4. Click "Register application"
 5. Copy the **Client ID** and generate a **Client Secret**
 6. Add these to your `.env` file
@@ -115,7 +116,7 @@ You should see output like:
 ```
 INFO Connecting to database...
 INFO Database connected successfully
-INFO Listening at http://127.0.0.1:3000
+INFO Listening at http://127.0.0.1:8888
 ```
 
 ### 7. Access the Application
@@ -123,7 +124,7 @@ INFO Listening at http://127.0.0.1:3000
 Open your browser and navigate to:
 
 ```
-http://localhost:3000
+http://localhost:8888
 ```
 
 ## First Steps
@@ -262,10 +263,10 @@ cp axum-kickoff.db axum-kickoff.db.backup
 
 ### Port Already in Use
 
-If port 3000 is already in use, change the port in `.env`:
+If port 8888 is already in use, change the port in `.env`:
 
 ```bash
-SERVER_PORT=3001
+PORT=3001
 ```
 
 ### Database Connection Errors

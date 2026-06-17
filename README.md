@@ -32,7 +32,7 @@ cd axum-kickoff
 cp .env.sample .env
 
 # Edit .env with your configuration
-# Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY
+# Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY, WEB_ALLOWED_ORIGINS
 
 # Run the server
 cargo run --bin server
@@ -46,7 +46,6 @@ Set the following environment variables in `.env`:
 
 ```bash
 # Server
-SERVER_IP=127.0.0.1
 PORT=8888
 DOMAIN_NAME=localhost
 
@@ -59,6 +58,10 @@ SESSION_KEY=your-secret-key-min-32-bytes
 # GitHub OAuth
 GH_CLIENT_ID=your-github-client-id
 GH_CLIENT_SECRET=your-github-client-secret
+GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
+
+# CORS
+WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
 
 # Storage
 STORAGE_PATH=./local_uploads
