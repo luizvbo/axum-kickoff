@@ -237,6 +237,7 @@ impl FromStr for AllowedOrigins {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http::HeaderValue;
 
     #[test]
     fn test_allowed_origins_from_str() {
@@ -263,5 +264,87 @@ mod tests {
             origins.0,
             vec!["http://localhost:3000", "https://example.com"]
         );
+    }
+
+    #[test]
+    fn test_allowed_origins_contains() {
+        let origins = AllowedOrigins::parse("http://localhost:3000,https://example.com");
+        let header = HeaderValue::from_static("http://localhost:3000");
+        assert!(origins.contains(&header));
+    }
+
+    #[test]
+    fn test_allowed_origins_not_contains() {
+        let origins = AllowedOrigins::parse("http://localhost:3000,https://example.com");
+        let header = HeaderValue::from_static("http://other.com");
+        assert!(!origins.contains(&header));
+    }
+
+    #[test]
+    fn test_allowed_origins_origins() {
+        let origins = AllowedOrigins::parse("http://localhost:3000,https://example.com");
+        assert_eq!(origins.origins().len(), 2);
+        assert_eq!(origins.origins()[0], "http://localhost:3000");
+    }
+
+    #[test]
+    fn test_allowed_origins_from_str_trait() {
+        let origins: AllowedOrigins = "http://localhost:3000".parse().unwrap();
+        assert_eq!(origins.0, vec!["http://localhost:3000"]);
+    }
+
+    #[test]
+    fn test_allowed_origins_default() {
+        let origins = AllowedOrigins::default();
+        assert!(origins.0.is_empty());
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_empty() {
+        let result = parse_blocked_traffic();
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_invalid_format() {
+        std::env::set_var("BLOCKED_TRAFFIC", "invalid_format");
+        let result = parse_blocked_traffic();
+        assert!(result.is_err());
+        std::env::remove_var("BLOCKED_TRAFFIC");
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_missing_env_var() {
+        std::env::set_var("BLOCKED_TRAFFIC", "Header=MISSING_VAR");
+        let result = parse_blocked_traffic();
+        assert!(result.is_err());
+        std::env::remove_var("BLOCKED_TRAFFIC");
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_valid() {
+        std::env::set_var("BLOCKED_TRAFFIC", "User-Agent=BLOCKED_AGENTS");
+        std::env::set_var("BLOCKED_AGENTS", "bot1,bot2");
+        let result = parse_blocked_traffic();
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, "User-Agent");
+        std::env::remove_var("BLOCKED_TRAFFIC");
+        std::env::remove_var("BLOCKED_AGENTS");
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_empty_values() {
+        std::env::set_var("BLOCKED_TRAFFIC", "Header=BLOCKED_VALUES");
+        std::env::set_var("BLOCKED_VALUES", ",,");
+        let result = parse_blocked_traffic();
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        // Empty values should be filtered out
+        assert!(parsed.is_empty() || parsed[0].1.is_empty());
+        std::env::remove_var("BLOCKED_TRAFFIC");
+        std::env::remove_var("BLOCKED_VALUES");
     }
 }

@@ -252,6 +252,11 @@ pub async fn logout(
 /// - Relative URLs (starting with /)
 /// - URLs that start with the configured domain name
 fn is_valid_redirect(url: &str, domain_name: &str) -> bool {
+    // Reject protocol-relative URLs (security risk) - must check before relative URLs
+    if url.starts_with("//") {
+        return false;
+    }
+
     // Allow relative URLs
     if url.starts_with('/') {
         return true;
@@ -262,4 +267,145 @@ fn is_valid_redirect(url: &str, domain_name: &str) -> bool {
     let allowed_prefix_https = format!("https://{}", domain_name);
 
     url.starts_with(&allowed_prefix) || url.starts_with(&allowed_prefix_https)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_valid_redirect_relative_url() {
+        assert!(is_valid_redirect("/dashboard", "localhost"));
+        assert!(is_valid_redirect("/api/v1/auth", "example.com"));
+        assert!(is_valid_redirect("/", "localhost"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_http_domain() {
+        assert!(is_valid_redirect("http://localhost/dashboard", "localhost"));
+        assert!(is_valid_redirect("http://example.com/api", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_https_domain() {
+        assert!(is_valid_redirect("https://localhost/dashboard", "localhost"));
+        assert!(is_valid_redirect("https://example.com/api", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_invalid_domain() {
+        assert!(!is_valid_redirect("http://evil.com", "localhost"));
+        assert!(!is_valid_redirect("https://evil.com", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_invalid_protocol() {
+        assert!(!is_valid_redirect("ftp://localhost/file", "localhost"));
+        assert!(!is_valid_redirect("javascript:alert(1)", "localhost"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_malicious_redirect() {
+        // Protocol-relative URLs are not allowed (they would inherit the protocol)
+        assert!(!is_valid_redirect("//evil.com", "localhost"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_subdomain() {
+        // Subdomains should not be allowed unless explicitly configured
+        assert!(!is_valid_redirect("http://sub.localhost.com", "localhost"));
+        assert!(!is_valid_redirect("https://api.example.com", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_with_port() {
+        // URLs with ports on the same domain are allowed
+        assert!(is_valid_redirect("http://localhost:8080", "localhost"));
+        assert!(is_valid_redirect("https://example.com:443", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_with_path() {
+        assert!(is_valid_redirect("http://localhost/path/to/page", "localhost"));
+        assert!(is_valid_redirect("https://example.com/api/v1/auth", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_with_query() {
+        assert!(is_valid_redirect("http://localhost/?param=value", "localhost"));
+        assert!(is_valid_redirect("https://example.com/api?token=abc", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_with_fragment() {
+        assert!(is_valid_redirect("http://localhost/#section", "localhost"));
+        assert!(is_valid_redirect("https://example.com/page#anchor", "example.com"));
+    }
+
+    #[test]
+    fn test_authorize_query_deserialize() {
+        let json = r#"{"redirect_to": "/dashboard"}"#;
+        let query: AuthorizeQuery = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(query.redirect_to, Some("/dashboard".to_string()));
+    }
+
+    #[test]
+    fn test_authorize_query_no_redirect() {
+        let json = r#"{}"#;
+        let query: AuthorizeQuery = serde_json::from_str(json).expect("Failed to deserialize");
+        assert!(query.redirect_to.is_none());
+    }
+
+    #[test]
+    fn test_callback_query_deserialize() {
+        let json = r#"{"code": "test_code", "state": "test_state"}"#;
+        let query: CallbackQuery = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(query.code, "test_code");
+        assert_eq!(query.state, "test_state");
+    }
+
+    #[test]
+    fn test_callback_query_missing_code() {
+        let json = r#"{"state": "test_state"}"#;
+        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
+        assert!(query.is_err());
+    }
+
+    #[test]
+    fn test_callback_query_missing_state() {
+        let json = r#"{"code": "test_code"}"#;
+        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
+        assert!(query.is_err());
+    }
+
+    #[test]
+    fn test_github_user_deserialize() {
+        let json = r#"{
+            "id": 12345,
+            "login": "testuser",
+            "name": "Test User",
+            "email": "test@example.com",
+            "avatar_url": "https://example.com/avatar.png"
+        }"#;
+        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(user.id, 12345);
+        assert_eq!(user.login, "testuser");
+        assert_eq!(user.name, Some("Test User".to_string()));
+        assert_eq!(user.email, Some("test@example.com".to_string()));
+        assert_eq!(user.avatar_url, Some("https://example.com/avatar.png".to_string()));
+    }
+
+    #[test]
+    fn test_github_user_minimal() {
+        let json = r#"{
+            "id": 12345,
+            "login": "testuser"
+        }"#;
+        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(user.id, 12345);
+        assert_eq!(user.login, "testuser");
+        assert!(user.name.is_none());
+        assert!(user.email.is_none());
+        assert!(user.avatar_url.is_none());
+    }
 }

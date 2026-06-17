@@ -257,6 +257,35 @@ mod tests {
     }
 
     #[test]
+    fn test_create_token_request_empty_scopes() {
+        let json = r#"{
+            "name": "test-token",
+            "crate_scopes": [],
+            "endpoint_scopes": []
+        }"#;
+
+        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(req.name, "test-token");
+        assert_eq!(req.crate_scopes, Some(vec![]));
+        assert_eq!(req.endpoint_scopes, Some(vec![]));
+    }
+
+    #[test]
+    fn test_create_token_request_invalid_json() {
+        let json = r#"{"name": "test-token", "invalid": "field"}"#;
+        // Extra fields should be ignored by serde
+        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(req.name, "test-token");
+    }
+
+    #[test]
+    fn test_create_token_request_missing_name() {
+        let json = r#"{"crate_scopes": ["crate1"]}"#;
+        let req: Result<CreateTokenRequest, _> = serde_json::from_str(json);
+        assert!(req.is_err());
+    }
+
+    #[test]
     fn test_create_token_response_serialize() {
         let response = CreateTokenResponse {
             token: "ako_test_token".to_string(),
@@ -266,6 +295,23 @@ mod tests {
             crate_scopes: Some(vec!["crate1".to_string()]),
             endpoint_scopes: Some(vec!["api1".to_string()]),
             expired_at: Some("2024-12-31T23:59:59Z".to_string()),
+        };
+
+        let json = serde_json::to_string(&response).expect("Failed to serialize");
+        assert!(json.contains("test-token"));
+        assert!(json.contains("ako_test_token"));
+    }
+
+    #[test]
+    fn test_create_token_response_minimal() {
+        let response = CreateTokenResponse {
+            token: "ako_test_token".to_string(),
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            crate_scopes: None,
+            endpoint_scopes: None,
+            expired_at: None,
         };
 
         let json = serde_json::to_string(&response).expect("Failed to serialize");
@@ -306,5 +352,75 @@ mod tests {
 
         let json = serde_json::to_string(&item).expect("Failed to serialize");
         assert!(json.contains("test-token"));
+    }
+
+    #[test]
+    fn test_token_list_item_revoked() {
+        let item = TokenListItem {
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            last_used_at: Some("2024-01-02T00:00:00Z".to_string()),
+            revoked: true,
+            crate_scopes: None,
+            endpoint_scopes: None,
+            expired_at: None,
+        };
+
+        let json = serde_json::to_string(&item).expect("Failed to serialize");
+        assert!(json.contains("\"revoked\":true"));
+    }
+
+    #[test]
+    fn test_token_list_item_multiple_scopes() {
+        let item = TokenListItem {
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            last_used_at: None,
+            revoked: false,
+            crate_scopes: Some(vec!["crate1".to_string(), "crate2".to_string(), "crate3".to_string()]),
+            endpoint_scopes: Some(vec!["api1".to_string(), "api2".to_string()]),
+            expired_at: None,
+        };
+
+        let json = serde_json::to_string(&item).expect("Failed to serialize");
+        assert!(json.contains("crate1"));
+        assert!(json.contains("crate2"));
+        assert!(json.contains("api1"));
+    }
+
+    #[test]
+    fn test_create_token_request_serialize() {
+        let req = CreateTokenRequest {
+            name: "test-token".to_string(),
+            crate_scopes: Some(vec!["crate1".to_string()]),
+            endpoint_scopes: Some(vec!["api1".to_string()]),
+            expired_at: Some("2024-12-31T23:59:59Z".to_string()),
+        };
+
+        // CreateTokenRequest doesn't need to be serialized in production,
+        // but we can test the fields are set correctly
+        assert_eq!(req.name, "test-token");
+        assert!(req.crate_scopes.is_some());
+    }
+
+    #[test]
+    fn test_create_token_response_fields() {
+        let response = CreateTokenResponse {
+            token: "ako_test_token".to_string(),
+            id: 123,
+            name: "test-token".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            crate_scopes: Some(vec!["crate1".to_string()]),
+            endpoint_scopes: Some(vec!["api1".to_string()]),
+            expired_at: Some("2024-12-31T23:59:59Z".to_string()),
+        };
+
+        // Test that response fields are set correctly
+        assert_eq!(response.token, "ako_test_token");
+        assert_eq!(response.id, 123);
+        assert_eq!(response.name, "test-token");
+        assert_eq!(response.created_at, "2024-01-01T00:00:00Z");
     }
 }
