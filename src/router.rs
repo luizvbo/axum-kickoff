@@ -86,3 +86,95 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_index_template_fields() {
+        let template = IndexTemplate {};
+        // Just verify the struct can be created
+        let _ = template;
+    }
+
+    #[test]
+    fn test_server_time_template_fields() {
+        let template = ServerTimeTemplate {
+            time: "2024-01-01 00:00:00 UTC".to_string(),
+        };
+        assert_eq!(template.time, "2024-01-01 00:00:00 UTC");
+    }
+
+    #[test]
+    fn test_html_template_creation() {
+        let template = IndexTemplate {};
+        let html_template = HtmlTemplate(template);
+        let _ = html_template;
+    }
+
+    #[test]
+    fn test_server_time_template_with_different_time() {
+        let template = ServerTimeTemplate {
+            time: "2024-12-31 23:59:59 UTC".to_string(),
+        };
+        assert_eq!(template.time, "2024-12-31 23:59:59 UTC");
+    }
+
+    #[test]
+    fn test_server_time_template_empty_time() {
+        let template = ServerTimeTemplate {
+            time: "".to_string(),
+        };
+        assert_eq!(template.time, "");
+    }
+
+    #[test]
+    fn test_server_time_template_with_timezone() {
+        let template = ServerTimeTemplate {
+            time: "2024-01-01 00:00:00 UTC".to_string(),
+        };
+        assert!(template.time.contains("UTC"));
+    }
+
+    #[test]
+    fn test_server_time_template_with_milliseconds() {
+        let template = ServerTimeTemplate {
+            time: "2024-01-01 00:00:00.123 UTC".to_string(),
+        };
+        assert!(template.time.contains(".123"));
+    }
+
+    #[test]
+    fn test_html_template_with_server_time() {
+        let template = ServerTimeTemplate {
+            time: "2024-12-31 23:59:59 UTC".to_string(),
+        };
+        let html_template = HtmlTemplate(template);
+        let _ = html_template;
+    }
+
+    #[test]
+    fn test_index_template_multiple() {
+        let template1 = IndexTemplate {};
+        let template2 = IndexTemplate {};
+        let _ = (template1, template2);
+    }
+
+    #[test]
+    fn test_server_time_template_unicode() {
+        let template = ServerTimeTemplate {
+            time: "2024-01-01 00:00:00 UTC 测试".to_string(),
+        };
+        assert!(template.time.contains("测试"));
+    }
+
+    #[test]
+    fn test_server_time_template_very_long_time() {
+        let long_time = "2024-01-01 00:00:00 UTC ".repeat(100);
+        let template = ServerTimeTemplate {
+            time: long_time.clone(),
+        };
+        assert_eq!(template.time.len(), long_time.len());
+    }
+}

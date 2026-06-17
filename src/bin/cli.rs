@@ -27,3 +27,33 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    // Note: CLI binary tests are typically integration tests
+    // Unit tests for binary entry points are limited
+    // Consider adding integration tests in tests/ directory
+
+    #[test]
+    fn test_config_load_compiles() {
+        // Verify that Config::load compiles
+        // We can't actually run it without proper environment setup
+        // This is a compile-time check to ensure the function exists
+        let _ = || toasty_cli::Config::load;
+    }
+
+    #[test]
+    fn test_database_config_from_environment_compiles() {
+        // Verify that DatabaseConfig::from_environment compiles
+        // This is a compile-time check to ensure the function exists
+        let _ = || axum_kickoff::config::DatabaseConfig::from_environment;
+    }
+
+    #[test]
+    fn test_tokio_main_attribute() {
+        // Verify the tokio::main attribute compiles
+        // This is a compile-time check
+        fn assert_async_main<T>() {}
+        assert_async_main::<fn() -> anyhow::Result<()>>();
+    }
+}

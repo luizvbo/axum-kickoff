@@ -554,4 +554,163 @@ mod tests {
         assert!(hsts.contains("includeSubDomains"));
         assert!(hsts.contains("preload"));
     }
+
+    #[test]
+    fn test_permissions_policy_from_str() {
+        assert_eq!(
+            PermissionsPolicy::from_str("restrictive").unwrap(),
+            PermissionsPolicy::Restrictive
+        );
+        assert_eq!(
+            PermissionsPolicy::from_str("permissive").unwrap(),
+            PermissionsPolicy::Permissive
+        );
+        assert_eq!(
+            PermissionsPolicy::from_str("custom:geolocation=(self)").unwrap(),
+            PermissionsPolicy::Custom("geolocation=(self)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_generate_frame_options() {
+        let config = SecurityHeadersConfig {
+            frame_options: FrameOptions::Deny,
+            ..Default::default()
+        };
+        assert_eq!(generate_frame_options(&config), "DENY");
+
+        let config = SecurityHeadersConfig {
+            frame_options: FrameOptions::SameOrigin,
+            ..Default::default()
+        };
+        assert_eq!(generate_frame_options(&config), "SAMEORIGIN");
+
+        let config = SecurityHeadersConfig {
+            frame_options: FrameOptions::AllowFrom("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            generate_frame_options(&config),
+            "ALLOW-FROM https://example.com"
+        );
+    }
+
+    #[test]
+    fn test_generate_referrer_policy() {
+        let config = SecurityHeadersConfig {
+            referrer_policy: ReferrerPolicy::NoReferrer,
+            ..Default::default()
+        };
+        assert_eq!(generate_referrer_policy(&config), "no-referrer");
+
+        let config = SecurityHeadersConfig {
+            referrer_policy: ReferrerPolicy::StrictOriginWhenCrossOrigin,
+            ..Default::default()
+        };
+        assert_eq!(
+            generate_referrer_policy(&config),
+            "strict-origin-when-cross-origin"
+        );
+    }
+
+    #[test]
+    fn test_generate_permissions_policy() {
+        let config = SecurityHeadersConfig {
+            permissions_policy: PermissionsPolicy::Restrictive,
+            ..Default::default()
+        };
+        let policy = generate_permissions_policy(&config);
+        assert!(policy.contains("geolocation=()"));
+        assert!(policy.contains("camera=()"));
+
+        let config = SecurityHeadersConfig {
+            permissions_policy: PermissionsPolicy::Permissive,
+            ..Default::default()
+        };
+        let policy = generate_permissions_policy(&config);
+        assert!(policy.contains("geolocation=(self)"));
+    }
+
+    #[test]
+    fn test_generate_csp_custom() {
+        let config = SecurityHeadersConfig {
+            csp_mode: CspMode::Custom("default-src 'self' https://cdn.example.com".to_string()),
+            ..Default::default()
+        };
+        let csp = generate_csp(&config);
+        assert_eq!(csp, "default-src 'self' https://cdn.example.com");
+    }
+
+    #[test]
+    fn test_generate_csp_with_frame_ancestors() {
+        let config = SecurityHeadersConfig {
+            csp_mode: CspMode::Strict,
+            frame_ancestors: Some("https://trusted.com".to_string()),
+            ..Default::default()
+        };
+        let csp = generate_csp(&config);
+        assert!(csp.contains("frame-ancestors https://trusted.com"));
+    }
+
+    #[test]
+    fn test_generate_hsts_without_subdomains() {
+        let config = SecurityHeadersConfig {
+            hsts_enabled: true,
+            hsts_max_age: Duration::from_secs(31536000),
+            hsts_include_subdomains: false,
+            hsts_preload: false,
+            ..Default::default()
+        };
+        let hsts = generate_hsts(&config);
+        assert!(hsts.contains("max-age=31536000"));
+        assert!(!hsts.contains("includeSubDomains"));
+        assert!(!hsts.contains("preload"));
+    }
+
+    #[test]
+    fn test_security_headers_config_default() {
+        let config = SecurityHeadersConfig::default();
+        assert!(!config.hsts_enabled);
+        assert_eq!(config.csp_mode, CspMode::Strict);
+        assert_eq!(config.frame_options, FrameOptions::Deny);
+        assert_eq!(
+            config.referrer_policy,
+            ReferrerPolicy::StrictOriginWhenCrossOrigin
+        );
+    }
+
+    #[test]
+    fn test_csp_mode_from_str_invalid() {
+        assert!(CspMode::from_str("invalid").is_err());
+        assert!(CspMode::from_str("custom").is_err()); // missing value after custom:
+    }
+
+    #[test]
+    fn test_frame_options_from_str_invalid() {
+        assert!(FrameOptions::from_str("invalid").is_err());
+        assert!(FrameOptions::from_str("allow-from").is_err()); // missing value
+    }
+
+    #[test]
+    fn test_referrer_policy_from_str_invalid() {
+        assert!(ReferrerPolicy::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_permissions_policy_from_str_invalid() {
+        assert!(PermissionsPolicy::from_str("invalid").is_err());
+        assert!(PermissionsPolicy::from_str("custom").is_err()); // missing value
+    }
+
+    #[test]
+    fn test_generate_csp_permissive_with_frame_ancestors() {
+        let config = SecurityHeadersConfig {
+            csp_mode: CspMode::Permissive,
+            frame_ancestors: Some("https://example.com https://trusted.com".to_string()),
+            ..Default::default()
+        };
+        let csp = generate_csp(&config);
+        assert!(csp.contains("unsafe-inline"));
+        assert!(csp.contains("frame-ancestors https://example.com https://trusted.com"));
+    }
 }

@@ -81,3 +81,112 @@ impl GitHubTokenEncryption {
             .map_err(|e| anyhow::anyhow!("Decrypted data is not valid UTF-8: {}", e))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_for_testing() {
+        let _encryption = GitHubTokenEncryption::for_testing();
+    }
+
+    #[test]
+    fn test_encrypt_decrypt() {
+        let encryption = GitHubTokenEncryption::for_testing();
+        let plaintext = "my_secret_github_token_12345";
+
+        let encrypted = encryption.encrypt(plaintext).expect("Encryption failed");
+        let decrypted = encryption.decrypt(&encrypted).expect("Decryption failed");
+
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_encrypt_produces_different_ciphertext() {
+        let encryption = GitHubTokenEncryption::for_testing();
+        let plaintext = "my_secret_github_token_12345";
+
+        let encrypted1 = encryption.encrypt(plaintext).expect("Encryption failed");
+        let encrypted2 = encryption.encrypt(plaintext).expect("Encryption failed");
+
+        // Ciphertext should be different due to random nonce
+        assert_ne!(encrypted1, encrypted2);
+
+        // But both should decrypt to the same plaintext
+        let decrypted1 = encryption.decrypt(&encrypted1).expect("Decryption failed");
+        let decrypted2 = encryption.decrypt(&encrypted2).expect("Decryption failed");
+        assert_eq!(decrypted1, plaintext);
+        assert_eq!(decrypted2, plaintext);
+    }
+
+    #[test]
+    fn test_decrypt_invalid_data_too_short() {
+        let encryption = GitHubTokenEncryption::for_testing();
+        let too_short = vec![1, 2, 3]; // Less than 12 bytes (nonce size)
+
+        let result = encryption.decrypt(&too_short);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decrypt_invalid_data() {
+        let encryption = GitHubTokenEncryption::for_testing();
+        let invalid_data = vec![0u8; 24]; // 12 bytes nonce + 12 bytes garbage
+
+        let result = encryption.decrypt(&invalid_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_environment_missing_key() {
+        // Ensure the env var is not set
+        std::env::remove_var("GITHUB_TOKEN_ENCRYPTION_KEY");
+
+        let result = GitHubTokenEncryption::from_environment();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_environment_invalid_length() {
+        std::env::set_var("GITHUB_TOKEN_ENCRYPTION_KEY", "short_key");
+
+        let result = GitHubTokenEncryption::from_environment();
+        assert!(result.is_err());
+
+        std::env::remove_var("GITHUB_TOKEN_ENCRYPTION_KEY");
+    }
+
+    #[test]
+    fn test_from_environment_invalid_hex() {
+        std::env::set_var("GITHUB_TOKEN_ENCRYPTION_KEY", "g".repeat(64)); // Invalid hex chars
+
+        let result = GitHubTokenEncryption::from_environment();
+        assert!(result.is_err());
+
+        std::env::remove_var("GITHUB_TOKEN_ENCRYPTION_KEY");
+    }
+
+    #[test]
+    fn test_from_environment_valid() {
+        let valid_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        std::env::set_var("GITHUB_TOKEN_ENCRYPTION_KEY", valid_key);
+
+        let result = GitHubTokenEncryption::from_environment();
+        assert!(result.is_ok());
+
+        std::env::remove_var("GITHUB_TOKEN_ENCRYPTION_KEY");
+    }
+
+    #[test]
+    fn test_encrypted_format() {
+        let encryption = GitHubTokenEncryption::for_testing();
+        let plaintext = "test_token";
+
+        let encrypted = encryption.encrypt(plaintext).expect("Encryption failed");
+
+        // Encrypted format: [12-byte nonce][encrypted data]
+        assert!(encrypted.len() >= 12);
+        assert!(encrypted.len() > 12); // Should have ciphertext after nonce
+    }
+}

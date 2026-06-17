@@ -161,4 +161,86 @@ mod tests {
         let token = PlainToken::generate();
         assert!(HashedToken::parse(token.expose_secret()).is_ok());
     }
+
+    #[test]
+    fn test_hashed_token_debug() {
+        let token = PlainToken::generate();
+        let hashed = token.hashed();
+        let debug_str = format!("{:?}", hashed);
+        assert_eq!(debug_str, "HashedToken");
+    }
+
+    #[test]
+    fn test_plain_token_debug() {
+        let token = PlainToken::generate();
+        let debug_str = format!("{:?}", token);
+        // Debug should not expose the secret
+        assert!(!debug_str.contains(token.expose_secret()));
+    }
+
+    #[test]
+    fn test_hashed_token_clone() {
+        let token = PlainToken::generate();
+        let hashed1 = token.hashed();
+        let hashed2 = hashed1.clone();
+        assert_eq!(hashed1.as_bytes(), hashed2.as_bytes());
+    }
+
+    #[test]
+    fn test_hash_same_plaintext() {
+        let plaintext = "ako_test123456789012345678901234";
+        let hash1 = HashedToken::hash(plaintext);
+        let hash2 = HashedToken::hash(plaintext);
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_parse_valid_token_with_prefix() {
+        let valid_token = "ako_abcdefghijklmnopqrstuvwxyz123456";
+        let result = HashedToken::parse(valid_token);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_token_case_sensitive() {
+        // Prefix should be case-sensitive
+        let uppercase_prefix = "AKO_test123456789012345678901234";
+        assert!(HashedToken::parse(uppercase_prefix).is_err());
+    }
+
+    #[test]
+    fn test_token_alphanumeric() {
+        let token = PlainToken::generate();
+        let token_str = token.expose_secret();
+        // After prefix, should be alphanumeric
+        let suffix = &token_str[TOKEN_PREFIX.len()..];
+        assert!(suffix.chars().all(|c| c.is_alphanumeric()));
+    }
+
+    #[test]
+    fn test_hashed_token_as_bytes_length() {
+        let token = PlainToken::generate();
+        let hashed = token.hashed();
+        // SHA256 produces 32 bytes
+        assert_eq!(hashed.as_bytes().len(), 32);
+    }
+
+    #[test]
+    fn test_multiple_generations_unique() {
+        let mut tokens = std::collections::HashSet::new();
+        for _ in 0..100 {
+            let token = PlainToken::generate();
+            let plaintext = token.expose_secret().to_string();
+            assert!(!tokens.contains(&plaintext), "Generated duplicate token");
+            tokens.insert(plaintext);
+        }
+    }
+
+    #[test]
+    fn test_plain_token_expose_secret() {
+        let token = PlainToken::generate();
+        let secret = token.expose_secret();
+        assert!(secret.starts_with(TOKEN_PREFIX));
+        assert_eq!(secret.len(), TOKEN_PREFIX.len() + TOKEN_LENGTH);
+    }
 }

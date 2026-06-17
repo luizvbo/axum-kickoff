@@ -92,3 +92,38 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // Note: Server binary tests are typically integration tests
+    // Unit tests for binary entry points are limited
+    // Consider adding integration tests in tests/ directory
+
+    #[test]
+    fn test_server_config_from_environment_compiles() {
+        // Verify that Server::from_environment compiles
+        // This is a compile-time check
+        let _ = || axum_kickoff::config::Server::from_environment;
+    }
+
+    #[test]
+    fn test_database_config_from_environment_compiles() {
+        // Verify that DatabaseConfig::from_environment compiles
+        // This is a compile-time check
+        let _ = || axum_kickoff::config::DatabaseConfig::from_environment;
+    }
+
+    #[test]
+    fn test_app_new_compiles() {
+        // Verify that App::new compiles
+        // This is a compile-time check
+        let _ = || axum_kickoff::App::new;
+    }
+
+    #[test]
+    fn test_build_handler_compiles() {
+        // Verify that build_handler compiles
+        // This is a compile-time check
+        let _ = || axum_kickoff::build_handler;
+    }
+}

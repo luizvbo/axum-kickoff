@@ -83,6 +83,5 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - run: cargo fetch --locked
-      - run: cargo build --tests
-      - run: cargo test
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run --all-features

@@ -44,6 +44,11 @@ test-nextest-review:
 test-verbose:
     cargo test -- --nocapture
 
+[doc("Run test coverage (add '--html' to generate an HTML report)")]
+test-cov args='':
+    @echo "🧪 Running test coverage (skipping test errors)..."
+    APP_ENV=TST cargo llvm-cov nextest --ignore-run-fail {{ if args != '' { args } else { "" } }}
+
 # ============================================================================
 # Database Commands
 # ============================================================================

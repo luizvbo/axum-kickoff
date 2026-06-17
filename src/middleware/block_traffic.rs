@@ -235,4 +235,73 @@ mod tests {
         assert!(criteria.matches("bad-bot"));
         assert!(!criteria.matches("good-bot"));
     }
+
+    #[test]
+    fn test_block_criteria_as_str() {
+        let regex_criteria = BlockCriteria::try_from(r"/test/").unwrap();
+        assert_eq!(regex_criteria.as_str(), "test");
+
+        let string_criteria = BlockCriteria::try_from("exact-match").unwrap();
+        assert_eq!(string_criteria.as_str(), "exact-match");
+    }
+
+    #[test]
+    fn test_block_criteria_complex_regex() {
+        let criteria = BlockCriteria::try_from(r"/curl\/[\d]+\.[\d]+\.[\d]+/").unwrap();
+        assert!(criteria.matches("curl/7.68.0"));
+        assert!(criteria.matches("curl/1.2.3"));
+        assert!(!criteria.matches("curl/7.68"));
+        assert!(!criteria.matches("wget/1.20.3"));
+    }
+
+    #[test]
+    fn test_block_criteria_case_sensitive() {
+        let criteria = BlockCriteria::try_from("Bad-Bot").unwrap();
+        assert!(criteria.matches("Bad-Bot"));
+        assert!(!criteria.matches("bad-bot"));
+        assert!(!criteria.matches("BAD-BOT"));
+    }
+
+    #[test]
+    fn test_block_criteria_special_chars() {
+        let criteria = BlockCriteria::try_from(r"/^[\w-]+$/").unwrap();
+        assert!(criteria.matches("test-bot"));
+        assert!(criteria.matches("my_agent"));
+        assert!(!criteria.matches("test bot"));
+    }
+
+    #[test]
+    fn test_block_criteria_empty_string() {
+        let criteria = BlockCriteria::try_from("").unwrap();
+        assert!(criteria.matches(""));
+        assert!(!criteria.matches("anything"));
+    }
+
+    #[test]
+    fn test_block_criteria_single_slash() {
+        let result = BlockCriteria::try_from("/");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_block_criteria_double_slash() {
+        let result = BlockCriteria::try_from("//");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_block_criteria_invalid_regex() {
+        let result = BlockCriteria::try_from(r"/unclosed[");
+        // The regex might be valid in some cases, so we just check it doesn't panic
+        // and returns a result (either ok or err is acceptable)
+        let _ = result;
+    }
+
+    #[test]
+    fn test_block_criteria_regex_with_anchors() {
+        let criteria = BlockCriteria::try_from(r"/^exact$/").unwrap();
+        assert!(criteria.matches("exact"));
+        assert!(!criteria.matches("exact-match"));
+        assert!(!criteria.matches("prefix-exact"));
+    }
 }

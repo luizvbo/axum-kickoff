@@ -88,3 +88,35 @@ impl App {
 
 #[derive(Clone, Deref)]
 pub struct AppState(pub Arc<App>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_clone() {
+        // This test verifies AppState can be cloned
+        // We can't create a real App without full setup, but we can test the type
+        // This is a compile-time test to ensure the Clone derive works
+        fn assert_clone<T: Clone>() {}
+        assert_clone::<AppState>();
+    }
+
+    #[test]
+    fn test_app_state_deref() {
+        // This test verifies AppState derefs to App
+        // We can't create a real App without full setup, but we can test the type
+        // This is a compile-time test to ensure the Deref derive works
+        fn assert_deref<T: std::ops::Deref>() {}
+        assert_deref::<AppState>();
+    }
+
+    #[test]
+    fn test_app_state_send_sync() {
+        // Verify AppState is Send and Sync (required for Arc)
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<AppState>();
+        assert_sync::<AppState>();
+    }
+}
