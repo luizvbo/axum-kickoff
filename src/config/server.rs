@@ -347,4 +347,96 @@ mod tests {
         std::env::remove_var("BLOCKED_TRAFFIC");
         std::env::remove_var("BLOCKED_VALUES");
     }
+
+    #[test]
+    fn test_allowed_origins_single() {
+        let origins = AllowedOrigins::parse("http://localhost:3000");
+        assert_eq!(origins.0, vec!["http://localhost:3000"]);
+    }
+
+    #[test]
+    fn test_allowed_origins_empty_string() {
+        let origins = AllowedOrigins::parse("");
+        assert!(origins.0.is_empty());
+    }
+
+    #[test]
+    fn test_allowed_origins_only_whitespace() {
+        let origins = AllowedOrigins::parse("   ,   ,   ");
+        assert!(origins.0.is_empty());
+    }
+
+    #[test]
+    fn test_allowed_origins_multiple_commas() {
+        let origins = AllowedOrigins::parse("http://localhost:3000,,,https://example.com");
+        assert_eq!(
+            origins.0,
+            vec!["http://localhost:3000", "https://example.com"]
+        );
+    }
+
+    #[test]
+    fn test_allowed_origins_contains_case_sensitive() {
+        let origins = AllowedOrigins::parse("http://localhost:3000");
+        let header = HeaderValue::from_static("http://localhost:3000");
+        assert!(origins.contains(&header));
+        
+        let header_upper = HeaderValue::from_static("HTTP://LOCALHOST:3000");
+        assert!(!origins.contains(&header_upper));
+    }
+
+    #[test]
+    fn test_allowed_origins_clone() {
+        let origins = AllowedOrigins::parse("http://localhost:3000");
+        let cloned = origins.clone();
+        assert_eq!(origins.0, cloned.0);
+    }
+
+    #[test]
+    fn test_allowed_origins_debug() {
+        let origins = AllowedOrigins::parse("http://localhost:3000");
+        let debug_str = format!("{:?}", origins);
+        assert!(debug_str.contains("localhost"));
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_multiple_pairs() {
+        std::env::set_var("BLOCKED_TRAFFIC", "User-Agent=BLOCKED_AGENTS,Referer=BLOCKED_REFERERS");
+        std::env::set_var("BLOCKED_AGENTS", "bot1,bot2");
+        std::env::set_var("BLOCKED_REFERERS", "spam1,spam2");
+        let result = parse_blocked_traffic();
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 2);
+        std::env::remove_var("BLOCKED_TRAFFIC");
+        std::env::remove_var("BLOCKED_AGENTS");
+        std::env::remove_var("BLOCKED_REFERERS");
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_whitespace_in_pairs() {
+        std::env::set_var("BLOCKED_TRAFFIC", " User-Agent = BLOCKED_AGENTS ");
+        std::env::set_var("BLOCKED_AGENTS", "bot1");
+        let result = parse_blocked_traffic();
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert_eq!(parsed[0].0, "User-Agent");
+        std::env::remove_var("BLOCKED_TRAFFIC");
+        std::env::remove_var("BLOCKED_AGENTS");
+    }
+
+    #[test]
+    fn test_allowed_origins_from_str_empty() {
+        let origins: AllowedOrigins = "".parse().unwrap();
+        assert!(origins.0.is_empty());
+    }
+
+    #[test]
+    fn test_allowed_origins_origins_immutable() {
+        let origins = AllowedOrigins::parse("http://localhost:3000");
+        let slice = origins.origins();
+        assert_eq!(slice.len(), 1);
+        // Verify we get a reference, not ownership
+        let _ = &slice[0];
+    }
 }

@@ -204,4 +204,63 @@ mod tests {
         let extracted = extract_api_token_auth(&request);
         assert!(extracted.is_none());
     }
+
+    #[test]
+    fn test_api_token_auth_eq() {
+        let auth1 = ApiTokenAuth {
+            user_id: 123,
+            token_id: 456,
+        };
+        let auth2 = ApiTokenAuth {
+            user_id: 123,
+            token_id: 456,
+        };
+        // ApiTokenAuth doesn't derive PartialEq, so we can't test equality directly
+        // Just verify the fields are the same
+        assert_eq!(auth1.user_id, auth2.user_id);
+        assert_eq!(auth1.token_id, auth2.token_id);
+    }
+
+    #[test]
+    fn test_api_token_auth_different() {
+        let auth1 = ApiTokenAuth {
+            user_id: 123,
+            token_id: 456,
+        };
+        let auth2 = ApiTokenAuth {
+            user_id: 789,
+            token_id: 101,
+        };
+        assert_ne!(auth1.user_id, auth2.user_id);
+        assert_ne!(auth1.token_id, auth2.token_id);
+    }
+
+    #[test]
+    fn test_extract_api_token_auth_after_removal() {
+        let auth = ApiTokenAuth {
+            user_id: 111,
+            token_id: 222,
+        };
+
+        let mut request = Request::builder().body(Body::empty()).unwrap();
+        request.extensions_mut().insert(auth);
+
+        let extracted = extract_api_token_auth(&request);
+        assert!(extracted.is_some());
+
+        // Remove the auth
+        request.extensions_mut().remove::<ApiTokenAuth>();
+
+        let extracted_after = extract_api_token_auth(&request);
+        assert!(extracted_after.is_none());
+    }
+
+    #[test]
+    fn test_extract_api_token_auth_empty_extensions() {
+        let request = Request::builder().body(Body::empty()).unwrap();
+        
+        // Extensions should be empty initially
+        let extracted = extract_api_token_auth(&request);
+        assert!(extracted.is_none());
+    }
 }
