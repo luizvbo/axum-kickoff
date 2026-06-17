@@ -49,4 +49,45 @@ mod tests {
         // Just verify it creates successfully
         assert!(true);
     }
+
+    #[test]
+    fn test_reqwest_client_with_timeout() {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let _reqwest_client = ReqwestClient(client);
+    }
+
+    #[test]
+    fn test_reqwest_client_with_user_agent() {
+        let client = reqwest::Client::builder()
+            .user_agent("test-agent/1.0")
+            .build()
+            .unwrap();
+        let _reqwest_client = ReqwestClient(client);
+    }
+
+    #[test]
+    fn test_reqwest_client_default() {
+        let client = reqwest::Client::default();
+        let _reqwest_client = ReqwestClient(client);
+    }
+
+    #[test]
+    fn test_reqwest_client_clone() {
+        let client = reqwest::Client::new();
+        let reqwest_client = ReqwestClient(client);
+        // Verify the struct can be cloned (reqwest::Client is Clone)
+        let _cloned = reqwest_client.0.clone();
+    }
+
+    #[test]
+    fn test_reqwest_client_send_sync() {
+        // Verify ReqwestClient is Send and Sync (required for async use)
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<ReqwestClient>();
+        assert_sync::<ReqwestClient>();
+    }
 }

@@ -153,4 +153,63 @@ mod tests {
         assert_eq!(extracted.unwrap().user_id, 123);
         assert_eq!(extracted.unwrap().token_id, 456);
     }
+
+    #[test]
+    fn test_api_token_auth_new() {
+        let auth = ApiTokenAuth {
+            user_id: 1,
+            token_id: 1,
+        };
+        assert_eq!(auth.user_id, 1);
+        assert_eq!(auth.token_id, 1);
+    }
+
+    #[test]
+    fn test_api_token_auth_large_ids() {
+        let auth = ApiTokenAuth {
+            user_id: u64::MAX,
+            token_id: u64::MAX,
+        };
+        assert_eq!(auth.user_id, u64::MAX);
+        assert_eq!(auth.token_id, u64::MAX);
+    }
+
+    #[test]
+    fn test_api_token_auth_zero_ids() {
+        let auth = ApiTokenAuth {
+            user_id: 0,
+            token_id: 0,
+        };
+        assert_eq!(auth.user_id, 0);
+        assert_eq!(auth.token_id, 0);
+    }
+
+    #[test]
+    fn test_extract_api_token_auth_multiple_extensions() {
+        let auth = ApiTokenAuth {
+            user_id: 999,
+            token_id: 888,
+        };
+
+        let mut request = Request::builder()
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(auth);
+        request.extensions_mut().insert("other_data");
+
+        let extracted = extract_api_token_auth(&request);
+        assert!(extracted.is_some());
+        assert_eq!(extracted.unwrap().user_id, 999);
+    }
+
+    #[test]
+    fn test_extract_api_token_auth_wrong_type() {
+        let mut request = Request::builder()
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert("not_an_auth");
+
+        let extracted = extract_api_token_auth(&request);
+        assert!(extracted.is_none());
+    }
 }
