@@ -15,6 +15,7 @@ use crate::Env;
 
 pub mod api_token;
 pub mod block_traffic;
+pub mod csrf;
 pub mod error_handler;
 #[cfg(feature = "metrics")]
 pub mod metrics;
@@ -25,6 +26,7 @@ pub mod session;
 
 pub use api_token::{api_token_auth, extract_api_token_auth, ApiTokenAuth};
 pub use block_traffic::middleware as block_traffic;
+pub use csrf::{ensure_token, get_or_create_csrf_token, protect, validate_csrf_token};
 pub use error_handler::middleware as error_handler;
 #[cfg(feature = "metrics")]
 pub use metrics::update_metrics;
@@ -58,6 +60,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))
         .layer(from_fn_with_state(session_key, self::session_middleware))
+        .layer(from_fn(self::csrf::ensure_token))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
         .layer(from_fn(self::security_headers::middleware))

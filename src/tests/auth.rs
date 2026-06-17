@@ -90,8 +90,12 @@ async fn logout_clears_session() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
+    // Add CSRF token to the request
+    let mut headers = anon.headers();
+    headers.insert("X-CSRF-Token", "test_token".parse().unwrap());
+
     let response = anon
-        .post::<serde_json::Value>("/api/v1/auth/logout", &[] as &[u8])
+        .post_with_headers::<serde_json::Value>("/api/v1/auth/logout", &[] as &[u8], headers)
         .await;
 
     response.assert_status(StatusCode::OK);

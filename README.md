@@ -135,16 +135,23 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 
 ### Middleware Stack
 
-- **Security Headers**: CSP, HSTS, X-Frame-Options, etc. (implemented)
-- **CORS**: Configurable cross-origin resource sharing (planned)
-- **Rate Limiting**: Request throttling (infrastructure exists, not wired globally)
-- **Request Logging**: Structured logging with tracing (implemented)
-- **Error Handling**: Centralized error handling (implemented)
-- **Session Management**: Cookie-based session middleware (implemented)
-- **API Token Auth**: Bearer token authentication (infrastructure exists, not wired globally)
-- **Real IP Extraction**: Trust proxy configuration (implemented)
-- **User Agent Validation**: Block requests without User-Agent (implemented)
-- **Traffic Blocking**: Advanced traffic filtering (infrastructure exists, not wired globally)
+| Component | Status |
+|---|---|
+| GitHub OAuth | Implemented |
+| Session middleware | Implemented |
+| CSRF protection | Implemented |
+| API token creation/list/revoke | Implemented |
+| API token auth middleware | Infrastructure exists, not wired globally |
+| Rate limiting | Infrastructure exists, not applied globally |
+| Metrics endpoint | Feature-gated, partial |
+| S3 storage | Planned |
+| Security Headers | Implemented |
+| CORS | Planned |
+| Request Logging | Implemented |
+| Error Handling | Implemented |
+| Real IP Extraction | Implemented |
+| User Agent Validation | Implemented |
+| Traffic Blocking | Infrastructure exists, not wired globally |
 
 See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 
