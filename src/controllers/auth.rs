@@ -82,9 +82,14 @@ pub async fn github_authorize(
         csrf_token.secret().clone(),
     );
 
-    // Store redirect URL in session
+    // Store redirect URL in session (validate to prevent open redirect)
     if let Some(redirect_to) = query.redirect_to {
-        session.insert("redirect_to".to_string(), redirect_to);
+        // Validate redirect URL: must be relative or start with allowed domain
+        if is_valid_redirect(&redirect_to, &config.domain_name) {
+            session.insert("redirect_to".to_string(), redirect_to);
+        } else {
+            tracing::warn!("Invalid redirect URL provided: {}", redirect_to);
+        }
     }
 
     Ok(Redirect::to(auth_url.as_str()))
@@ -213,6 +218,12 @@ pub async fn github_callback(
         .remove("redirect_to")
         .unwrap_or_else(|| "/".to_string());
 
+    // Validate redirect URL before using it
+    if !is_valid_redirect(&redirect_to, &config.domain_name) {
+        tracing::warn!("Invalid redirect URL in session: {}", redirect_to);
+        return Ok(Redirect::to("/"));
+    }
+
     Ok(Redirect::to(&redirect_to))
 }
 
@@ -233,4 +244,22 @@ pub async fn logout(
     session.remove("redirect_to");
 
     Ok(Json(json!({"success": true})))
+}
+
+/// Validates a redirect URL to prevent open redirect attacks
+///
+/// Only allows:
+/// - Relative URLs (starting with /)
+/// - URLs that start with the configured domain name
+fn is_valid_redirect(url: &str, domain_name: &str) -> bool {
+    // Allow relative URLs
+    if url.starts_with('/') {
+        return true;
+    }
+
+    // Allow URLs that start with the configured domain
+    let allowed_prefix = format!("http://{}", domain_name);
+    let allowed_prefix_https = format!("https://{}", domain_name);
+
+    url.starts_with(&allowed_prefix) || url.starts_with(&allowed_prefix_https)
 }

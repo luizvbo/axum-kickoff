@@ -14,6 +14,7 @@
 //! - `BLOCKED_TRAFFIC`: Comma-separated list of header=value pairs for blocking traffic (optional).
 //! - `GH_CLIENT_ID`: GitHub OAuth client ID (required for OAuth).
 //! - `GH_CLIENT_SECRET`: GitHub OAuth client secret (required for OAuth).
+//! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "http://localhost:8888/api/v1/auth/github/callback").
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 
@@ -41,6 +42,7 @@ pub struct Server {
     pub session_key: cookie::Key,
     pub gh_client_id: String,
     pub gh_client_secret: String,
+    pub gh_redirect_uri: String,
     pub storage_config: StorageConfig,
 }
 
@@ -120,6 +122,12 @@ impl Server {
             tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
             anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
         })?;
+        let gh_redirect_uri = dotenvy::var("GH_REDIRECT_URI").unwrap_or_else(|_| {
+            format!(
+                "http://{}:{}/api/v1/auth/github/callback",
+                domain_name, port
+            )
+        });
 
         // Load storage configuration
         let storage_config = StorageConfig::from_environment();
@@ -137,6 +145,7 @@ impl Server {
             session_key,
             gh_client_id,
             gh_client_secret,
+            gh_redirect_uri,
             storage_config,
         })
     }
@@ -210,6 +219,10 @@ impl AllowedOrigins {
 
     pub fn contains(&self, value: &HeaderValue) -> bool {
         self.0.iter().any(|it| it == value)
+    }
+
+    pub fn origins(&self) -> &[String] {
+        &self.0
     }
 }
 

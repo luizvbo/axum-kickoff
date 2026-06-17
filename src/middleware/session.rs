@@ -3,12 +3,12 @@
 //! This module provides session management using signed cookies.
 //! The session key is available in the app state for signing and verifying cookies.
 
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::header::SET_COOKIE;
 use axum::middleware::Next;
 use axum::response::Response;
 use base64::{engine::general_purpose, Engine};
-use cookie::Cookie;
+use cookie::{Cookie, CookieJar, Key};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -100,8 +100,8 @@ pub fn encode(h: &HashMap<String, String>) -> String {
 ///
 /// Extracts the session cookie from the request, decodes it, and provides
 /// a SessionExtension to handlers. After the handler runs, if the session
-/// was modified, it encodes it back to a cookie.
-pub async fn middleware(req: Request, next: Next) -> Response {
+/// was modified, it encodes it back to a signed cookie.
+pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next) -> Response {
     // Extract session cookie from request
     let session_data = req
         .headers()
@@ -143,17 +143,23 @@ pub async fn middleware(req: Request, next: Next) -> Response {
         // Encode the session data
         let encoded = encode(&session.data);
 
-        // Create cookie with encoded value
+        // Create signed cookie with encoded value
         let cookie = Cookie::build((COOKIE_NAME, encoded))
             .path("/")
             .http_only(true)
             .same_site(cookie::SameSite::Lax)
             .build();
 
+        // Sign the cookie
+        let mut jar = CookieJar::new();
+        jar.signed_mut(&session_key).add(cookie);
+
         // Add Set-Cookie header to response
-        response
-            .headers_mut()
-            .insert(SET_COOKIE, cookie.to_string().parse().unwrap());
+        if let Some(signed_cookie) = jar.get(COOKIE_NAME) {
+            response
+                .headers_mut()
+                .insert(SET_COOKIE, signed_cookie.to_string().parse().unwrap());
+        }
     }
 
     response

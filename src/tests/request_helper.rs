@@ -227,7 +227,7 @@ impl RequestHelper for TokenUser {
 ///
 /// This matches the session encoding used in the session middleware.
 pub fn encode_session_header(session_key: &cookie::Key, user_id: i32) -> String {
-    let cookie_name = "cargo_session";
+    let cookie_name = "axum_kickoff_session";
 
     // Build session data map
     let mut map = std::collections::HashMap::new();
@@ -255,6 +255,6 @@ mod tests {
     fn test_encode_session_header() {
         let session_key = cookie::Key::generate();
         let cookie = encode_session_header(&session_key, 42);
-        assert!(cookie.contains("cargo_session="));
+        assert!(cookie.contains("axum_kickoff_session="));
     }
 }

@@ -29,11 +29,12 @@ async fn test_server_time() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<serde_json::Value>("/api/server-time").await;
+    let response = anon.get::<()>("/api/server-time").await;
     response.assert_status(StatusCode::OK);
 
-    let json = response.into_json::<serde_json::Value>().await;
-    assert!(json.is_object());
+    let body = response.into_string().await;
+    // The endpoint returns HTML for HTMX
+    assert!(body.contains("<time>"));
 }
 
 #[tokio::test]

@@ -153,6 +153,7 @@ struct TokenBucket {
 }
 
 /// In-memory rate limiter using token bucket algorithm
+#[derive(Clone)]
 pub struct RateLimiter {
     config: HashMap<LimitedAction, RateLimiterConfig>,
     buckets: Arc<RwLock<HashMap<String, TokenBucket>>>,

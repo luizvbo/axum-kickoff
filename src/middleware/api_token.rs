@@ -10,6 +10,7 @@ use axum::{
 };
 
 use crate::app::AppState;
+use crate::models::ApiToken;
 use crate::util::HashedToken;
 
 /// API token authentication context
@@ -24,11 +25,11 @@ pub struct ApiTokenAuth {
 /// Authenticate a request using API token
 ///
 /// This middleware checks for a Bearer token in the Authorization header,
-/// validates it, and extracts the user ID and token ID.
+/// validates it against the database, and extracts the user ID and token ID.
 pub async fn api_token_auth(
-    State(_state): State<AppState>,
-    request: Request,
-    _next: Next,
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
 ) -> Result<Response, StatusCode> {
     use http::header::AUTHORIZATION;
 
@@ -49,66 +50,45 @@ pub async fn api_token_auth(
     // Parse and hash the token
     let hashed_token = HashedToken::parse(token_str).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    // TODO: Look up token in database once Toasty proc macro ABI mismatch is resolved
-    // For now, we'll implement a placeholder that validates the token format
-    // Full implementation should:
-    // 1. Query api_tokens table by hashed token
-    // 2. Check if token is not revoked and not expired
-    // 3. Check if user account is not locked (account_lock_until > now)
-    // 4. If locked, return forbidden with lock reason
-    // 5. Update last_used_at timestamp
-    // 6. Extract user_id and token_id
-    // 7. Use AuthCheck to validate scopes if required
+    let mut db = state.0.database.db_clone();
 
-    // Placeholder: For now, we'll just validate the token format
-    // In production, this would be a database lookup
-    let _ = hashed_token; // Use the variable to avoid unused warning
+    // Query api_tokens table by hashed token
+    let mut api_token = ApiToken::filter(
+        ApiToken::fields()
+            .token()
+            .eq(hashed_token.as_bytes().to_vec()),
+    )
+    .first()
+    .exec(&mut db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // For now, return unauthorized since we can't validate against database
-    // Once database layer is working, this will return the actual user_id and token_id
-    Err(StatusCode::SERVICE_UNAVAILABLE)
+    // Check if token is revoked
+    if api_token.revoked {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
 
-    // Once database is working, the code would look like:
-    // let db = state.database.db();
-    // let api_token = ApiToken::filter(ApiToken::F::token.equals(hashed_token.as_bytes()))
-    //     .filter(ApiToken::F::revoked.equals(false))
-    //     .first(db)
-    //     .await
-    //     .ok_or(StatusCode::UNAUTHORIZED)?;
-    //
-    // // Check if token is expired
-    // if !api_token.is_valid() {
-    //     return Err(StatusCode::UNAUTHORIZED);
-    // }
-    //
-    // // Check if user account is locked
-    // let user = User::filter(User::F::id.equals(api_token.user_id))
-    //     .first(db)
-    //     .await
-    //     .ok_or(StatusCode::UNAUTHORIZED)?;
-    //
-    // if let Some(lock_until) = user.account_lock_until {
-    //     if lock_until > jiff::Timestamp::now() {
-    //         // Return forbidden with lock reason if available
-    //         let reason = user.account_lock_reason.as_deref().unwrap_or("Account is locked");
-    //         // In production, this would return a proper error response
-    //         return Err(StatusCode::FORBIDDEN);
-    //     }
-    // }
-    //
-    // // Update last_used_at
-    // let mut token_update = api_token.clone();
-    // token_update.last_used_at = Some(jiff::Timestamp::now());
-    // token_update.update(db).await;
-    //
-    // // Store auth context in request extensions
-    // let auth = ApiTokenAuth {
-    //     user_id: api_token.user_id,
-    //     token_id: api_token.id,
-    // };
-    // request.extensions_mut().insert(auth);
-    //
-    // Ok(next.run(request).await)
+    // Check if token is expired
+    if !api_token.is_valid() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // Update last_used_at timestamp
+    let last_used_at = Some(jiff::Timestamp::now());
+    toasty::update!(api_token { last_used_at })
+        .exec(&mut db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Store auth context in request extensions
+    let auth = ApiTokenAuth {
+        user_id: api_token.user_id,
+        token_id: api_token.id,
+    };
+    request.extensions_mut().insert(auth);
+
+    Ok(next.run(request).await)
 }
 
 /// Extractor for API token authentication context

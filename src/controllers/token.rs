@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::AppState;
 use crate::middleware::SessionExtension;
 use crate::models::ApiToken;
-use crate::util::errors::{server_error, unauthorized, AppResult};
+use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
 use crate::util::PlainToken;
 
 /// Request body for creating a new API token
@@ -96,10 +96,15 @@ pub async fn create_token(
         .as_ref()
         .map(|s| serde_json::to_string(s).unwrap());
 
-    let expired_at = req.expired_at.as_ref().map(|s| {
-        jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s)
-            .unwrap_or_else(|_| jiff::Timestamp::now())
-    });
+    let expired_at = if let Some(s) = req.expired_at.as_ref() {
+        Some(
+            jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", s).map_err(|_| {
+                bad_request("Invalid expired_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ")
+            })?,
+        )
+    } else {
+        None
+    };
 
     let mut db = state.0.database.db_clone();
 
@@ -136,66 +141,86 @@ pub async fn create_token(
 /// List all API tokens for the authenticated user
 ///
 /// This endpoint returns a list of all API tokens belonging to the authenticated user.
-pub async fn list_tokens(State(_state): State<AppState>) -> AppResult<impl IntoResponse> {
-    // TODO: Implement full token listing once Toasty proc macro ABI mismatch is resolved
-    //
-    // Full implementation should:
-    // 1. Get user_id from session or API token auth
-    // 2. Query api_tokens table for user's tokens
-    // 3. Return list of tokens (without the actual token values)
+pub async fn list_tokens(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionExtension>,
+) -> AppResult<impl IntoResponse> {
+    let user_id = session
+        .get("user_id")
+        .ok_or_else(|| unauthorized("Not logged in"))?;
+    let user_id = user_id
+        .parse::<u64>()
+        .map_err(|_| unauthorized("Invalid session"))?;
 
-    // For now, return service unavailable
-    Ok((
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({
-            "error": "Token listing is temporarily unavailable due to database layer issues"
-        })),
-    ))
+    let mut db = state.0.database.db_clone();
+
+    // Query all tokens for the user using Toasty's filter API
+    let tokens = ApiToken::filter(ApiToken::fields().user_id().eq(user_id))
+        .exec(&mut db)
+        .await
+        .map_err(|e| server_error(e.to_string()))?;
+
+    let token_list: Vec<TokenListItem> = tokens
+        .into_iter()
+        .map(|token| {
+            let crate_scopes = token.parse_crate_scopes().map(|scopes| {
+                scopes
+                    .into_iter()
+                    .map(|s| s.pattern().to_string())
+                    .collect()
+            });
+            let endpoint_scopes = token
+                .parse_endpoint_scopes()
+                .map(|scopes| scopes.into_iter().map(|s| s.as_str().to_string()).collect());
+
+            TokenListItem {
+                id: token.id,
+                name: token.name,
+                created_at: token.created_at.to_string(),
+                last_used_at: token.last_used_at.map(|t| t.to_string()),
+                revoked: token.revoked,
+                crate_scopes,
+                endpoint_scopes,
+                expired_at: token.expired_at.map(|t| t.to_string()),
+            }
+        })
+        .collect();
+
+    Ok(Json(token_list))
 }
 
 /// Revoke an API token
 ///
 /// This endpoint revokes (deletes) an API token by ID.
 pub async fn revoke_token(
-    State(_state): State<AppState>,
-    Path(_token_id): Path<u64>,
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionExtension>,
+    Path(token_id): Path<u64>,
 ) -> AppResult<impl IntoResponse> {
-    // TODO: Implement full token revocation once Toasty proc macro ABI mismatch is resolved
-    //
-    // Full implementation should:
-    // 1. Get user_id from session or API token auth
-    // 2. Verify the token belongs to the user
-    // 3. Mark the token as revoked in the database
-    // 4. Return success
+    let user_id = session
+        .get("user_id")
+        .ok_or_else(|| unauthorized("Not logged in"))?;
+    let user_id = user_id
+        .parse::<u64>()
+        .map_err(|_| unauthorized("Invalid session"))?;
 
-    // For now, return service unavailable
-    Ok((
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({
-            "error": "Token revocation is temporarily unavailable due to database layer issues"
-        })),
-    ))
-}
+    let mut db = state.0.database.db_clone();
 
-/// Get details of a specific API token
-///
-/// This endpoint returns details of a specific API token by ID.
-pub async fn get_token(
-    State(_state): State<AppState>,
-    Path(_token_id): Path<u64>,
-) -> AppResult<impl IntoResponse> {
-    // TODO: Implement full token retrieval once Toasty proc macro ABI mismatch is resolved
-    //
-    // Full implementation should:
-    // 1. Get user_id from session or API token auth
-    // 2. Verify the token belongs to the user
-    // 3. Return token details (without the actual token value)
+    // Find the token and verify it belongs to the user
+    let token = ApiToken::filter(ApiToken::fields().id().eq(token_id))
+        .filter(ApiToken::fields().user_id().eq(user_id))
+        .first()
+        .exec(&mut db)
+        .await
+        .map_err(|e| server_error(e.to_string()))?
+        .ok_or_else(|| server_error("API token not found".to_string()))?;
 
-    // For now, return service unavailable
-    Ok((
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(serde_json::json!({
-            "error": "Token retrieval is temporarily unavailable due to database layer issues"
-        })),
-    ))
+    // Mark the token as revoked using toasty::update!
+    let mut token = token;
+    toasty::update!(token { revoked: true })
+        .exec(&mut db)
+        .await
+        .map_err(|e| server_error(e.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
