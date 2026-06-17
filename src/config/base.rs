@@ -11,7 +11,7 @@ pub struct Base {
 
 impl Base {
     pub fn from_environment() -> anyhow::Result<Self> {
-        let env = match dotenvy::var("HEROKU").as_deref() {
+        let env = match std::env::var("HEROKU").as_deref() {
             Ok(_) => Env::Production,
             _ => Env::Development,
         };

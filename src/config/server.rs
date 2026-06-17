@@ -53,8 +53,8 @@ impl Server {
     ///
     /// This function panics if the Server configuration is invalid.
     pub fn from_environment() -> anyhow::Result<Self> {
-        let docker = dotenvy::var("DEV_DOCKER").is_ok();
-        let heroku = dotenvy::var("HEROKU").is_ok();
+        let docker = std::env::var("DEV_DOCKER").is_ok();
+        let heroku = std::env::var("HEROKU").is_ok();
 
         let ip = if heroku || docker {
             [0, 0, 0, 0].into()
@@ -160,7 +160,7 @@ impl Server {
 /// Format: "Header1=ENV_VAR1,Header2=ENV_VAR2"
 /// Each ENV_VAR should contain comma-separated values to block
 fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> {
-    let blocked_traffic_str = match dotenvy::var("BLOCKED_TRAFFIC") {
+    let blocked_traffic_str = match std::env::var("BLOCKED_TRAFFIC") {
         Ok(s) => s,
         Err(_) => return Ok(Vec::new()),
     };
@@ -178,7 +178,7 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
         let header_name = parts[0].trim().to_string();
         let env_var_name = parts[1].trim();
 
-        let env_value = dotenvy::var(env_var_name)
+        let env_value = std::env::var(env_var_name)
             .map_err(|_| anyhow::anyhow!("Environment variable {} not found", env_var_name))?;
 
         let blocked_values: Vec<BlockCriteria> = env_value
