@@ -6,12 +6,12 @@ A production-ready Rust web application starter template built on [Axum](https:/
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
 - **Database**: Toasty ORM with SQLite (zero-setup) with PostgreSQL migration path
-- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens
+- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens (planned)
 - **Frontend**: Server-side rendering with Askama, HTMX, and Alpine.js
-- **Security**: Comprehensive middleware (CORS, security headers, rate limiting, etc.)
-- **Observability**: Structured logging with tracing, Prometheus metrics (feature-gated)
+- **Security**: Comprehensive middleware (security headers, rate limiting, etc.)
+- **Observability**: Structured logging with tracing, Prometheus metrics (feature-gated, planned)
 - **Testing**: Integration test infrastructure with snapshot testing
-- **Storage**: Pluggable storage backends (local filesystem, S3)
+- **Storage**: Pluggable storage backends (local filesystem implemented, S3 planned)
 - **Cost-Conscious**: Designed for self-hosting with minimal external dependencies
 
 ## Quick Start
@@ -38,7 +38,7 @@ cp .env.sample .env
 cargo run --bin server
 ```
 
-The server will start on `http://localhost:3000` by default.
+The server will start on `http://localhost:8888` by default.
 
 ### Configuration
 
@@ -47,7 +47,7 @@ Set the following environment variables in `.env`:
 ```bash
 # Server
 SERVER_IP=127.0.0.1
-SERVER_PORT=3000
+PORT=8888
 DOMAIN_NAME=localhost
 
 # Database
@@ -59,11 +59,9 @@ SESSION_KEY=your-secret-key-min-32-bytes
 # GitHub OAuth
 GH_CLIENT_ID=your-github-client-id
 GH_CLIENT_SECRET=your-github-client-secret
-GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
 
 # Storage
-STORAGE_BACKEND=local
-STORAGE_LOCAL_PATH=./uploads
+STORAGE_PATH=./local_uploads
 ```
 
 See [Configuration Documentation](docs/CONFIGURATION.md) for all available options.
@@ -134,16 +132,16 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 
 ### Middleware Stack
 
-- **Security Headers**: CSP, HSTS, X-Frame-Options, etc.
-- **CORS**: Configurable cross-origin resource sharing
-- **Rate Limiting**: Request throttling
-- **Request Logging**: Structured logging with tracing
-- **Error Handling**: Centralized error handling
-- **Session Management**: Cookie-based session middleware
-- **API Token Auth**: Bearer token authentication
-- **Real IP Extraction**: Trust proxy configuration
-- **User Agent Validation**: Block requests without User-Agent
-- **Traffic Blocking**: Advanced traffic filtering
+- **Security Headers**: CSP, HSTS, X-Frame-Options, etc. (implemented)
+- **CORS**: Configurable cross-origin resource sharing (planned)
+- **Rate Limiting**: Request throttling (infrastructure exists, not wired globally)
+- **Request Logging**: Structured logging with tracing (implemented)
+- **Error Handling**: Centralized error handling (implemented)
+- **Session Management**: Cookie-based session middleware (implemented)
+- **API Token Auth**: Bearer token authentication (infrastructure exists, not wired globally)
+- **Real IP Extraction**: Trust proxy configuration (implemented)
+- **User Agent Validation**: Block requests without User-Agent (implemented)
+- **Traffic Blocking**: Advanced traffic filtering (infrastructure exists, not wired globally)
 
 See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 

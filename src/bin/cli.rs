@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
 
     let db = toasty::Db::builder()
-        .models(toasty::models!(crate::*))
+        .models(toasty::models!(axum_kickoff::*))
         .connect(&db_config.url)
         .await?;
 
