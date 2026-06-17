@@ -148,7 +148,7 @@ pub async fn about_page(
     State(state): State<AppState>,
 ) -> AppResult<HtmlTemplate<AboutTemplate>> {
     let mut db = state.0.database.db_clone();
-    
+
     // Fetch data using Toasty
     let users = User::all().exec(&mut db).await
         .map_err(|e| server_error(e.to_string()))?;

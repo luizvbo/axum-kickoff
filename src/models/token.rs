@@ -56,7 +56,8 @@ impl ApiToken {
         let now = jiff::Timestamp::now();
 
         // Serialize scopes to JSON for storage
-        let resource_scopes_json = resource_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let resource_scopes_json =
+            resource_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
         let action_scopes_json =
             action_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
 

@@ -45,12 +45,12 @@ pub async fn list_items(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
     let mut db = state.0.database.db_clone();
-    
+
     let items = Item::all()
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?;
-    
+
     Ok(Json(items))
 }
 ```
@@ -62,7 +62,7 @@ pub async fn create_item(
     Json(req): Json<CreateItemRequest>,
 ) -> AppResult<impl IntoResponse> {
     let mut db = state.0.database.db_clone();
-    
+
     let item = toasty::create!(Item {
         name: req.name,
         created_at: jiff::Timestamp::now(),
@@ -70,7 +70,7 @@ pub async fn create_item(
     .exec(&mut db)
     .await
     .map_err(|e| server_error(e.to_string()))?;
-    
+
     Ok(Json(item))
 }
 ```

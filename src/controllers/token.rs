@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
 use crate::middleware::SessionExtension;
-use crate::models::{ApiToken};
 use crate::models::token::{ActionScope, ResourceScope};
+use crate::models::ApiToken;
 use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
 use crate::util::PlainToken;
 
@@ -72,8 +72,9 @@ impl CreateTokenRequest {
 
         // Validate expiration date
         let expires_at = if let Some(s) = self.expires_at {
-            let timestamp = jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", &s)
-                .map_err(|_| "Invalid expires_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ".to_string())?;
+            let timestamp = jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", &s).map_err(|_| {
+                "Invalid expires_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ".to_string()
+            })?;
             if timestamp < jiff::Timestamp::now() {
                 return Err("Expiration date cannot be in the past".to_string());
             }
@@ -190,9 +191,12 @@ pub async fn create_token(
     .map_err(|e| server_error(e.to_string()))?;
 
     // Convert scopes back to strings for response
-    let resource_scopes_response = validated
-        .resource_scopes
-        .map(|scopes| scopes.into_iter().map(|s| s.pattern().to_string()).collect());
+    let resource_scopes_response = validated.resource_scopes.map(|scopes| {
+        scopes
+            .into_iter()
+            .map(|s| s.pattern().to_string())
+            .collect()
+    });
     let action_scopes_response = validated
         .action_scopes
         .map(|scopes| scopes.into_iter().map(|s| s.as_str().to_string()).collect());

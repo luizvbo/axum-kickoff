@@ -48,7 +48,10 @@ impl ErrorResponse {
     /// Create a new error response from multiple error messages
     pub fn from_details(details: Vec<String>) -> Self {
         Self {
-            errors: details.into_iter().map(|detail| ErrorDetail { detail }).collect(),
+            errors: details
+                .into_iter()
+                .map(|detail| ErrorDetail { detail })
+                .collect(),
         }
     }
 }

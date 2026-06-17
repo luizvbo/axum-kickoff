@@ -2,7 +2,7 @@
 //!
 //! Provides the AuthCheck pattern for endpoint-level authentication with scoped tokens.
 
-use crate::models::token::{ResourceScope, ActionScope};
+use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
 use crate::util::errors::{forbidden, unauthorized, BoxedAppError};
 use axum::extract::FromRequestParts;
@@ -248,7 +248,7 @@ impl AuthCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::token::{ApiToken, ActionScope};
+    use crate::models::token::{ActionScope, ApiToken};
     use jiff::Timestamp;
     use std::sync::Arc;
 
@@ -256,7 +256,8 @@ mod tests {
         action_scopes: Option<Vec<ActionScope>>,
         resource_scopes: Option<Vec<String>>,
     ) -> Arc<ApiToken> {
-        let resource_scopes_json = resource_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let resource_scopes_json =
+            resource_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
         let action_scopes_json =
             action_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
 

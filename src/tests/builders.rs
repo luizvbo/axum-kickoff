@@ -3,7 +3,7 @@
 //! Provides a fluent API for creating test data, inserting directly
 //! into the database using Toasty ORM.
 
-use crate::models::{ApiToken, ResourceScope, ActionScope, User};
+use crate::models::{ActionScope, ApiToken, ResourceScope, User};
 use crate::util::PlainToken;
 use secrecy::ExposeSecret;
 use std::sync::atomic::{AtomicI64, Ordering};

@@ -38,13 +38,13 @@ where
         state: &S,
     ) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        
+
         // Generate or retrieve CSRF token from session
         // For now, generate a simple token
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         let token = format!("csrf_{}", COUNTER.fetch_add(1, Ordering::SeqCst));
-        
+
         Ok(CsrfToken(token))
     }
 }
@@ -62,8 +62,8 @@ Create a form template with HTMX attributes in `templates/create_post.html`:
 {% block content %}
 <div class="container mx-auto p-4">
     <h1 class="text-3xl font-bold mb-6">Create Post</h1>
-    
-    <form 
+
+    <form
         hx-post="/posts"
         hx-target="#post-form"
         hx-swap="outerHTML"
@@ -71,13 +71,13 @@ Create a form template with HTMX attributes in `templates/create_post.html`:
     >
         <!-- CSRF Token -->
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        
+
         <!-- Title Field -->
         <div class="mb-4">
             <label for="title" class="block text-sm font-medium mb-2">Title</label>
-            <input 
-                type="text" 
-                name="title" 
+            <input
+                type="text"
+                name="title"
                 id="title"
                 value="{{ title }}"
                 class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -87,12 +87,12 @@ Create a form template with HTMX attributes in `templates/create_post.html`:
             <p class="text-red-500 text-sm mt-1">{{ errors.title }}</p>
             {% endif %}
         </div>
-        
+
         <!-- Content Field -->
         <div class="mb-4">
             <label for="content" class="block text-sm font-medium mb-2">Content</label>
-            <textarea 
-                name="content" 
+            <textarea
+                name="content"
                 id="content"
                 rows="6"
                 class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -102,16 +102,16 @@ Create a form template with HTMX attributes in `templates/create_post.html`:
             <p class="text-red-500 text-sm mt-1">{{ errors.content }}</p>
             {% endif %}
         </div>
-        
+
         <!-- Submit Button -->
-        <button 
+        <button
             type="submit"
             class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
         >
             Create Post
         </button>
     </form>
-    
+
     <div id="post-form"></div>
 </div>
 {% endblock %}
@@ -147,22 +147,22 @@ pub async fn create_post(
 ) -> AppResult<impl IntoResponse> {
     // Validate CSRF token
     // (Implement CSRF validation logic)
-    
+
     // Validate form data
     let mut errors = std::collections::HashMap::new();
-    
+
     if form.title.trim().is_empty() {
         errors.insert("title", "Title is required".to_string());
     }
-    
+
     if form.content.trim().is_empty() {
         errors.insert("content", "Content is required".to_string());
     }
-    
+
     if form.title.len() > 200 {
         errors.insert("title", "Title must be less than 200 characters".to_string());
     }
-    
+
     // Return form with errors if validation fails
     if !errors.is_empty() {
         return Ok(HtmlTemplate(CreatePostTemplate {
@@ -172,10 +172,10 @@ pub async fn create_post(
             errors,
         }).into_response());
     }
-    
+
     // Create the post
     let mut db = state.0.database.db_clone();
-    
+
     let post = toasty::create!(Post {
         user_id: user.id,
         title: form.title,
@@ -187,7 +187,7 @@ pub async fn create_post(
     .exec(&mut db)
     .await
     .map_err(|e| server_error(e.to_string()))?;
-    
+
     // Return success message or redirect
     Ok(Html(r#"
         <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
@@ -234,20 +234,20 @@ Here's a complete example for a post creation form:
 {% block content %}
 <div class="container mx-auto p-4" id="post-form-container">
     <h1 class="text-3xl font-bold mb-6">Create Post</h1>
-    
-    <form 
+
+    <form
         hx-post="/posts"
         hx-target="#post-form-container"
         hx-swap="outerHTML"
         class="max-w-2xl space-y-4"
     >
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        
+
         <div>
             <label for="title" class="block text-sm font-medium mb-2">Title</label>
-            <input 
-                type="text" 
-                name="title" 
+            <input
+                type="text"
+                name="title"
                 id="title"
                 value="{{ title }}"
                 class="w-full px-3 py-2 border rounded-lg"
@@ -257,11 +257,11 @@ Here's a complete example for a post creation form:
             <p class="text-red-500 text-sm mt-1">{{ errors.title }}</p>
             {% endif %}
         </div>
-        
+
         <div>
             <label for="content" class="block text-sm font-medium mb-2">Content</label>
-            <textarea 
-                name="content" 
+            <textarea
+                name="content"
                 id="content"
                 rows="6"
                 class="w-full px-3 py-2 border rounded-lg"
@@ -271,8 +271,8 @@ Here's a complete example for a post creation form:
             <p class="text-red-500 text-sm mt-1">{{ errors.content }}</p>
             {% endif %}
         </div>
-        
-        <button 
+
+        <button
             type="submit"
             class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
         >
@@ -317,15 +317,15 @@ pub async fn create_post(
     Form(form): Form<CreatePostForm>,
 ) -> AppResult<Html<String>> {
     let mut errors = HashMap::new();
-    
+
     if form.title.trim().is_empty() {
         errors.insert("title", "Title is required".to_string());
     }
-    
+
     if form.content.trim().is_empty() {
         errors.insert("content", "Content is required".to_string());
     }
-    
+
     if !errors.is_empty() {
         let template = CreatePostTemplate {
             csrf_token: form.csrf_token,
@@ -335,9 +335,9 @@ pub async fn create_post(
         };
         return Ok(Html(template.render().unwrap()));
     }
-    
+
     // Create post logic here...
-    
+
     Ok(Html(r#"
         <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
             Post created successfully!
@@ -389,9 +389,9 @@ Add a loading indicator:
 Add HTML5 validation attributes:
 
 ```html
-<input 
-    type="text" 
-    name="title" 
+<input
+    type="text"
+    name="title"
     required
     minlength="3"
     maxlength="200"

@@ -4,8 +4,8 @@
 //! This serves as an example of a complete vertical slice feature.
 
 use axum::extract::{Path, State};
-use axum::response::{IntoResponse, Json};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
@@ -201,7 +201,10 @@ pub async fn delete_post(
         .map_err(|e| server_error(e.to_string()))?
         .ok_or_else(|| not_found())?;
 
-    post.delete().exec(&mut db).await.map_err(|e| server_error(e.to_string()))?;
+    post.delete()
+        .exec(&mut db)
+        .await
+        .map_err(|e| server_error(e.to_string()))?;
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -76,7 +76,9 @@ pub fn validate_csrf_token(session: &SessionExtension, provided_token: &str) -> 
     if session_token == provided_token {
         Ok(())
     } else {
-        Err(bad_request("Invalid CSRF token. Please refresh the page and try again."))
+        Err(bad_request(
+            "Invalid CSRF token. Please refresh the page and try again.",
+        ))
     }
 }
 
@@ -135,10 +137,7 @@ fn is_unsafe_method(method: &Method) -> bool {
 /// For form submissions, this middleware expects the form data to be available
 /// in the request body. This works with axum's Form extractor.
 /// If no session exists or the session is empty, the request passes through unchanged (for API endpoints).
-pub async fn protect(
-    req: axum::extract::Request,
-    next: Next,
-) -> Response {
+pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
     let method = req.method();
     let headers = req.headers();
 
@@ -154,10 +153,14 @@ pub async fn protect(
                     if !token.is_empty() {
                         validate_csrf_token(session, &token)
                     } else {
-                        Err(bad_request("CSRF token missing. Please include a CSRF token in your request."))
+                        Err(bad_request(
+                            "CSRF token missing. Please include a CSRF token in your request.",
+                        ))
                     }
                 } else {
-                    Err(bad_request("CSRF token missing. Please include a CSRF token in your request."))
+                    Err(bad_request(
+                        "CSRF token missing. Please include a CSRF token in your request.",
+                    ))
                 };
 
                 // Handle validation errors
@@ -176,10 +179,7 @@ pub async fn protect(
 /// This middleware should be applied to routes that render forms.
 /// It ensures that a CSRF token is available in the session before the handler runs.
 /// If no session exists, the request passes through unchanged.
-pub async fn ensure_token(
-    req: axum::extract::Request,
-    next: Next,
-) -> Response {
+pub async fn ensure_token(req: axum::extract::Request, next: Next) -> Response {
     // Only create CSRF token if session exists
     if let Some(session) = req.extensions().get::<SessionExtension>() {
         get_or_create_csrf_token(session);
@@ -225,7 +225,7 @@ mod tests {
     fn test_extract_csrf_token_from_header() {
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(CSRF_HEADER_NAME, "test_token_123".parse().unwrap());
-        
+
         let token = extract_csrf_token_from_request(&Method::POST, &headers, None);
         assert_eq!(token, Some("test_token_123".to_string()));
     }
@@ -233,21 +233,27 @@ mod tests {
     #[test]
     fn test_extract_csrf_token_from_form() {
         let form_data = "username=test&csrf_token=abc123&other=value";
-        
-        let token = extract_csrf_token_from_request(&Method::POST, &axum::http::HeaderMap::new(), Some(form_data));
+
+        let token = extract_csrf_token_from_request(
+            &Method::POST,
+            &axum::http::HeaderMap::new(),
+            Some(form_data),
+        );
         assert_eq!(token, Some("abc123".to_string()));
     }
 
     #[test]
     fn test_extract_csrf_token_safe_method() {
-        let token = extract_csrf_token_from_request(&Method::GET, &axum::http::HeaderMap::new(), None);
+        let token =
+            extract_csrf_token_from_request(&Method::GET, &axum::http::HeaderMap::new(), None);
         // Safe methods return empty string (valid)
         assert_eq!(token, Some(String::new()));
     }
 
     #[test]
     fn test_extract_csrf_token_none() {
-        let token = extract_csrf_token_from_request(&Method::POST, &axum::http::HeaderMap::new(), None);
+        let token =
+            extract_csrf_token_from_request(&Method::POST, &axum::http::HeaderMap::new(), None);
         assert!(token.is_none());
     }
 }

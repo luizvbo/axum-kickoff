@@ -24,7 +24,7 @@ use crate::models::User;
 use crate::util::errors::{unauthorized, AppResult};
 
 /// Extractor for authenticated users
-/// 
+///
 /// Returns 401 if user is not logged in
 pub struct CurrentUser(pub User);
 
@@ -41,7 +41,7 @@ where
         state: &S,
     ) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        
+
         // Try session auth first
         if let Some(session) = parts.extract::<SessionExtension>().await.ok() {
             if let Some(user_id_str) = session.get("user_id") {
@@ -66,7 +66,7 @@ where
 }
 
 /// Optional extractor for authenticated users
-/// 
+///
 /// Returns None if user is not logged in
 pub struct OptionalCurrentUser(pub Option<User>);
 
@@ -107,7 +107,7 @@ pub async fn dashboard(
 ) -> AppResult<HtmlTemplate<DashboardTemplate>> {
     // User is authenticated, proceed with the handler
     let mut db = state.0.database.db_clone();
-    
+
     // Fetch user-specific data
     let posts = Post::filter(Post::fields().user_id().eq(user.id))
         .exec(&mut db)
@@ -147,7 +147,7 @@ pub async fn require_auth_or_redirect(
             // Return CurrentUser
         }
     }
-    
+
     // Redirect to login with return URL
     Err(Redirect::to("/api/v1/auth/github/authorize?redirect_to=/dashboard"))
 }
@@ -185,7 +185,7 @@ where
         state: &S,
     ) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        
+
         if let Some(session) = parts.extract::<SessionExtension>().await.ok() {
             if let Some(user_id_str) = session.get("user_id") {
                 if let Ok(user_id) = user_id_str.parse::<u64>() {
@@ -217,7 +217,7 @@ pub async fn dashboard(
     State(state): State<AppState>,
 ) -> AppResult<HtmlTemplate<DashboardTemplate>> {
     let mut db = state.0.database.db_clone();
-    
+
     let posts = Post::filter(Post::fields().user_id().eq(user.id))
         .exec(&mut db)
         .await
@@ -241,7 +241,7 @@ pub async fn dashboard(
 {% block content %}
 <div class="container mx-auto p-4">
     <h1 class="text-3xl font-bold mb-4">Welcome, {{ username }}!</h1>
-    
+
     <div class="bg-white rounded-lg shadow p-6 mb-6">
         <h2 class="text-xl font-semibold mb-2">Your Posts</h2>
         <p class="text-gray-600">You have {{ post_count }} posts.</p>
@@ -282,7 +282,7 @@ pub async fn public_page(
     OptionalCurrentUser(maybe_user): OptionalCurrentUser,
 ) -> AppResult<HtmlTemplate<PublicTemplate>> {
     let username = maybe_user.map(|u| u.gh_login);
-    
+
     Ok(HtmlTemplate(PublicTemplate {
         username,
     }))
@@ -297,7 +297,7 @@ Test that protected routes reject unauthenticated requests:
 #[tokio::test]
 async fn test_dashboard_requires_auth() {
     let app = create_test_app().await;
-    
+
     let response = app
         .oneshot(Request::builder()
             .uri("/dashboard")
@@ -305,7 +305,7 @@ async fn test_dashboard_requires_auth() {
             .unwrap())
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 ```

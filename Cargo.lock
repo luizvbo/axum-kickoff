@@ -302,7 +302,6 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "askama",
- "async-trait",
  "axum",
  "axum-extra",
  "base64",

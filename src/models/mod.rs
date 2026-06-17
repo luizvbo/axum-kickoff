@@ -9,5 +9,5 @@ pub mod token;
 pub mod user;
 
 pub use post::Post;
-pub use token::{ApiToken, ResourceScope, ActionScope};
+pub use token::{ActionScope, ApiToken, ResourceScope};
 pub use user::User;

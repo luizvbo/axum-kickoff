@@ -104,11 +104,7 @@ impl<S: Send + Sync> FromRequestParts<S> for OptionalCurrentUserId {
 ///         require_login
 ///     ));
 /// ```
-pub async fn require_login(
-    State(_state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn require_login(State(_state): State<AppState>, req: Request, next: Next) -> Response {
     let session = req.extensions().get::<SessionExtension>();
 
     let user_id = session.and_then(|s| s.get("user_id"));
