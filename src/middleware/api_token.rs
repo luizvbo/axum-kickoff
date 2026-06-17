@@ -128,9 +128,7 @@ mod tests {
 
     #[test]
     fn test_extract_api_token_auth_none() {
-        let request = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let request = Request::builder().body(Body::empty()).unwrap();
 
         let auth = extract_api_token_auth(&request);
         assert!(auth.is_none());
@@ -143,9 +141,7 @@ mod tests {
             token_id: 456,
         };
 
-        let mut request = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let mut request = Request::builder().body(Body::empty()).unwrap();
         request.extensions_mut().insert(auth);
 
         let extracted = extract_api_token_auth(&request);
@@ -191,9 +187,7 @@ mod tests {
             token_id: 888,
         };
 
-        let mut request = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let mut request = Request::builder().body(Body::empty()).unwrap();
         request.extensions_mut().insert(auth);
         request.extensions_mut().insert("other_data");
 
@@ -204,9 +198,7 @@ mod tests {
 
     #[test]
     fn test_extract_api_token_auth_wrong_type() {
-        let mut request = Request::builder()
-            .body(Body::empty())
-            .unwrap();
+        let mut request = Request::builder().body(Body::empty()).unwrap();
         request.extensions_mut().insert("not_an_auth");
 
         let extracted = extract_api_token_auth(&request);

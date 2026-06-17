@@ -240,8 +240,14 @@ mod tests {
 
         let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(req.name, "test-token");
-        assert_eq!(req.crate_scopes, Some(vec!["crate1".to_string(), "crate2".to_string()]));
-        assert_eq!(req.endpoint_scopes, Some(vec!["api1".to_string(), "api2".to_string()]));
+        assert_eq!(
+            req.crate_scopes,
+            Some(vec!["crate1".to_string(), "crate2".to_string()])
+        );
+        assert_eq!(
+            req.endpoint_scopes,
+            Some(vec!["api1".to_string(), "api2".to_string()])
+        );
         assert_eq!(req.expired_at, Some("2024-12-31T23:59:59Z".to_string()));
     }
 
@@ -379,7 +385,11 @@ mod tests {
             created_at: "2024-01-01T00:00:00Z".to_string(),
             last_used_at: None,
             revoked: false,
-            crate_scopes: Some(vec!["crate1".to_string(), "crate2".to_string(), "crate3".to_string()]),
+            crate_scopes: Some(vec![
+                "crate1".to_string(),
+                "crate2".to_string(),
+                "crate3".to_string(),
+            ]),
             endpoint_scopes: Some(vec!["api1".to_string(), "api2".to_string()]),
             expired_at: None,
         };
@@ -433,7 +443,10 @@ mod tests {
 
         let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(req.name, "token-with-special-chars_123");
-        assert_eq!(req.crate_scopes, Some(vec!["crate*test".to_string(), "crate?pattern".to_string()]));
+        assert_eq!(
+            req.crate_scopes,
+            Some(vec!["crate*test".to_string(), "crate?pattern".to_string()])
+        );
     }
 
     #[test]
@@ -476,7 +489,11 @@ mod tests {
             last_used_at: Some("2024-06-16T08:15:30Z".to_string()),
             revoked: false,
             crate_scopes: Some(vec!["crate1".to_string(), "crate2".to_string()]),
-            endpoint_scopes: Some(vec!["api1".to_string(), "api2".to_string(), "api3".to_string()]),
+            endpoint_scopes: Some(vec![
+                "api1".to_string(),
+                "api2".to_string(),
+                "api3".to_string(),
+            ]),
             expired_at: Some("2025-06-15T12:30:45Z".to_string()),
         };
 
@@ -552,7 +569,10 @@ mod tests {
 
         let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(req.name, "  token with spaces  ");
-        assert_eq!(req.crate_scopes, Some(vec!["  scope1  ".to_string(), "scope2".to_string()]));
+        assert_eq!(
+            req.crate_scopes,
+            Some(vec!["  scope1  ".to_string(), "scope2".to_string()])
+        );
     }
 
     #[test]

@@ -117,11 +117,11 @@ mod tests {
         // Test empty string
         let agent = "";
         assert!(agent.is_empty());
-        
+
         // Test non-empty string
         let agent = "Mozilla/5.0";
         assert!(!agent.is_empty());
-        
+
         // Test whitespace
         let agent = "   ";
         assert!(!agent.is_empty());
@@ -133,17 +133,17 @@ mod tests {
         let has_user_agent = false;
         let is_download = false;
         assert!(!has_user_agent && !is_download);
-        
+
         // Should allow: has user agent
         let has_user_agent = true;
         let is_download = false;
         assert!(has_user_agent || is_download);
-        
+
         // Should allow: is download
         let has_user_agent = false;
         let is_download = true;
         assert!(has_user_agent || is_download);
-        
+
         // Should allow: both
         let has_user_agent = true;
         let is_download = true;

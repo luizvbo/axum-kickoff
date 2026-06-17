@@ -156,7 +156,10 @@ mod tests {
 
         assert_eq!(user.name, Some("Updated Name".to_string()));
         assert_eq!(user.email, Some("updated@example.com".to_string()));
-        assert_eq!(user.gh_avatar, Some("https://example.com/new-avatar.png".to_string()));
+        assert_eq!(
+            user.gh_avatar,
+            Some("https://example.com/new-avatar.png".to_string())
+        );
         assert!(user.updated_at > original_updated_at);
     }
 

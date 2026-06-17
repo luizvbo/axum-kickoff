@@ -240,7 +240,7 @@ mod tests {
     fn test_block_criteria_as_str() {
         let regex_criteria = BlockCriteria::try_from(r"/test/").unwrap();
         assert_eq!(regex_criteria.as_str(), "test");
-        
+
         let string_criteria = BlockCriteria::try_from("exact-match").unwrap();
         assert_eq!(string_criteria.as_str(), "exact-match");
     }

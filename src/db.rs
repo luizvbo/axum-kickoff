@@ -83,7 +83,9 @@ mod tests {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
 
-        let config = DatabaseConfig { url: db_url.clone() };
+        let config = DatabaseConfig {
+            url: db_url.clone(),
+        };
         let db = Database::from_config(&config)
             .await
             .expect("Failed to create database");
@@ -99,10 +101,12 @@ mod tests {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
 
-        let config = DatabaseConfig { url: db_url.clone() };
+        let config = DatabaseConfig {
+            url: db_url.clone(),
+        };
         let db = Database::from_config_with_pool(
             &config,
-            4, // max_pool_size
+            4,                            // max_pool_size
             Some(Duration::from_secs(3)), // wait_timeout
             Some(Duration::from_secs(8)), // create_timeout
         )
@@ -118,7 +122,9 @@ mod tests {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
 
-        let config = DatabaseConfig { url: db_url.clone() };
+        let config = DatabaseConfig {
+            url: db_url.clone(),
+        };
         let db = Database::from_config(&config)
             .await
             .expect("Failed to create database");
@@ -136,7 +142,9 @@ mod tests {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
 
-        let config = DatabaseConfig { url: db_url.clone() };
+        let config = DatabaseConfig {
+            url: db_url.clone(),
+        };
         let db = Database::from_config(&config)
             .await
             .expect("Failed to create database");
@@ -155,11 +163,11 @@ mod tests {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
 
-        let config = DatabaseConfig { url: db_url.clone() };
+        let config = DatabaseConfig {
+            url: db_url.clone(),
+        };
         let db = Database::from_config_with_pool(
-            &config,
-            2,
-            None, // wait_timeout
+            &config, 2, None, // wait_timeout
             None, // create_timeout
         )
         .await

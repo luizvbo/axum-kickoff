@@ -236,7 +236,10 @@ mod tests {
         let data = HashMap::new();
         let session = Session::new(data);
         let extension = SessionExtension::new(session);
-        assert_eq!(extension.insert("key1".to_string(), "value1".to_string()), None);
+        assert_eq!(
+            extension.insert("key1".to_string(), "value1".to_string()),
+            None
+        );
         assert_eq!(extension.get("key1"), Some("value1".to_string()));
         assert!(extension.is_dirty());
     }

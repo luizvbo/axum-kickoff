@@ -288,7 +288,10 @@ mod tests {
 
     #[test]
     fn test_is_valid_redirect_https_domain() {
-        assert!(is_valid_redirect("https://localhost/dashboard", "localhost"));
+        assert!(is_valid_redirect(
+            "https://localhost/dashboard",
+            "localhost"
+        ));
         assert!(is_valid_redirect("https://example.com/api", "example.com"));
     }
 
@@ -326,20 +329,35 @@ mod tests {
 
     #[test]
     fn test_is_valid_redirect_with_path() {
-        assert!(is_valid_redirect("http://localhost/path/to/page", "localhost"));
-        assert!(is_valid_redirect("https://example.com/api/v1/auth", "example.com"));
+        assert!(is_valid_redirect(
+            "http://localhost/path/to/page",
+            "localhost"
+        ));
+        assert!(is_valid_redirect(
+            "https://example.com/api/v1/auth",
+            "example.com"
+        ));
     }
 
     #[test]
     fn test_is_valid_redirect_with_query() {
-        assert!(is_valid_redirect("http://localhost/?param=value", "localhost"));
-        assert!(is_valid_redirect("https://example.com/api?token=abc", "example.com"));
+        assert!(is_valid_redirect(
+            "http://localhost/?param=value",
+            "localhost"
+        ));
+        assert!(is_valid_redirect(
+            "https://example.com/api?token=abc",
+            "example.com"
+        ));
     }
 
     #[test]
     fn test_is_valid_redirect_with_fragment() {
         assert!(is_valid_redirect("http://localhost/#section", "localhost"));
-        assert!(is_valid_redirect("https://example.com/page#anchor", "example.com"));
+        assert!(is_valid_redirect(
+            "https://example.com/page#anchor",
+            "example.com"
+        ));
     }
 
     #[test]
@@ -392,7 +410,10 @@ mod tests {
         assert_eq!(user.login, "testuser");
         assert_eq!(user.name, Some("Test User".to_string()));
         assert_eq!(user.email, Some("test@example.com".to_string()));
-        assert_eq!(user.avatar_url, Some("https://example.com/avatar.png".to_string()));
+        assert_eq!(
+            user.avatar_url,
+            Some("https://example.com/avatar.png".to_string())
+        );
     }
 
     #[test]
