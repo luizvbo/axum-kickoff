@@ -41,7 +41,7 @@ pub enum Env {
 ///
 /// Called from the binary entry point (e.g., src/bin/server.rs).
 pub fn build_handler(app: Arc<App>) -> axum::Router {
-    let state = AppState(app);
+    let state = AppState(app.clone());
 
     let axum_router = build_axum_router(state.clone());
     middleware::apply_axum_middleware(state, axum_router)

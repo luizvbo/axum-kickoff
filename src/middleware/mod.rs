@@ -1,4 +1,5 @@
 use axum::middleware::from_fn;
+use axum::middleware::from_fn_with_state;
 use axum::Router;
 use http::StatusCode;
 use std::time::Duration;
@@ -34,13 +35,14 @@ pub use session::{middleware as session_middleware, SessionExtension};
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
+    let session_key = state.0.session_key.clone();
 
     let router = router
         .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))
-        .layer(from_fn(self::session_middleware))
+        .layer(from_fn_with_state(session_key, self::session_middleware))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
         .layer(from_fn(self::security_headers::middleware))

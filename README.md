@@ -32,7 +32,7 @@ cd axum-kickoff
 cp .env.sample .env
 
 # Edit .env with your configuration
-# Required: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_KEY
+# Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY
 
 # Run the server
 cargo run --bin server
@@ -57,9 +57,9 @@ DATABASE_URL=sqlite:axum-kickoff.db
 SESSION_KEY=your-secret-key-min-32-bytes
 
 # GitHub OAuth
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
-GITHUB_REDIRECT_URI=http://localhost:3000/auth/github/callback
+GH_CLIENT_ID=your-github-client-id
+GH_CLIENT_SECRET=your-github-client-secret
+GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
 
 # Storage
 STORAGE_BACKEND=local

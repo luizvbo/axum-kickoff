@@ -85,6 +85,7 @@ impl TestApp {
             session_key,
             gh_client_id: "test_client_id".to_string(),
             gh_client_secret: "test_client_secret".to_string(),
+            gh_redirect_uri: "http://localhost:8888/api/v1/auth/github/callback".to_string(),
             storage_config: StorageConfig::local_filesystem("./test_uploads"),
         }
     }
