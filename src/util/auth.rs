@@ -2,7 +2,7 @@
 //!
 //! Provides the AuthCheck pattern for endpoint-level authentication with scoped tokens.
 
-use crate::models::token::{CrateScope, EndpointScope};
+use crate::models::token::{ResourceScope, ActionScope};
 use crate::models::ApiToken;
 use crate::util::errors::{forbidden, unauthorized, BoxedAppError};
 use axum::extract::FromRequestParts;
@@ -107,8 +107,8 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthHeader {
 pub struct AuthCheck {
     /// Whether API token authentication is allowed
     allow_token: bool,
-    /// Required endpoint scope (if any)
-    endpoint_scope: Option<EndpointScope>,
+    /// Required action scope (if any)
+    action_scope: Option<ActionScope>,
     /// Required resource name (if endpoint deals with specific resources)
     crate_name: Option<String>,
     /// Allow tokens with any resource scope without specifying a particular resource
@@ -119,7 +119,7 @@ impl Default for AuthCheck {
     fn default() -> Self {
         Self {
             allow_token: true,
-            endpoint_scope: None,
+            action_scope: None,
             crate_name: None,
             allow_any_crate_scope: false,
         }
@@ -138,18 +138,18 @@ impl AuthCheck {
     pub fn only_cookie() -> Self {
         Self {
             allow_token: false,
-            endpoint_scope: None,
+            action_scope: None,
             crate_name: None,
             allow_any_crate_scope: false,
         }
     }
 
-    /// Set the required endpoint scope
+    /// Set the required action scope
     #[must_use]
-    pub fn with_endpoint_scope(&self, endpoint_scope: EndpointScope) -> Self {
+    pub fn with_action_scope(&self, action_scope: ActionScope) -> Self {
         Self {
             allow_token: self.allow_token,
-            endpoint_scope: Some(endpoint_scope),
+            action_scope: Some(action_scope),
             crate_name: self.crate_name.clone(),
             allow_any_crate_scope: self.allow_any_crate_scope,
         }
@@ -160,7 +160,7 @@ impl AuthCheck {
     pub fn for_crate(&self, resource_name: &str) -> Self {
         Self {
             allow_token: self.allow_token,
-            endpoint_scope: self.endpoint_scope,
+            action_scope: self.action_scope,
             crate_name: Some(resource_name.to_string()),
             allow_any_crate_scope: self.allow_any_crate_scope,
         }
@@ -174,7 +174,7 @@ impl AuthCheck {
     pub fn allow_any_crate_scope(&self) -> Self {
         Self {
             allow_token: self.allow_token,
-            endpoint_scope: self.endpoint_scope,
+            action_scope: self.action_scope,
             crate_name: self.crate_name.clone(),
             allow_any_crate_scope: true,
         }
@@ -194,13 +194,13 @@ impl AuthCheck {
                 ));
             }
 
-            if !self.endpoint_scope_matches(token.parse_endpoint_scopes().as_deref()) {
+            if !self.action_scope_matches(token.parse_action_scopes().as_deref()) {
                 return Err(forbidden(
                     "this token does not have the required permissions to perform this action",
                 ));
             }
 
-            if !self.crate_scope_matches(token.parse_crate_scopes().as_deref()) {
+            if !self.resource_scope_matches(token.parse_resource_scopes().as_deref()) {
                 return Err(forbidden(
                     "this token does not have the required permissions to perform this action",
                 ));
@@ -210,22 +210,22 @@ impl AuthCheck {
         Ok(())
     }
 
-    /// Check if the token's endpoint scopes match the required scope
-    fn endpoint_scope_matches(&self, token_scopes: Option<&[EndpointScope]>) -> bool {
-        match (&token_scopes, &self.endpoint_scope) {
+    /// Check if the token's action scopes match the required scope
+    fn action_scope_matches(&self, token_scopes: Option<&[ActionScope]>) -> bool {
+        match (&token_scopes, &self.action_scope) {
             // The token is a legacy token (no scopes)
             (None, _) => true,
 
             // The token is NOT a legacy token, and the endpoint only allows legacy tokens
             (Some(_), None) => false,
 
-            // The token is NOT a legacy token, and the endpoint allows a certain endpoint scope
-            (Some(token_scopes), Some(endpoint_scope)) => token_scopes.contains(endpoint_scope),
+            // The token is NOT a legacy token, and the endpoint allows a certain action scope
+            (Some(token_scopes), Some(action_scope)) => token_scopes.contains(action_scope),
         }
     }
 
     /// Check if the token's resource scopes match the required resource
-    fn crate_scope_matches(&self, token_scopes: Option<&[CrateScope]>) -> bool {
+    fn resource_scope_matches(&self, token_scopes: Option<&[ResourceScope]>) -> bool {
         match (&token_scopes, &self.crate_name) {
             // The token is a legacy token (no scopes)
             (None, _) => true,
@@ -248,17 +248,17 @@ impl AuthCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::token::{ApiToken, EndpointScope};
+    use crate::models::token::{ApiToken, ActionScope};
     use jiff::Timestamp;
     use std::sync::Arc;
 
     fn create_test_token(
-        endpoint_scopes: Option<Vec<EndpointScope>>,
-        crate_scopes: Option<Vec<String>>,
+        action_scopes: Option<Vec<ActionScope>>,
+        resource_scopes: Option<Vec<String>>,
     ) -> Arc<ApiToken> {
-        let crate_scopes_json = crate_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
-        let endpoint_scopes_json =
-            endpoint_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let resource_scopes_json = resource_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
+        let action_scopes_json =
+            action_scopes.and_then(|scopes| serde_json::to_string(&scopes).ok());
 
         Arc::new(ApiToken {
             id: 1,
@@ -268,8 +268,8 @@ mod tests {
             created_at: Timestamp::now(),
             last_used_at: None,
             revoked: false,
-            crate_scopes: crate_scopes_json,
-            endpoint_scopes: endpoint_scopes_json,
+            resource_scopes: resource_scopes_json,
+            action_scopes: action_scopes_json,
             expired_at: None,
         })
     }
@@ -278,7 +278,7 @@ mod tests {
     fn test_auth_check_default() {
         let check = AuthCheck::new();
         assert!(check.allow_token);
-        assert!(check.endpoint_scope.is_none());
+        assert!(check.action_scope.is_none());
         assert!(check.crate_name.is_none());
         assert!(!check.allow_any_crate_scope);
     }
@@ -290,9 +290,9 @@ mod tests {
     }
 
     #[test]
-    fn test_auth_check_with_endpoint_scope() {
-        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
-        assert_eq!(check.endpoint_scope, Some(EndpointScope::Read));
+    fn test_auth_check_with_action_scope() {
+        let check = AuthCheck::new().with_action_scope(ActionScope::Read);
+        assert_eq!(check.action_scope, Some(ActionScope::Read));
     }
 
     #[test]
@@ -308,8 +308,8 @@ mod tests {
     }
 
     #[test]
-    fn test_endpoint_scope_matches_legacy_token() {
-        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
+    fn test_action_scope_matches_legacy_token() {
+        let check = AuthCheck::new().with_action_scope(ActionScope::Read);
         let token = create_test_token(None, None);
         let auth = Authentication::Token {
             user_id: 1,
@@ -320,9 +320,9 @@ mod tests {
     }
 
     #[test]
-    fn test_endpoint_scope_matches_with_scope() {
-        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
-        let token = create_test_token(Some(vec![EndpointScope::Read]), None);
+    fn test_action_scope_matches_with_scope() {
+        let check = AuthCheck::new().with_action_scope(ActionScope::Read);
+        let token = create_test_token(Some(vec![ActionScope::Read]), None);
         let auth = Authentication::Token {
             user_id: 1,
             token_id: 1,
@@ -332,9 +332,9 @@ mod tests {
     }
 
     #[test]
-    fn test_endpoint_scope_mismatch() {
-        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
-        let token = create_test_token(Some(vec![EndpointScope::Create]), None);
+    fn test_action_scope_mismatch() {
+        let check = AuthCheck::new().with_action_scope(ActionScope::Read);
+        let token = create_test_token(Some(vec![ActionScope::Create]), None);
         let auth = Authentication::Token {
             user_id: 1,
             token_id: 1,
@@ -405,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_cookie_auth_always_allowed() {
-        let check = AuthCheck::new().with_endpoint_scope(EndpointScope::Read);
+        let check = AuthCheck::new().with_action_scope(ActionScope::Read);
         let auth = Authentication::Cookie { user_id: 1 };
         assert!(check.check(&auth).is_ok());
     }

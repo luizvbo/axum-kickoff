@@ -7,5 +7,5 @@
 pub mod token;
 pub mod user;
 
-pub use token::{ApiToken, CrateScope, EndpointScope};
+pub use token::{ApiToken, ResourceScope, ActionScope};
 pub use user::User;

@@ -3,7 +3,7 @@
 //! Provides a fluent API for creating test data, inserting directly
 //! into the database using Toasty ORM.
 
-use crate::models::{ApiToken, CrateScope, EndpointScope, User};
+use crate::models::{ApiToken, ResourceScope, ActionScope, User};
 use crate::util::PlainToken;
 use secrecy::ExposeSecret;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -87,8 +87,8 @@ impl UserBuilder {
 pub struct ApiTokenBuilder {
     user_id: u64,
     name: String,
-    crate_scopes: Option<Vec<CrateScope>>,
-    endpoint_scopes: Option<Vec<EndpointScope>>,
+    resource_scopes: Option<Vec<ResourceScope>>,
+    action_scopes: Option<Vec<ActionScope>>,
     expired_at: Option<jiff::Timestamp>,
 }
 
@@ -97,19 +97,19 @@ impl ApiTokenBuilder {
         Self {
             user_id,
             name: name.to_string(),
-            crate_scopes: None,
-            endpoint_scopes: None,
+            resource_scopes: None,
+            action_scopes: None,
             expired_at: None,
         }
     }
 
-    pub fn crate_scopes(mut self, scopes: Vec<CrateScope>) -> Self {
-        self.crate_scopes = Some(scopes);
+    pub fn resource_scopes(mut self, scopes: Vec<ResourceScope>) -> Self {
+        self.resource_scopes = Some(scopes);
         self
     }
 
-    pub fn endpoint_scopes(mut self, scopes: Vec<EndpointScope>) -> Self {
-        self.endpoint_scopes = Some(scopes);
+    pub fn action_scopes(mut self, scopes: Vec<ActionScope>) -> Self {
+        self.action_scopes = Some(scopes);
         self
     }
 
@@ -124,11 +124,11 @@ impl ApiTokenBuilder {
         let hashed_token = plain_token.hashed();
         let token_bytes = hashed_token.as_bytes().to_vec();
 
-        let crate_scopes = self
-            .crate_scopes
+        let resource_scopes = self
+            .resource_scopes
             .map(|s| serde_json::to_string(&s).unwrap());
-        let endpoint_scopes = self
-            .endpoint_scopes
+        let action_scopes = self
+            .action_scopes
             .map(|s| serde_json::to_string(&s).unwrap());
 
         let api_token = toasty::create!(ApiToken {
@@ -138,8 +138,8 @@ impl ApiTokenBuilder {
             created_at: jiff::Timestamp::now(),
             last_used_at: None,
             revoked: false,
-            crate_scopes,
-            endpoint_scopes,
+            resource_scopes,
+            action_scopes,
             expired_at: self.expired_at,
         })
         .exec(db)
@@ -178,16 +178,16 @@ mod tests {
         let builder = ApiTokenBuilder::new(123, "test_token");
         assert_eq!(builder.user_id, 123);
         assert_eq!(builder.name, "test_token");
-        assert!(builder.crate_scopes.is_none());
+        assert!(builder.resource_scopes.is_none());
     }
 
     #[test]
     fn test_api_token_builder_chainable() {
         let builder = ApiTokenBuilder::new(123, "test_token")
-            .crate_scopes(vec![CrateScope::new("test*".to_string()).unwrap()])
-            .endpoint_scopes(vec![EndpointScope::Read]);
+            .resource_scopes(vec![ResourceScope::new("test*".to_string()).unwrap()])
+            .action_scopes(vec![ActionScope::Read]);
 
-        assert!(builder.crate_scopes.is_some());
-        assert!(builder.endpoint_scopes.is_some());
+        assert!(builder.resource_scopes.is_some());
+        assert!(builder.action_scopes.is_some());
     }
 }
