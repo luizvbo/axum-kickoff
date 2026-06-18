@@ -25,7 +25,10 @@ pub mod require_user_agent;
 pub mod security_headers;
 pub mod session;
 
-pub use api_token::{api_token_auth, extract_api_token_auth, require_api_token, ApiTokenAuth};
+pub use api_token::{
+    api_token_auth, extract_api_token_auth, require_api_token, ApiTokenAuth, CurrentAuth,
+    CurrentUser,
+};
 pub use auth::{require_login, require_session_user, CurrentUserId, OptionalCurrentUserId};
 pub use block_traffic::middleware as block_traffic;
 pub use csrf::{

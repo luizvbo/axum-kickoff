@@ -42,7 +42,12 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .merge(public_router)
         .merge(session_router)
         .merge(session_csrf_router)
-        .nest_service("/static", ServeDir::new("static"));
+        .nest_service(
+            "/static",
+            ServeDir::new("static")
+                .precompressed_gzip()
+                .precompressed_br(),
+        );
 
     // Add development-only routes
     if state.config.env() == Env::Development {

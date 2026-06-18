@@ -344,10 +344,16 @@ server {
     }
 
     # Static Files (optional)
+    # Note: The application serves precompressed .gz and .br files automatically.
+    # For production, you may want Nginx to serve static files directly for better performance.
     location /static/ {
         alias /opt/axum-kickoff/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
+
+        # Serve precompressed files if available
+        gzip_static on;
+        brotli_static on;
     }
 }
 ```

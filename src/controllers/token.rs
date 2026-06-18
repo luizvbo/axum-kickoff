@@ -10,9 +10,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
+use crate::middleware::real_ip::RealIp;
 use crate::middleware::SessionExtension;
 use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
+use crate::rate_limiter::LimitedAction;
 use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
 use crate::util::PlainToken;
 
@@ -148,8 +150,17 @@ pub struct TokenListItem {
 pub async fn create_token(
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
+    Extension(real_ip): Extension<RealIp>,
     Json(req): Json<CreateTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
+    // Apply rate limiting for token creation requests
+    state
+        .0
+        .rate_limiter
+        .check_by_ip(real_ip.0, LimitedAction::TokenCreation)
+        .await
+        .map_err(|e| bad_request(e.to_string()))?;
+
     let user_id = session
         .get("user_id")
         .ok_or_else(|| unauthorized("Not logged in"))?;

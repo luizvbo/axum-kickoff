@@ -8,6 +8,8 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use std::sync::Arc;
+use subtle::ConstantTimeEq;
 
 use crate::app::AppState;
 use crate::models::ApiToken;
@@ -20,6 +22,8 @@ pub struct ApiTokenAuth {
     pub user_id: u64,
     /// The token ID
     pub token_id: u64,
+    /// The full API token record (for scope validation)
+    pub api_token: Arc<ApiToken>,
 }
 
 /// Require API token middleware
@@ -85,6 +89,15 @@ pub async fn require_api_token(
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
+    // Constant-time comparison of the token hash to prevent timing attacks
+    // This ensures that even if the database query timing varies, the final
+    // comparison is constant-time
+    let stored_hash: &[u8] = api_token.token.as_slice();
+    let provided_hash: &[u8] = hashed_token.as_bytes();
+    if !bool::from(stored_hash.ct_eq(provided_hash)) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
     // Check if token is revoked
     if api_token.revoked {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -109,6 +122,7 @@ pub async fn require_api_token(
     let auth = ApiTokenAuth {
         user_id: api_token.user_id,
         token_id: api_token.id,
+        api_token: Arc::new(api_token),
     };
     request.extensions_mut().insert(auth);
 
@@ -157,6 +171,13 @@ pub async fn api_token_auth(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::UNAUTHORIZED)?;
 
+    // Constant-time comparison of the token hash to prevent timing attacks
+    let stored_hash: &[u8] = api_token.token.as_slice();
+    let provided_hash: &[u8] = hashed_token.as_bytes();
+    if !bool::from(stored_hash.ct_eq(provided_hash)) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
     // Check if token is revoked
     if api_token.revoked {
         return Err(StatusCode::UNAUTHORIZED);
@@ -178,6 +199,7 @@ pub async fn api_token_auth(
     let auth = ApiTokenAuth {
         user_id: api_token.user_id,
         token_id: api_token.id,
+        api_token: Arc::new(api_token),
     };
     request.extensions_mut().insert(auth);
 
@@ -191,17 +213,47 @@ pub fn extract_api_token_auth(request: &Request) -> Option<&ApiTokenAuth> {
     request.extensions().get::<ApiTokenAuth>()
 }
 
+/// Type alias for CurrentUser using Axum's Extension extractor
+///
+/// This provides a convenient way to extract the current user from request extensions.
+/// Use it as: `Extension<CurrentUser>` in your handler parameters.
+pub type CurrentUser = ApiTokenAuth;
+
+/// Type alias for CurrentAuth using Axum's Extension extractor
+///
+/// This provides a convenient way to extract the full authentication context
+/// including the API token with its scopes. Use it as: `Extension<CurrentAuth>` in your handler parameters.
+pub type CurrentAuth = ApiTokenAuth;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::Body;
     use http::Request;
+    use jiff::Timestamp;
+
+    fn create_test_api_token(user_id: u64, token_id: u64) -> ApiToken {
+        ApiToken {
+            id: token_id,
+            user_id,
+            name: "test".to_string(),
+            token: vec![1, 2, 3, 4],
+            created_at: Timestamp::now(),
+            last_used_at: None,
+            revoked: false,
+            resource_scopes: None,
+            action_scopes: None,
+            expired_at: None,
+        }
+    }
 
     #[test]
     fn test_api_token_auth_debug() {
+        let api_token = create_test_api_token(123, 456);
         let auth = ApiTokenAuth {
             user_id: 123,
             token_id: 456,
+            api_token: Arc::new(api_token),
         };
         let debug_str = format!("{:?}", auth);
         assert!(debug_str.contains("123"));
@@ -210,9 +262,11 @@ mod tests {
 
     #[test]
     fn test_api_token_auth_clone() {
+        let api_token = create_test_api_token(123, 456);
         let auth = ApiTokenAuth {
             user_id: 123,
             token_id: 456,
+            api_token: Arc::new(api_token),
         };
         let cloned = auth.clone();
         assert_eq!(auth.user_id, cloned.user_id);
@@ -229,9 +283,11 @@ mod tests {
 
     #[test]
     fn test_extract_api_token_auth_some() {
+        let api_token = create_test_api_token(123, 456);
         let auth = ApiTokenAuth {
             user_id: 123,
             token_id: 456,
+            api_token: Arc::new(api_token),
         };
 
         let mut request = Request::builder().body(Body::empty()).unwrap();
@@ -245,9 +301,11 @@ mod tests {
 
     #[test]
     fn test_api_token_auth_new() {
+        let api_token = create_test_api_token(1, 1);
         let auth = ApiTokenAuth {
             user_id: 1,
             token_id: 1,
+            api_token: Arc::new(api_token),
         };
         assert_eq!(auth.user_id, 1);
         assert_eq!(auth.token_id, 1);
@@ -255,9 +313,11 @@ mod tests {
 
     #[test]
     fn test_api_token_auth_large_ids() {
+        let api_token = create_test_api_token(u64::MAX, u64::MAX);
         let auth = ApiTokenAuth {
             user_id: u64::MAX,
             token_id: u64::MAX,
+            api_token: Arc::new(api_token),
         };
         assert_eq!(auth.user_id, u64::MAX);
         assert_eq!(auth.token_id, u64::MAX);
@@ -265,9 +325,11 @@ mod tests {
 
     #[test]
     fn test_api_token_auth_zero_ids() {
+        let api_token = create_test_api_token(0, 0);
         let auth = ApiTokenAuth {
             user_id: 0,
             token_id: 0,
+            api_token: Arc::new(api_token),
         };
         assert_eq!(auth.user_id, 0);
         assert_eq!(auth.token_id, 0);
@@ -275,9 +337,11 @@ mod tests {
 
     #[test]
     fn test_extract_api_token_auth_multiple_extensions() {
+        let api_token = create_test_api_token(999, 888);
         let auth = ApiTokenAuth {
             user_id: 999,
             token_id: 888,
+            api_token: Arc::new(api_token),
         };
 
         let mut request = Request::builder().body(Body::empty()).unwrap();
@@ -300,13 +364,17 @@ mod tests {
 
     #[test]
     fn test_api_token_auth_eq() {
+        let api_token1 = create_test_api_token(123, 456);
+        let api_token2 = create_test_api_token(123, 456);
         let auth1 = ApiTokenAuth {
             user_id: 123,
             token_id: 456,
+            api_token: Arc::new(api_token1),
         };
         let auth2 = ApiTokenAuth {
             user_id: 123,
             token_id: 456,
+            api_token: Arc::new(api_token2),
         };
         // ApiTokenAuth doesn't derive PartialEq, so we can't test equality directly
         // Just verify the fields are the same
@@ -316,13 +384,17 @@ mod tests {
 
     #[test]
     fn test_api_token_auth_different() {
+        let api_token1 = create_test_api_token(123, 456);
+        let api_token2 = create_test_api_token(789, 101);
         let auth1 = ApiTokenAuth {
             user_id: 123,
             token_id: 456,
+            api_token: Arc::new(api_token1),
         };
         let auth2 = ApiTokenAuth {
             user_id: 789,
             token_id: 101,
+            api_token: Arc::new(api_token2),
         };
         assert_ne!(auth1.user_id, auth2.user_id);
         assert_ne!(auth1.token_id, auth2.token_id);
@@ -330,9 +402,11 @@ mod tests {
 
     #[test]
     fn test_extract_api_token_auth_after_removal() {
+        let api_token = create_test_api_token(111, 222);
         let auth = ApiTokenAuth {
             user_id: 111,
             token_id: 222,
+            api_token: Arc::new(api_token),
         };
 
         let mut request = Request::builder().body(Body::empty()).unwrap();
