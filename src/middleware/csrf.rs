@@ -174,6 +174,58 @@ pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
     next.run(req).await
 }
 
+/// CSRF-only protection middleware
+///
+/// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
+/// This middleware does NOT check authentication - it only validates CSRF tokens.
+/// Use this for routes that require CSRF protection but may be accessed by anonymous users.
+///
+/// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
+///
+/// This middleware checks for the CSRF token in:
+/// 1. The `X-CSRF-Token` header (for HTMX and API clients)
+/// 2. The `csrf_token` form field (for traditional form submissions)
+///
+/// # Note
+///
+/// If no session exists or the session is empty, the request passes through unchanged.
+pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
+    let method = req.method();
+    let headers = req.headers();
+
+    // Only validate unsafe methods if session exists and has CSRF token
+    if is_unsafe_method(method) {
+        if let Some(session) = req.extensions().get::<SessionExtension>() {
+            // Only validate if session has CSRF token
+            if session.get(CSRF_TOKEN_KEY).is_some() {
+                // Try to extract CSRF token from header
+                let provided_token = extract_csrf_token_from_request(method, headers, None);
+
+                let validation_result = if let Some(token) = provided_token {
+                    if !token.is_empty() {
+                        validate_csrf_token(session, &token)
+                    } else {
+                        Err(bad_request(
+                            "CSRF token missing. Please include a CSRF token in your request.",
+                        ))
+                    }
+                } else {
+                    Err(bad_request(
+                        "CSRF token missing. Please include a CSRF token in your request.",
+                    ))
+                };
+
+                // Handle validation errors
+                if let Err(err) = validation_result {
+                    return err.response();
+                }
+            }
+        }
+    }
+
+    next.run(req).await
+}
+
 /// Middleware that ensures a CSRF token exists in the session
 ///
 /// This middleware should be applied to routes that render forms.

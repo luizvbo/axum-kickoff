@@ -148,7 +148,7 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 | API Token Auth Middleware | Partial / not wired globally |
 | Rate Limiting | Core implemented / not applied globally |
 | Traffic Blocking | Infrastructure exists / not wired globally |
-| CSRF Protection | Not implemented |
+| CSRF Protection | Implemented (split middleware: csrf_protect, require_session_user) |
 | CORS | Planned |
 | Metrics Endpoint | Feature-gated / partial |
 | S3 Storage | Planned |

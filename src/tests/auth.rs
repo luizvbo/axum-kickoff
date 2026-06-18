@@ -3,7 +3,7 @@
 //! Adapted from crates.io's authentication tests to verify that
 //! the GitHub OAuth flow works correctly.
 
-use crate::tests::{AnonymousUser, RequestHelper, TestApp};
+use crate::tests::{AnonymousUser, CookieUser, RequestHelper, TestApp};
 use http::StatusCode;
 
 #[tokio::test]
@@ -88,13 +88,14 @@ async fn github_callback_with_invalid_state_returns_error() {
 #[tokio::test]
 async fn logout_clears_session() {
     let app = TestApp::new().await;
-    let anon = AnonymousUser::new(app);
+    let session_key = app.config.session_key.clone();
+    let cookie_user = CookieUser::new(app, 42, session_key);
 
     // Add CSRF token to the request
-    let mut headers = anon.headers();
+    let mut headers = cookie_user.headers();
     headers.insert("X-CSRF-Token", "test_token".parse().unwrap());
 
-    let response = anon
+    let response = cookie_user
         .post_with_headers::<serde_json::Value>("/api/v1/auth/logout", &[] as &[u8], headers)
         .await;
 

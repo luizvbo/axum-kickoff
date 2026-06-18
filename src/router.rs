@@ -10,23 +10,38 @@ use tower_http::services::ServeDir;
 use crate::app::AppState;
 use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
-use crate::middleware::{get_or_create_csrf_token, protect, SessionExtension};
+use crate::middleware::{
+    csrf_protect, get_or_create_csrf_token, require_session_user, SessionExtension,
+};
 use crate::Env;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
-    let mut router = Router::new()
+    // Public router - no authentication required
+    let public_router = Router::new()
         .route("/", get(home))
         .route("/health", get(health_check))
         .route("/api/server-time", get(server_time))
         .route("/api/v1/auth/github/authorize", get(github_authorize))
-        .route("/api/v1/auth/github/callback", get(github_callback))
+        .route("/api/v1/auth/github/callback", get(github_callback));
+
+    // Session-authenticated router - requires valid session
+    let session_router = Router::new()
         .route("/api/v1/auth/logout", post(logout_api))
         .route("/logout", post(logout_html))
-        .layer(axum::middleware::from_fn(protect))
+        .route_layer(axum::middleware::from_fn(require_session_user));
+
+    // Session + CSRF protected router - requires both session auth and CSRF token
+    let session_csrf_router = Router::new()
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))
         .route("/api/v1/tokens/{token_id}", post(revoke_token))
-        .layer(axum::middleware::from_fn(protect))
+        .route_layer(axum::middleware::from_fn(csrf_protect))
+        .route_layer(axum::middleware::from_fn(require_session_user));
+
+    let mut router = Router::new()
+        .merge(public_router)
+        .merge(session_router)
+        .merge(session_csrf_router)
         .nest_service("/static", ServeDir::new("static"));
 
     // Add development-only routes

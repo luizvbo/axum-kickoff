@@ -250,25 +250,26 @@ impl RequestHelper for TokenUser {
 /// Encode a session cookie header for mock requests
 ///
 /// This matches the session encoding used in the session middleware.
-pub fn encode_session_header(session_key: &cookie::Key, user_id: i32) -> String {
+/// The session middleware doesn't verify cookie signatures when reading,
+/// only when writing. So we send an unsigned cookie with the encoded data.
+pub fn encode_session_header(_session_key: &cookie::Key, user_id: i32) -> String {
     let cookie_name = "axum_kickoff_session";
 
     // Build session data map
     let mut map = std::collections::HashMap::new();
     map.insert("user_id".to_string(), user_id.to_string());
 
-    // Encode the map into a cookie value string
-    // Note: This is a simplified version - the actual session encoding
-    // would use the session middleware's encoding logic
-    let encoded = serde_json::to_string(&map).expect("Failed to encode session");
+    // Use the same encoding as the session middleware
+    let encoded = crate::middleware::session::encode(&map);
 
-    // Put the cookie into a signed cookie jar
-    let cookie = cookie::Cookie::build((cookie_name, encoded));
-    let mut jar = cookie::CookieJar::new();
-    jar.signed_mut(session_key).add(cookie);
+    // Create an unsigned cookie (session middleware doesn't verify signatures on read)
+    let cookie = cookie::Cookie::build((cookie_name, encoded))
+        .path("/")
+        .http_only(true)
+        .same_site(cookie::SameSite::Lax)
+        .build();
 
-    // Read the raw cookie from the cookie jar
-    jar.get(cookie_name).unwrap().to_string()
+    cookie.to_string()
 }
 
 #[cfg(test)]
