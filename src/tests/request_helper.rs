@@ -10,6 +10,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, Request, Uri};
 use http::header;
 use serde::Serialize;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
 /// Trait for making HTTP requests in tests
@@ -150,12 +151,22 @@ pub trait RequestHelper {
 /// Anonymous user (no authentication)
 pub struct AnonymousUser {
     app: super::test_app::TestApp,
+    /// Stored Set-Cookie header value for cookie persistence
+    session_cookie: Arc<Mutex<Option<String>>>,
 }
 
 impl AnonymousUser {
     /// Create a new anonymous user
     pub fn new(app: super::test_app::TestApp) -> Self {
-        Self { app }
+        Self {
+            app,
+            session_cookie: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Update the stored session cookie from a response
+    pub fn update_session_cookie(&self, set_cookie_value: String) {
+        *self.session_cookie.lock().unwrap() = Some(set_cookie_value);
     }
 }
 
@@ -165,7 +176,16 @@ impl RequestHelper for AnonymousUser {
     }
 
     fn headers(&self) -> HeaderMap {
-        HeaderMap::new()
+        let mut headers = HeaderMap::new();
+
+        // Add stored session cookie if available
+        if let Some(cookie) = self.session_cookie.lock().unwrap().as_ref() {
+            if let Ok(value) = HeaderValue::from_str(cookie) {
+                headers.insert(header::COOKIE, value);
+            }
+        }
+
+        headers
     }
 }
 
