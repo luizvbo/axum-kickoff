@@ -6,7 +6,7 @@ use axum::extract::{Extension, Query, State};
 use axum::response::{Json, Redirect};
 use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
-    PkceCodeVerifier, Scope, TokenResponse, TokenUrl,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -65,11 +65,14 @@ pub async fn github_authorize(
         .expect("Invalid authorization URL");
     let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
         .expect("Invalid token URL");
+    let redirect_url =
+        RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
         .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
         .set_auth_uri(auth_url)
-        .set_token_uri(token_url);
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url);
 
     // Generate PKCE code verifier and challenge
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -143,11 +146,14 @@ pub async fn github_callback(
         .expect("Invalid authorization URL");
     let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
         .expect("Invalid token URL");
+    let redirect_url =
+        RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
         .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
         .set_auth_uri(auth_url)
-        .set_token_uri(token_url);
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url);
 
     // Exchange code for access token with PKCE verifier
     let token = client

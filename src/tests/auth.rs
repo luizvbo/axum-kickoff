@@ -108,7 +108,10 @@ async fn github_callback_with_invalid_state_returns_error() {
                 // Create a modified session with a different state
                 // This simulates a scenario where the state was tampered with
                 let mut modified_session = session_data.clone();
-                modified_session.insert("github_oauth_state".to_string(), "tampered_state".to_string());
+                modified_session.insert(
+                    "github_oauth_state".to_string(),
+                    "tampered_state".to_string(),
+                );
 
                 // Encode the modified session data using the session middleware's encode function
                 use crate::middleware::session::encode;
@@ -138,7 +141,11 @@ async fn github_callback_with_invalid_state_returns_error() {
 
                 // Verify the error message indicates invalid state (not missing state)
                 let body = response.into_string().await;
-                assert!(body.contains("Invalid OAuth state"), "Expected 'Invalid OAuth state' but got: {}", body);
+                assert!(
+                    body.contains("Invalid OAuth state"),
+                    "Expected 'Invalid OAuth state' but got: {}",
+                    body
+                );
                 return;
             }
         }
