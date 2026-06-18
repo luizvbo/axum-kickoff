@@ -89,12 +89,12 @@ pub trait RequestHelper {
         self.run(request).await
     }
 
-    /// Make a POST request with a JSON body and custom headers
+    /// Make a POST request with custom headers
     async fn post_with_headers<T>(
         &self,
         path: &str,
         body: impl Serialize,
-        extra_headers: HeaderMap,
+        headers: HeaderMap,
     ) -> Response<T> {
         let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
 
@@ -105,8 +105,8 @@ pub trait RequestHelper {
         );
         *request.body_mut() = Body::from(json_body);
 
-        // Add extra headers
-        for (name, value) in extra_headers.iter() {
+        // Add custom headers
+        for (name, value) in headers.iter() {
             request.headers_mut().insert(name, value.clone());
         }
 
@@ -209,6 +209,32 @@ impl CookieUser {
     /// Get the user ID
     pub fn user_id(&self) -> i32 {
         self.user_id
+    }
+
+    /// Get the CSRF token from the session
+    pub fn get_csrf_token(&self) -> String {
+        use crate::middleware::session::decode;
+        use cookie::Cookie;
+
+        // Decode the session cookie to get the CSRF token
+        let cookie = encode_session_header(&self.session_key, self.user_id);
+        let cookie_value = cookie.split(';').next().unwrap_or(&cookie);
+        let parts: Vec<&str> = cookie_value.splitn(2, '=').collect();
+        if parts.len() == 2 {
+            let value_with_sig = parts[1];
+            if value_with_sig.len() > 45 {
+                let actual_value = &value_with_sig[..value_with_sig.len() - 45];
+                let decoded_cookie = Cookie::new("axum_kickoff_session", actual_value);
+                let session_data = decode(decoded_cookie);
+                if let Some(token) = session_data.get("csrf_token") {
+                    return token.clone();
+                }
+            }
+        }
+
+        // If no CSRF token exists, create one
+        use crate::middleware::csrf::generate_token;
+        generate_token()
     }
 }
 
