@@ -145,10 +145,10 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 | Real IP Extraction | Implemented |
 | User Agent Validation | Implemented |
 | API Token Creation/List/Revoke | Implemented |
-| API Token Auth Middleware | Partial / not wired globally |
+| API Token Auth Middleware | Implemented (with CurrentUser/CurrentAuth extractors) |
 | Rate Limiting | Core implemented / not applied globally |
 | Traffic Blocking | Infrastructure exists / not wired globally |
-| CSRF Protection | Not implemented |
+| CSRF Protection | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
 | CORS | Planned |
 | Metrics Endpoint | Feature-gated / partial |
 | S3 Storage | Planned |

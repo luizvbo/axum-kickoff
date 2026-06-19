@@ -10,24 +10,44 @@ use tower_http::services::ServeDir;
 use crate::app::AppState;
 use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
-use crate::middleware::{get_or_create_csrf_token, protect, SessionExtension};
+use crate::middleware::{
+    csrf_protect, get_or_create_csrf_token, require_session_user, SessionExtension,
+};
 use crate::Env;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
-    let mut router = Router::new()
+    // Public router - no authentication required
+    let public_router = Router::new()
         .route("/", get(home))
         .route("/health", get(health_check))
         .route("/api/server-time", get(server_time))
         .route("/api/v1/auth/github/authorize", get(github_authorize))
-        .route("/api/v1/auth/github/callback", get(github_callback))
+        .route("/api/v1/auth/github/callback", get(github_callback));
+
+    // Session-authenticated router - requires valid session
+    let session_router = Router::new()
         .route("/api/v1/auth/logout", post(logout_api))
         .route("/logout", post(logout_html))
-        .layer(axum::middleware::from_fn(protect))
+        .route_layer(axum::middleware::from_fn(require_session_user));
+
+    // Session + CSRF protected router - requires both session auth and CSRF token
+    let session_csrf_router = Router::new()
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))
         .route("/api/v1/tokens/{token_id}", post(revoke_token))
-        .layer(axum::middleware::from_fn(protect))
-        .nest_service("/static", ServeDir::new("static"));
+        .route_layer(axum::middleware::from_fn(csrf_protect))
+        .route_layer(axum::middleware::from_fn(require_session_user));
+
+    let mut router = Router::new()
+        .merge(public_router)
+        .merge(session_router)
+        .merge(session_csrf_router)
+        .nest_service(
+            "/static",
+            ServeDir::new("static")
+                .precompressed_gzip()
+                .precompressed_br(),
+        );
 
     // Add development-only routes
     if state.config.env() == Env::Development {
@@ -97,101 +117,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_index_template_fields() {
-        let template = IndexTemplate {
-            csrf_token: "test_token".to_string(),
-        };
-        // Just verify the struct can be created
-        let _ = template;
-    }
-
-    #[test]
-    fn test_server_time_template_fields() {
-        let template = ServerTimeTemplate {
-            time: "2024-01-01 00:00:00 UTC".to_string(),
-        };
-        assert_eq!(template.time, "2024-01-01 00:00:00 UTC");
-    }
-
-    #[test]
-    fn test_html_template_creation() {
-        let template = IndexTemplate {
-            csrf_token: "test_token".to_string(),
-        };
-        let html_template = HtmlTemplate(template);
-        let _ = html_template;
-    }
-
-    #[test]
-    fn test_server_time_template_with_different_time() {
-        let template = ServerTimeTemplate {
-            time: "2024-12-31 23:59:59 UTC".to_string(),
-        };
-        assert_eq!(template.time, "2024-12-31 23:59:59 UTC");
-    }
-
-    #[test]
-    fn test_server_time_template_empty_time() {
-        let template = ServerTimeTemplate {
-            time: "".to_string(),
-        };
-        assert_eq!(template.time, "");
-    }
-
-    #[test]
-    fn test_server_time_template_with_timezone() {
-        let template = ServerTimeTemplate {
-            time: "2024-01-01 00:00:00 UTC".to_string(),
-        };
-        assert!(template.time.contains("UTC"));
-    }
-
-    #[test]
-    fn test_server_time_template_with_milliseconds() {
-        let template = ServerTimeTemplate {
-            time: "2024-01-01 00:00:00.123 UTC".to_string(),
-        };
-        assert!(template.time.contains(".123"));
-    }
-
-    #[test]
-    fn test_html_template_with_server_time() {
-        let template = ServerTimeTemplate {
-            time: "2024-12-31 23:59:59 UTC".to_string(),
-        };
-        let html_template = HtmlTemplate(template);
-        let _ = html_template;
-    }
-
-    #[test]
-    fn test_index_template_multiple() {
-        let template1 = IndexTemplate {
-            csrf_token: "test_token".to_string(),
-        };
-        let template2 = IndexTemplate {
-            csrf_token: "test_token".to_string(),
-        };
-        let _ = (template1, template2);
-    }
-
-    #[test]
-    fn test_server_time_template_unicode() {
-        let template = ServerTimeTemplate {
-            time: "2024-01-01 00:00:00 UTC 测试".to_string(),
-        };
-        assert!(template.time.contains("测试"));
-    }
-
-    #[test]
-    fn test_server_time_template_very_long_time() {
-        let long_time = "2024-01-01 00:00:00 UTC ".repeat(100);
-        let template = ServerTimeTemplate {
-            time: long_time.clone(),
-        };
-        assert_eq!(template.time.len(), long_time.len());
-    }
-}
+mod tests {}

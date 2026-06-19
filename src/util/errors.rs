@@ -146,7 +146,9 @@ impl IntoResponse for BoxedAppError {
 
 impl<E: std::error::Error + Send + 'static> AppError for E {
     fn response(&self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+        // Return a generic server error in JSON format to avoid exposing internal error details
+        let error_response = ErrorResponse::new("Internal server error");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
     }
 }
 

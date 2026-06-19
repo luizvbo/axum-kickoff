@@ -108,3 +108,35 @@ async fn test_builders_and_database() {
     assert_eq!(token.user_id, user.id);
     assert!(plain_token.starts_with("ako"));
 }
+
+#[tokio::test]
+async fn server_time_returns_html_for_htmx() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/api/server-time").await;
+
+    response.assert_status(StatusCode::OK);
+
+    // Verify it returns HTML with time element (for HTMX)
+    let body = response.into_string().await;
+    assert!(body.contains("<time>"));
+    assert!(body.contains("</time>"));
+}
+
+#[tokio::test]
+async fn security_headers_are_present() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/health").await;
+
+    // Check for common security headers
+    let headers = response.headers();
+
+    // X-Content-Type-Options should be set
+    assert!(headers.get("x-content-type-options").is_some());
+
+    // X-Frame-Options should be set
+    assert!(headers.get("x-frame-options").is_some());
+}

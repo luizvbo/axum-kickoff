@@ -44,9 +44,9 @@ DOMAIN_NAME=example.com
 SERVER_IP=0.0.0.0
 
 # GitHub OAuth
-GITHUB_CLIENT_ID=production_client_id
-GITHUB_CLIENT_SECRET=production_client_secret
-GITHUB_REDIRECT_URI=https://example.com/auth/github/callback
+GH_CLIENT_ID=production_client_id
+GH_CLIENT_SECRET=production_client_secret
+GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
 
 # CORS
 WEB_ALLOWED_ORIGINS=https://example.com
@@ -153,9 +153,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/axum_kickoff
       - SESSION_KEY=${SESSION_KEY}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      - GITHUB_REDIRECT_URI=https://example.com/auth/github/callback
+      - GH_CLIENT_ID=${GH_CLIENT_ID}
+      - GH_CLIENT_SECRET=${GH_CLIENT_SECRET}
+      - GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
       - WEB_ALLOWED_ORIGINS=https://example.com
       - STORAGE_BACKEND=s3
       - STORAGE_S3_BUCKET=${S3_BUCKET}
@@ -344,10 +344,16 @@ server {
     }
 
     # Static Files (optional)
+    # Note: The application serves precompressed .gz and .br files automatically.
+    # For production, you may want Nginx to serve static files directly for better performance.
     location /static/ {
         alias /opt/axum-kickoff/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
+
+        # Serve precompressed files if available
+        gzip_static on;
+        brotli_static on;
     }
 }
 ```
@@ -506,9 +512,9 @@ heroku create your-app-name
 heroku addons create heroku-postgresql
 heroku config:set DATABASE_URL=$(heroku config:get DATABASE_URL)
 heroku config:set SESSION_KEY=$(openssl rand -base64 64)
-heroku config:set GITHUB_CLIENT_ID=your_client_id
-heroku config:set GITHUB_CLIENT_SECRET=your_client_secret
-heroku config:set GITHUB_REDIRECT_URI=https://your-app-name.herokuapp.com/auth/github/callback
+heroku config:set GH_CLIENT_ID=your_client_id
+heroku config:set GH_CLIENT_SECRET=your_client_secret
+heroku config:set GH_REDIRECT_URI=https://your-app-name.herokuapp.com/api/v1/auth/github/callback
 heroku config:set WEB_ALLOWED_ORIGINS=https://your-app-name.herokuapp.com
 git push heroku main
 ```

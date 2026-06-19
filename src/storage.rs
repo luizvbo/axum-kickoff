@@ -137,8 +137,10 @@ impl Storage {
     /// Get the public URL for a file
     ///
     /// This function doesn't check for file existence, it only generates the URL.
-    pub fn public_url(&self, path: &str) -> String {
-        apply_cdn_prefix(&self.cdn_prefix, path)
+    /// Normalizes the path by stripping leading slashes and validating it's safe.
+    pub fn public_url(&self, path: &str) -> Result<String, String> {
+        let normalized = normalize_path(path)?;
+        Ok(apply_cdn_prefix(&self.cdn_prefix, &normalized))
     }
 
     /// Upload a file
@@ -304,6 +306,31 @@ fn apply_cdn_prefix(cdn_prefix: &Option<String>, path: &str) -> String {
     }
 }
 
+/// Normalize a storage path for URL generation
+///
+/// Strips leading slashes and validates the path is safe.
+/// Returns an error if the path contains parent directory references or is empty.
+fn normalize_path(path: &str) -> Result<String, String> {
+    let trimmed = path.trim_start_matches('/');
+
+    // Reject empty paths after trimming
+    if trimmed.is_empty() {
+        return Err("Path cannot be empty".to_string());
+    }
+
+    // Reject paths with parent directory components
+    if trimmed.contains("..") {
+        return Err("Path cannot contain parent directory references (..)".to_string());
+    }
+
+    // Reject paths with backslashes (Windows path separator)
+    if trimmed.contains('\\') {
+        return Err("Path cannot contain backslashes".to_string());
+    }
+
+    Ok(trimmed.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,7 +436,10 @@ mod tests {
         let config = StorageConfig::local_filesystem("/tmp");
         let storage = Storage::from_config(&config);
 
-        assert_eq!(storage.public_url("test.txt"), "/test.txt");
+        assert_eq!(
+            storage.public_url("test.txt").unwrap(),
+            String::from("/test.txt")
+        );
     }
 
     #[test]
@@ -419,8 +449,8 @@ mod tests {
         let storage = Storage::from_config(&config);
 
         assert_eq!(
-            storage.public_url("test.txt"),
-            "https://cdn.example.com/test.txt"
+            storage.public_url("test.txt").unwrap(),
+            String::from("https://cdn.example.com/test.txt")
         );
     }
 
@@ -431,9 +461,74 @@ mod tests {
         let storage = Storage::from_config(&config);
 
         assert_eq!(
-            storage.public_url("test.txt"),
-            "https://cdn.example.com/test.txt"
+            storage.public_url("test.txt").unwrap(),
+            String::from("https://cdn.example.com/test.txt")
         );
+    }
+
+    #[test]
+    fn test_normalize_path_strips_leading_slash() {
+        assert_eq!(normalize_path("/test.txt").unwrap(), "test.txt");
+        assert_eq!(normalize_path("//test.txt").unwrap(), "test.txt");
+    }
+
+    #[test]
+    fn test_normalize_path_rejects_empty() {
+        assert!(normalize_path("").is_err());
+        assert!(normalize_path("/").is_err());
+    }
+
+    #[test]
+    fn test_normalize_path_rejects_parent_refs() {
+        assert!(normalize_path("../test.txt").is_err());
+        assert!(normalize_path("test/../file.txt").is_err());
+    }
+
+    #[test]
+    fn test_normalize_path_rejects_backslashes() {
+        assert!(normalize_path("test\\file.txt").is_err());
+    }
+
+    #[test]
+    fn test_normalize_path_accepts_valid_paths() {
+        assert_eq!(normalize_path("test.txt").unwrap(), "test.txt");
+        assert_eq!(normalize_path("dir/test.txt").unwrap(), "dir/test.txt");
+        assert_eq!(
+            normalize_path("dir/subdir/file.txt").unwrap(),
+            "dir/subdir/file.txt"
+        );
+    }
+
+    #[tokio::test]
+    async fn upload_rejects_path_traversal() {
+        let (storage, _temp_dir) = prepare_storage().await;
+
+        let bytes = Bytes::from_static(b"malicious content");
+
+        // Attempt to upload with parent directory reference
+        let result = storage.upload("../etc/passwd", bytes.clone()).await;
+        assert!(result.is_err());
+
+        // Attempt to upload with absolute path
+        let result = storage.upload("/etc/passwd", bytes.clone()).await;
+        assert!(result.is_err());
+
+        // Attempt to upload with encoded traversal
+        let result = storage.upload("test/../../etc/passwd", bytes).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn download_rejects_path_traversal() {
+        let (storage, _temp_dir) = prepare_storage().await;
+
+        // Attempt to download with parent directory reference
+        let result = storage.download("../etc/passwd").await;
+        assert!(result.is_err());
+
+        // Attempt to download with absolute path
+        let result = storage.download("/etc/passwd").await;
+        assert!(result.is_err());
     }
 
     #[test]

@@ -25,10 +25,15 @@ pub mod require_user_agent;
 pub mod security_headers;
 pub mod session;
 
-pub use api_token::{api_token_auth, extract_api_token_auth, ApiTokenAuth};
-pub use auth::{require_login, CurrentUserId, OptionalCurrentUserId};
+pub use api_token::{
+    api_token_auth, extract_api_token_auth, require_api_token, ApiTokenAuth, CurrentAuth,
+    CurrentUser,
+};
+pub use auth::{require_login, require_session_user, CurrentUserId, OptionalCurrentUserId};
 pub use block_traffic::middleware as block_traffic;
-pub use csrf::{ensure_token, get_or_create_csrf_token, protect, validate_csrf_token};
+pub use csrf::{
+    csrf_protect, ensure_token, get_or_create_csrf_token, protect, validate_csrf_token,
+};
 pub use error_handler::middleware as error_handler;
 #[cfg(feature = "metrics")]
 pub use metrics::update_metrics;

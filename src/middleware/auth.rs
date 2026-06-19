@@ -88,6 +88,31 @@ impl<S: Send + Sync> FromRequestParts<S> for OptionalCurrentUserId {
     }
 }
 
+/// Require session user middleware
+///
+/// Returns a 401 Unauthorized error if the user is not authenticated via session.
+/// Use this for API routes that require authentication and should return 401
+/// instead of redirecting to login.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// let router = Router::new()
+///     .route("/api/dashboard", get(dashboard_handler))
+///     .route_layer(middleware::from_fn(require_session_user));
+/// ```
+pub async fn require_session_user(req: Request, next: Next) -> Response {
+    let session = req.extensions().get::<SessionExtension>();
+
+    let user_id = session.and_then(|s| s.get("user_id"));
+
+    if user_id.is_none() {
+        return unauthorized("Not logged in").response();
+    }
+
+    next.run(req).await
+}
+
 /// Require login middleware
 ///
 /// Redirects to the GitHub OAuth login page if the user is not authenticated.
