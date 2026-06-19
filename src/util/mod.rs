@@ -17,5 +17,5 @@ pub use errors::{
 };
 pub use gh_token_encryption::GitHubTokenEncryption;
 pub use oauth::ReqwestClient;
-pub use response::{error_response, response, ApiResponse, ErrorResponse};
+pub use response::{response, ApiResponse};
 pub use token::{HashedToken, InvalidTokenError, PlainToken};
