@@ -14,6 +14,10 @@ metrics = ["dep:prometheus"]
 name = "server"
 path = "src/bin/server.rs"
 
+[[bin]]
+name = "toasty"
+path = "src/bin/cli.rs"
+
 [dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["macros"] }

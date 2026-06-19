@@ -57,15 +57,15 @@ use crate::util::auth::AuthCheck;
 
 // Restrict token to only access posts
 let check = AuthCheck::default()
-    .for_crate("posts");
+    .for_resource("posts");
 
 // Restrict token to posts and related resources
 let check = AuthCheck::default()
-    .for_crate("posts*");
+    .for_resource("posts*");
 
 // Allow token to access any resource (when combined with endpoint scope)
 let check = AuthCheck::default()
-    .allow_any_crate_scope();
+    .allow_any_resource_scope();
 ```
 
 ## Combining Scopes
@@ -76,12 +76,12 @@ You can combine endpoint and resource scopes for fine-grained control:
 // Token can read posts but not modify them
 let check = AuthCheck::default()
     .with_action_scope(ActionScope::Read)
-    .for_crate("posts");
+    .for_resource("posts");
 
 // Token can create and update posts but not delete them
 let check = AuthCheck::default()
     .with_action_scope(ActionScope::Create)
-    .for_crate("posts*");
+    .for_resource("posts*");
 ```
 
 ## Creating Scoped Tokens
@@ -142,15 +142,3 @@ let action_scopes = vec![ActionScope::Read];
 let resource_scopes = vec!["api*".to_string()]; // Only API endpoints
 ```
 
-## Migration from Package Registry Scopes
-
-If you're migrating from a package registry system, the scope mapping is:
-
-| Old Scope | New Scope |
-|-----------|-----------|
-| `publish-new` | `create` |
-| `publish-update` | `update` |
-| `yank` | `delete` |
-| `change-owners` | `admin` |
-
-The resource scope system remains the same - just replace "crate" with "resource" in your mental model.

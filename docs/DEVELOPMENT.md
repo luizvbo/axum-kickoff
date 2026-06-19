@@ -54,7 +54,7 @@ axum-kickoff/
 │   ├── models/          # Database models (Toasty)
 │   │   ├── user.rs      # User model
 │   │   ├── token.rs     # API token model
-│   │   └── oauth_github.rs # GitHub OAuth model
+│   │   └── post.rs      # Post model
 │   ├── config/          # Configuration management
 │   │   ├── mod.rs       # Configuration module
 │   │   ├── base.rs      # Base configuration
