@@ -59,6 +59,7 @@ hex = "0.4"
 bytes = "1"
 urlencoding = "2"
 subtle = "2"
+ipnet = "2"
 
 [dev-dependencies]
 insta = { version = "1.40", features = ["json"] }

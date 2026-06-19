@@ -17,6 +17,7 @@
 //! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "http://localhost:8888/api/v1/auth/github/callback").
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
+//! - `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs/CIDR ranges (defaults to "127.0.0.1,::1").
 
 use crate::middleware::block_traffic::BlockCriteria;
 use crate::storage::StorageConfig;
@@ -40,6 +41,7 @@ pub struct Server {
     pub blocked_routes: HashSet<String>,
     pub blocked_traffic: Vec<(String, Vec<BlockCriteria>)>,
     pub session_key: cookie::Key,
+    pub trusted_proxies: Vec<ipnet::IpNet>,
     pub gh_client_id: String,
     pub gh_client_secret: String,
     pub gh_redirect_uri: String,
@@ -132,6 +134,9 @@ impl Server {
         // Load storage configuration
         let storage_config = StorageConfig::from_environment();
 
+        // Parse trusted proxies (default to localhost for safety)
+        let trusted_proxies = parse_trusted_proxies()?;
+
         Ok(Server {
             base,
             ip,
@@ -147,12 +152,45 @@ impl Server {
             gh_client_secret,
             gh_redirect_uri,
             storage_config,
+            trusted_proxies,
         })
     }
 
     pub fn env(&self) -> Env {
         self.base.env
     }
+}
+
+/// Parse TRUSTED_PROXIES environment variable
+///
+/// Format: "127.0.0.1,::1,10.0.0.0/8"
+/// Defaults to "127.0.0.1,::1" (localhost) for safety
+fn parse_trusted_proxies() -> anyhow::Result<Vec<ipnet::IpNet>> {
+    let trusted_proxies_str =
+        dotenvy::var("TRUSTED_PROXIES").unwrap_or_else(|_| "127.0.0.1,::1".to_string());
+
+    let mut result = Vec::new();
+
+    for entry in trusted_proxies_str.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+
+        let ipnet: ipnet::IpNet = entry
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid trusted proxy entry '{}': {}", entry, e))?;
+
+        result.push(ipnet);
+    }
+
+    if result.is_empty() {
+        // Fallback to localhost if parsing resulted in empty list
+        result.push("127.0.0.1".parse().unwrap());
+        result.push("::1".parse().unwrap());
+    }
+
+    Ok(result)
 }
 
 /// Parse BLOCKED_TRAFFIC environment variable
