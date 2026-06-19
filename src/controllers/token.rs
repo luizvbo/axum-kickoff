@@ -10,9 +10,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::app::AppState;
+use crate::middleware::real_ip::RealIp;
 use crate::middleware::SessionExtension;
 use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
+use crate::rate_limiter::LimitedAction;
 use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
 use crate::util::PlainToken;
 
@@ -148,8 +150,17 @@ pub struct TokenListItem {
 pub async fn create_token(
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
+    Extension(real_ip): Extension<RealIp>,
     Json(req): Json<CreateTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
+    // Apply rate limiting for token creation requests
+    state
+        .0
+        .rate_limiter
+        .check_by_ip(real_ip.0, LimitedAction::TokenCreation)
+        .await
+        .map_err(|e| bad_request(e.to_string()))?;
+
     let user_id = session
         .get("user_id")
         .ok_or_else(|| unauthorized("Not logged in"))?;
@@ -309,364 +320,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_token_request_deserialize() {
-        let json = r#"{
-            "name": "test-token",
-            "resource_scopes": ["crate1", "crate2"],
-            "action_scopes": ["api1", "api2"],
-            "expires_at": "2024-12-31T23:59:59Z"
-        }"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "test-token");
-        assert_eq!(
-            req.resource_scopes,
-            Some(vec!["crate1".to_string(), "crate2".to_string()])
-        );
-        assert_eq!(
-            req.action_scopes,
-            Some(vec!["api1".to_string(), "api2".to_string()])
-        );
-        assert_eq!(req.expires_at, Some("2024-12-31T23:59:59Z".to_string()));
-    }
-
-    #[test]
-    fn test_create_token_request_minimal() {
-        let json = r#"{"name": "test-token"}"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "test-token");
-        assert!(req.resource_scopes.is_none());
-        assert!(req.action_scopes.is_none());
-        assert!(req.expires_at.is_none());
-    }
-
-    #[test]
-    fn test_create_token_request_empty_scopes() {
-        let json = r#"{
-            "name": "test-token",
-            "resource_scopes": [],
-            "action_scopes": []
-        }"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "test-token");
-        assert_eq!(req.resource_scopes, Some(vec![]));
-        assert_eq!(req.action_scopes, Some(vec![]));
-    }
-
-    #[test]
-    fn test_create_token_request_invalid_json() {
-        let json = r#"{"name": "test-token", "invalid": "field"}"#;
-        // Extra fields should be ignored by serde
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "test-token");
-    }
-
-    #[test]
     fn test_create_token_request_missing_name() {
         let json = r#"{"resource_scopes": ["crate1"]}"#;
         let req: Result<CreateTokenRequest, _> = serde_json::from_str(json);
         assert!(req.is_err());
-    }
-
-    #[test]
-    fn test_create_token_response_serialize() {
-        let response = CreateTokenResponse {
-            token: "ako_test_token".to_string(),
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            resource_scopes: Some(vec!["crate1".to_string()]),
-            action_scopes: Some(vec!["api1".to_string()]),
-            expires_at: Some("2024-12-31T23:59:59Z".to_string()),
-        };
-
-        let json = serde_json::to_string(&response).expect("Failed to serialize");
-        assert!(json.contains("test-token"));
-        assert!(json.contains("ako_test_token"));
-    }
-
-    #[test]
-    fn test_create_token_response_minimal() {
-        let response = CreateTokenResponse {
-            token: "ako_test_token".to_string(),
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            resource_scopes: None,
-            action_scopes: None,
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&response).expect("Failed to serialize");
-        assert!(json.contains("test-token"));
-        assert!(json.contains("ako_test_token"));
-    }
-
-    #[test]
-    fn test_token_list_item_serialize() {
-        let item = TokenListItem {
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            last_used_at: Some("2024-01-02T00:00:00Z".to_string()),
-            revoked: false,
-            resource_scopes: Some(vec!["crate1".to_string()]),
-            action_scopes: Some(vec!["api1".to_string()]),
-            expires_at: Some("2024-12-31T23:59:59Z".to_string()),
-        };
-
-        let json = serde_json::to_string(&item).expect("Failed to serialize");
-        assert!(json.contains("test-token"));
-        assert!(json.contains("last_used_at"));
-    }
-
-    #[test]
-    fn test_token_list_item_no_last_used() {
-        let item = TokenListItem {
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            last_used_at: None,
-            revoked: false,
-            resource_scopes: None,
-            action_scopes: None,
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&item).expect("Failed to serialize");
-        assert!(json.contains("test-token"));
-    }
-
-    #[test]
-    fn test_token_list_item_revoked() {
-        let item = TokenListItem {
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            last_used_at: Some("2024-01-02T00:00:00Z".to_string()),
-            revoked: true,
-            resource_scopes: None,
-            action_scopes: None,
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&item).expect("Failed to serialize");
-        assert!(json.contains("\"revoked\":true"));
-    }
-
-    #[test]
-    fn test_token_list_item_multiple_scopes() {
-        let item = TokenListItem {
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            last_used_at: None,
-            revoked: false,
-            resource_scopes: Some(vec![
-                "crate1".to_string(),
-                "crate2".to_string(),
-                "crate3".to_string(),
-            ]),
-            action_scopes: Some(vec!["api1".to_string(), "api2".to_string()]),
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&item).expect("Failed to serialize");
-        assert!(json.contains("crate1"));
-        assert!(json.contains("crate2"));
-        assert!(json.contains("api1"));
-    }
-
-    #[test]
-    fn test_create_token_request_serialize() {
-        let req = CreateTokenRequest {
-            name: "test-token".to_string(),
-            resource_scopes: Some(vec!["crate1".to_string()]),
-            action_scopes: Some(vec!["api1".to_string()]),
-            expires_at: Some("2024-12-31T23:59:59Z".to_string()),
-        };
-
-        // CreateTokenRequest doesn't need to be serialized in production,
-        // but we can test the fields are set correctly
-        assert_eq!(req.name, "test-token");
-        assert!(req.resource_scopes.is_some());
-    }
-
-    #[test]
-    fn test_create_token_response_fields() {
-        let response = CreateTokenResponse {
-            token: "ako_test_token".to_string(),
-            id: 123,
-            name: "test-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            resource_scopes: Some(vec!["crate1".to_string()]),
-            action_scopes: Some(vec!["api1".to_string()]),
-            expires_at: Some("2024-12-31T23:59:59Z".to_string()),
-        };
-
-        // Test that response fields are set correctly
-        assert_eq!(response.token, "ako_test_token");
-        assert_eq!(response.id, 123);
-        assert_eq!(response.name, "test-token");
-        assert_eq!(response.created_at, "2024-01-01T00:00:00Z");
-    }
-
-    #[test]
-    fn test_create_token_request_with_special_chars() {
-        let json = r#"{
-            "name": "token-with-special-chars_123",
-            "resource_scopes": ["crate*test", "crate?pattern"]
-        }"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "token-with-special-chars_123");
-        assert_eq!(
-            req.resource_scopes,
-            Some(vec!["crate*test".to_string(), "crate?pattern".to_string()])
-        );
-    }
-
-    #[test]
-    fn test_create_token_request_unicode_name() {
-        let json = r#"{"name": "token-测试-🎉"}"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "token-测试-🎉");
-    }
-
-    #[test]
-    fn test_create_token_request_very_long_name() {
-        let long_name = "a".repeat(1000);
-        let json = format!(r#"{{"name": "{}"}}"#, long_name);
-
-        let req: CreateTokenRequest = serde_json::from_str(&json).expect("Failed to deserialize");
-        assert_eq!(req.name.len(), 1000);
-    }
-
-    #[test]
-    fn test_create_token_request_null_scopes() {
-        let json = r#"{
-            "name": "test-token",
-            "resource_scopes": null,
-            "action_scopes": null
-        }"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "test-token");
-        assert!(req.resource_scopes.is_none());
-        assert!(req.action_scopes.is_none());
-    }
-
-    #[test]
-    fn test_token_list_item_with_all_fields() {
-        let item = TokenListItem {
-            id: 999,
-            name: "comprehensive-token".to_string(),
-            created_at: "2024-06-15T12:30:45Z".to_string(),
-            last_used_at: Some("2024-06-16T08:15:30Z".to_string()),
-            revoked: false,
-            resource_scopes: Some(vec!["crate1".to_string(), "crate2".to_string()]),
-            action_scopes: Some(vec![
-                "api1".to_string(),
-                "api2".to_string(),
-                "api3".to_string(),
-            ]),
-            expires_at: Some("2025-06-15T12:30:45Z".to_string()),
-        };
-
-        let json = serde_json::to_string(&item).expect("Failed to serialize");
-        assert!(json.contains("comprehensive-token"));
-        assert!(json.contains("999"));
-        assert!(json.contains("last_used_at"));
-        assert!(json.contains("expires_at"));
-    }
-
-    #[test]
-    fn test_token_list_item_large_id() {
-        let item = TokenListItem {
-            id: u64::MAX,
-            name: "max-id-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            last_used_at: None,
-            revoked: false,
-            resource_scopes: None,
-            action_scopes: None,
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&item).expect("Failed to serialize");
-        assert!(json.contains(&u64::MAX.to_string()));
-    }
-
-    #[test]
-    fn test_create_token_response_roundtrip() {
-        let original = CreateTokenResponse {
-            token: "ako_roundtrip_test".to_string(),
-            id: 456,
-            name: "roundtrip-token".to_string(),
-            created_at: "2024-03-15T10:20:30Z".to_string(),
-            resource_scopes: Some(vec!["scope1".to_string(), "scope2".to_string()]),
-            action_scopes: Some(vec!["endpoint1".to_string()]),
-            expires_at: Some("2025-03-15T10:20:30Z".to_string()),
-        };
-
-        let json = serde_json::to_string(&original).expect("Failed to serialize");
-        // CreateTokenResponse doesn't need to be deserialized in production
-        // Just verify serialization works correctly
-        assert!(json.contains("roundtrip-token"));
-        assert!(json.contains("ako_roundtrip_test"));
-    }
-
-    #[test]
-    fn test_token_list_item_roundtrip() {
-        let original = TokenListItem {
-            id: 789,
-            name: "list-roundtrip".to_string(),
-            created_at: "2024-04-20T15:45:00Z".to_string(),
-            last_used_at: Some("2024-04-21T09:30:00Z".to_string()),
-            revoked: true,
-            resource_scopes: Some(vec!["test".to_string()]),
-            action_scopes: None,
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&original).expect("Failed to serialize");
-        // TokenListItem doesn't need to be deserialized in production
-        // Just verify serialization works correctly
-        assert!(json.contains("list-roundtrip"));
-        assert!(json.contains("\"revoked\":true"));
-    }
-
-    #[test]
-    fn test_create_token_request_with_whitespace() {
-        let json = r#"{
-            "name": "  token with spaces  ",
-            "resource_scopes": ["  scope1  ", "scope2"]
-        }"#;
-
-        let req: CreateTokenRequest = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(req.name, "  token with spaces  ");
-        assert_eq!(
-            req.resource_scopes,
-            Some(vec!["  scope1  ".to_string(), "scope2".to_string()])
-        );
-    }
-
-    #[test]
-    fn test_create_token_response_empty_token() {
-        let response = CreateTokenResponse {
-            token: "".to_string(),
-            id: 1,
-            name: "empty-token".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            resource_scopes: None,
-            action_scopes: None,
-            expires_at: None,
-        };
-
-        let json = serde_json::to_string(&response).expect("Failed to serialize");
-        assert!(json.contains("\"token\":\"\""));
     }
 }

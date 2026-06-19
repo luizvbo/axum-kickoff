@@ -1,6 +1,21 @@
 //! In-memory rate limiter using token bucket algorithm
 //!
 //! This provides a simple rate limiting solution suitable for single-instance deployments.
+//!
+//! # Important: Single-Instance Limitation
+//!
+//! **This rate limiter uses in-memory storage and only works for single-instance deployments.**
+//!
+//! If you run multiple instances of your application (e.g., behind a load balancer),
+//! each instance will have its own independent rate limit state. This means:
+//! - Rate limits are not shared across instances
+//! - Users could bypass limits by hitting different instances
+//! - State is lost on restart/redeploy
+//!
+//! For production deployments with multiple instances, you must use a distributed rate limiting
+//! solution (e.g., Redis-backed rate limiting). This template provides an in-memory implementation
+//! for development and single-instance production use.
+//!
 //! For production use with persistence or distributed systems, see the upgrade documentation
 //! in `docs/rate-limiting-redis-upgrade.md`.
 //!
@@ -71,6 +86,12 @@ pub enum LimitedAction {
     FileUpload,
     /// Form submissions (contact forms, etc.)
     FormSubmission,
+    /// OAuth authorize requests
+    OAuthAuthorize,
+    /// OAuth callback requests
+    OAuthCallback,
+    /// API token creation
+    TokenCreation,
 }
 
 impl LimitedAction {
@@ -81,6 +102,9 @@ impl LimitedAction {
             LimitedAction::PasswordReset => "password_reset",
             LimitedAction::FileUpload => "file_upload",
             LimitedAction::FormSubmission => "form_submission",
+            LimitedAction::OAuthAuthorize => "oauth_authorize",
+            LimitedAction::OAuthCallback => "oauth_callback",
+            LimitedAction::TokenCreation => "token_creation",
         }
     }
 
@@ -91,6 +115,9 @@ impl LimitedAction {
             LimitedAction::PasswordReset => 60,  // 1 reset per minute
             LimitedAction::FileUpload => 10,     // 1 upload every 10 seconds
             LimitedAction::FormSubmission => 30, // 1 form every 30 seconds
+            LimitedAction::OAuthAuthorize => 5,  // 1 authorize every 5 seconds
+            LimitedAction::OAuthCallback => 5,   // 1 callback every 5 seconds
+            LimitedAction::TokenCreation => 10,  // 1 token creation every 10 seconds
         }
     }
 
@@ -101,6 +128,9 @@ impl LimitedAction {
             LimitedAction::PasswordReset => 3,
             LimitedAction::FileUpload => 5,
             LimitedAction::FormSubmission => 10,
+            LimitedAction::OAuthAuthorize => 5,
+            LimitedAction::OAuthCallback => 5,
+            LimitedAction::TokenCreation => 3,
         }
     }
 
@@ -111,6 +141,9 @@ impl LimitedAction {
             LimitedAction::PasswordReset => "PASSWORD_RESET",
             LimitedAction::FileUpload => "FILE_UPLOAD",
             LimitedAction::FormSubmission => "FORM_SUBMISSION",
+            LimitedAction::OAuthAuthorize => "OAUTH_AUTHORIZE",
+            LimitedAction::OAuthCallback => "OAUTH_CALLBACK",
+            LimitedAction::TokenCreation => "TOKEN_CREATION",
         }
     }
 
@@ -127,15 +160,27 @@ impl LimitedAction {
             LimitedAction::FormSubmission => {
                 "Too many form submissions. Please wait before trying again."
             }
+            LimitedAction::OAuthAuthorize => {
+                "Too many OAuth authorization requests. Please wait before trying again."
+            }
+            LimitedAction::OAuthCallback => {
+                "Too many OAuth callback requests. Please wait before trying again."
+            }
+            LimitedAction::TokenCreation => {
+                "Too many token creation requests. Please wait before trying again."
+            }
         }
     }
 
-    pub const VARIANTS: [LimitedAction; 5] = [
+    pub const VARIANTS: [LimitedAction; 8] = [
         LimitedAction::ApiRequest,
         LimitedAction::LoginAttempt,
         LimitedAction::PasswordReset,
         LimitedAction::FileUpload,
         LimitedAction::FormSubmission,
+        LimitedAction::OAuthAuthorize,
+        LimitedAction::OAuthCallback,
+        LimitedAction::TokenCreation,
     ];
 }
 

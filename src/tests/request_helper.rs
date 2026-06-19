@@ -10,6 +10,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, Request, Uri};
 use http::header;
 use serde::Serialize;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
 /// Trait for making HTTP requests in tests
@@ -88,12 +89,12 @@ pub trait RequestHelper {
         self.run(request).await
     }
 
-    /// Make a POST request with a JSON body and custom headers
+    /// Make a POST request with custom headers
     async fn post_with_headers<T>(
         &self,
         path: &str,
         body: impl Serialize,
-        extra_headers: HeaderMap,
+        headers: HeaderMap,
     ) -> Response<T> {
         let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
 
@@ -104,8 +105,8 @@ pub trait RequestHelper {
         );
         *request.body_mut() = Body::from(json_body);
 
-        // Add extra headers
-        for (name, value) in extra_headers.iter() {
+        // Add custom headers
+        for (name, value) in headers.iter() {
             request.headers_mut().insert(name, value.clone());
         }
 
@@ -150,12 +151,22 @@ pub trait RequestHelper {
 /// Anonymous user (no authentication)
 pub struct AnonymousUser {
     app: super::test_app::TestApp,
+    /// Stored Set-Cookie header value for cookie persistence
+    session_cookie: Arc<Mutex<Option<String>>>,
 }
 
 impl AnonymousUser {
     /// Create a new anonymous user
     pub fn new(app: super::test_app::TestApp) -> Self {
-        Self { app }
+        Self {
+            app,
+            session_cookie: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Update the stored session cookie from a response
+    pub fn update_session_cookie(&self, set_cookie_value: String) {
+        *self.session_cookie.lock().unwrap() = Some(set_cookie_value);
     }
 }
 
@@ -165,7 +176,16 @@ impl RequestHelper for AnonymousUser {
     }
 
     fn headers(&self) -> HeaderMap {
-        HeaderMap::new()
+        let mut headers = HeaderMap::new();
+
+        // Add stored session cookie if available
+        if let Some(cookie) = self.session_cookie.lock().unwrap().as_ref() {
+            if let Ok(value) = HeaderValue::from_str(cookie) {
+                headers.insert(header::COOKIE, value);
+            }
+        }
+
+        headers
     }
 }
 
@@ -189,6 +209,32 @@ impl CookieUser {
     /// Get the user ID
     pub fn user_id(&self) -> i32 {
         self.user_id
+    }
+
+    /// Get the CSRF token from the session
+    pub fn get_csrf_token(&self) -> String {
+        use crate::middleware::session::decode;
+        use cookie::Cookie;
+
+        // Decode the session cookie to get the CSRF token
+        let cookie = encode_session_header(&self.session_key, self.user_id);
+        let cookie_value = cookie.split(';').next().unwrap_or(&cookie);
+        let parts: Vec<&str> = cookie_value.splitn(2, '=').collect();
+        if parts.len() == 2 {
+            let value_with_sig = parts[1];
+            if value_with_sig.len() > 45 {
+                let actual_value = &value_with_sig[..value_with_sig.len() - 45];
+                let decoded_cookie = Cookie::new("axum_kickoff_session", actual_value);
+                let session_data = decode(decoded_cookie);
+                if let Some(token) = session_data.get("csrf_token") {
+                    return token.clone();
+                }
+            }
+        }
+
+        // If no CSRF token exists, create one
+        use crate::middleware::csrf::generate_token;
+        generate_token()
     }
 }
 
@@ -250,25 +296,26 @@ impl RequestHelper for TokenUser {
 /// Encode a session cookie header for mock requests
 ///
 /// This matches the session encoding used in the session middleware.
-pub fn encode_session_header(session_key: &cookie::Key, user_id: i32) -> String {
+/// The session middleware doesn't verify cookie signatures when reading,
+/// only when writing. So we send an unsigned cookie with the encoded data.
+pub fn encode_session_header(_session_key: &cookie::Key, user_id: i32) -> String {
     let cookie_name = "axum_kickoff_session";
 
     // Build session data map
     let mut map = std::collections::HashMap::new();
     map.insert("user_id".to_string(), user_id.to_string());
 
-    // Encode the map into a cookie value string
-    // Note: This is a simplified version - the actual session encoding
-    // would use the session middleware's encoding logic
-    let encoded = serde_json::to_string(&map).expect("Failed to encode session");
+    // Use the same encoding as the session middleware
+    let encoded = crate::middleware::session::encode(&map);
 
-    // Put the cookie into a signed cookie jar
-    let cookie = cookie::Cookie::build((cookie_name, encoded));
-    let mut jar = cookie::CookieJar::new();
-    jar.signed_mut(session_key).add(cookie);
+    // Create an unsigned cookie (session middleware doesn't verify signatures on read)
+    let cookie = cookie::Cookie::build((cookie_name, encoded))
+        .path("/")
+        .http_only(true)
+        .same_site(cookie::SameSite::Lax)
+        .build();
 
-    // Read the raw cookie from the cookie jar
-    jar.get(cookie_name).unwrap().to_string()
+    cookie.to_string()
 }
 
 #[cfg(test)]

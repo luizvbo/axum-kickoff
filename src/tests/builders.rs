@@ -90,6 +90,7 @@ pub struct ApiTokenBuilder {
     resource_scopes: Option<Vec<ResourceScope>>,
     action_scopes: Option<Vec<ActionScope>>,
     expired_at: Option<jiff::Timestamp>,
+    revoked: bool,
 }
 
 impl ApiTokenBuilder {
@@ -100,6 +101,7 @@ impl ApiTokenBuilder {
             resource_scopes: None,
             action_scopes: None,
             expired_at: None,
+            revoked: false,
         }
     }
 
@@ -115,6 +117,11 @@ impl ApiTokenBuilder {
 
     pub fn expired_at(mut self, expired_at: jiff::Timestamp) -> Self {
         self.expired_at = Some(expired_at);
+        self
+    }
+
+    pub fn revoked(mut self, revoked: bool) -> Self {
+        self.revoked = revoked;
         self
     }
 
@@ -137,7 +144,7 @@ impl ApiTokenBuilder {
             token: token_bytes,
             created_at: jiff::Timestamp::now(),
             last_used_at: None,
-            revoked: false,
+            revoked: self.revoked,
             resource_scopes,
             action_scopes,
             expired_at: self.expired_at,

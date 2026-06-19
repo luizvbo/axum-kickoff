@@ -21,9 +21,9 @@ axum-kickoff supports multiple authentication methods:
 
 2. Configure environment variables:
    ```bash
-   GITHUB_CLIENT_ID=your_client_id
-   GITHUB_CLIENT_SECRET=your_client_secret
-   GITHUB_REDIRECT_URI=https://your-domain.com/auth/github/callback
+   GH_CLIENT_ID=your_client_id
+   GH_CLIENT_SECRET=your_client_secret
+   GH_REDIRECT_URI=https://your-domain.com/api/v1/auth/github/callback
    ```
 
 ### OAuth Flow
@@ -325,7 +325,7 @@ Locked accounts cannot authenticate until the lock expires.
 
 ### OAuth Callback Fails
 
-- Check `GITHUB_REDIRECT_URI` matches GitHub OAuth app settings exactly
+- Check `GH_REDIRECT_URI` matches GitHub OAuth app settings exactly
 - Ensure HTTPS is used in production
 - Verify `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are correct
 

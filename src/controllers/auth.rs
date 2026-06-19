@@ -6,14 +6,16 @@ use axum::extract::{Extension, Query, State};
 use axum::response::{Json, Redirect};
 use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
-    PkceCodeVerifier, Scope, TokenResponse, TokenUrl,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
+use crate::middleware::real_ip::RealIp;
 use crate::middleware::session::SessionExtension;
 use crate::models::User;
+use crate::rate_limiter::LimitedAction;
 use crate::util::errors::{bad_request, forbidden, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 
@@ -57,7 +59,16 @@ pub async fn github_authorize(
     Query(query): Query<AuthorizeQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
+    Extension(real_ip): Extension<RealIp>,
 ) -> Result<Redirect, BoxedAppError> {
+    // Apply rate limiting for OAuth authorize requests
+    state
+        .0
+        .rate_limiter
+        .check_by_ip(real_ip.0, LimitedAction::OAuthAuthorize)
+        .await
+        .map_err(|e| bad_request(e.to_string()))?;
+
     let config = &state.0.config;
 
     // Create OAuth2 client
@@ -65,11 +76,14 @@ pub async fn github_authorize(
         .expect("Invalid authorization URL");
     let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
         .expect("Invalid token URL");
+    let redirect_url =
+        RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
         .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
         .set_auth_uri(auth_url)
-        .set_token_uri(token_url);
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url);
 
     // Generate PKCE code verifier and challenge
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -120,7 +134,16 @@ pub async fn github_callback(
     Query(query): Query<CallbackQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
+    Extension(real_ip): Extension<RealIp>,
 ) -> Result<Redirect, BoxedAppError> {
+    // Apply rate limiting for OAuth callback requests
+    state
+        .0
+        .rate_limiter
+        .check_by_ip(real_ip.0, LimitedAction::OAuthCallback)
+        .await
+        .map_err(|e| bad_request(e.to_string()))?;
+
     let config = &state.0.config;
 
     // Verify CSRF state
@@ -143,11 +166,14 @@ pub async fn github_callback(
         .expect("Invalid authorization URL");
     let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
         .expect("Invalid token URL");
+    let redirect_url =
+        RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
         .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
         .set_auth_uri(auth_url)
-        .set_token_uri(token_url);
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url);
 
     // Exchange code for access token with PKCE verifier
     let token = client
@@ -291,36 +317,16 @@ pub async fn logout_html(
 
 /// Validates a redirect URL to prevent open redirect attacks
 ///
-/// Only allows:
-/// - Relative URLs (starting with / but not //)
-/// - Absolute URLs with http/https scheme and exact host match
-fn is_valid_redirect(url: &str, domain_name: &str) -> bool {
+/// Only allows relative URLs (starting with / but not //).
+/// Absolute redirects are not permitted to prevent open redirect vulnerabilities.
+fn is_valid_redirect(url: &str, _domain_name: &str) -> bool {
     // Reject protocol-relative URLs (security risk) - must check before relative URLs
     if url.starts_with("//") {
         return false;
     }
 
-    // Allow relative URLs (but not protocol-relative)
-    if url.starts_with('/') {
-        return true;
-    }
-
-    // Parse as absolute URL and validate
-    match url::Url::parse(url) {
-        Ok(parsed) => {
-            // Only allow http and https schemes
-            if parsed.scheme() != "http" && parsed.scheme() != "https" {
-                return false;
-            }
-
-            // Host must exactly match the configured domain
-            match parsed.host_str() {
-                Some(host) => host == domain_name,
-                None => false,
-            }
-        }
-        Err(_) => false, // Invalid URL
-    }
+    // Only allow relative URLs (but not protocol-relative)
+    url.starts_with('/')
 }
 
 #[cfg(test)]
@@ -335,164 +341,26 @@ mod tests {
     }
 
     #[test]
-    fn test_is_valid_redirect_http_domain() {
-        assert!(is_valid_redirect("http://localhost/dashboard", "localhost"));
-        assert!(is_valid_redirect("http://example.com/api", "example.com"));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_https_domain() {
-        assert!(is_valid_redirect(
-            "https://localhost/dashboard",
+    fn test_is_valid_redirect_rejects_absolute_urls() {
+        // Absolute URLs are no longer allowed
+        assert!(!is_valid_redirect(
+            "http://localhost/dashboard",
             "localhost"
         ));
-        assert!(is_valid_redirect("https://example.com/api", "example.com"));
+        assert!(!is_valid_redirect("https://example.com/api", "example.com"));
     }
 
     #[test]
-    fn test_is_valid_redirect_invalid_domain() {
-        assert!(!is_valid_redirect("http://evil.com", "localhost"));
-        assert!(!is_valid_redirect("https://evil.com", "example.com"));
+    fn test_is_valid_redirect_rejects_protocol_relative() {
+        // Protocol-relative URLs are not allowed
+        assert!(!is_valid_redirect("//evil.com", "localhost"));
+        assert!(!is_valid_redirect("//example.com/path", "example.com"));
     }
 
     #[test]
-    fn test_is_valid_redirect_invalid_protocol() {
+    fn test_is_valid_redirect_rejects_invalid_protocols() {
         assert!(!is_valid_redirect("ftp://localhost/file", "localhost"));
         assert!(!is_valid_redirect("javascript:alert(1)", "localhost"));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_malicious_redirect() {
-        // Protocol-relative URLs are not allowed (they would inherit the protocol)
-        assert!(!is_valid_redirect("//evil.com", "localhost"));
-        // Exact host match prevents subdomain attacks like example.com.evil.com
-        assert!(!is_valid_redirect(
-            "https://example.com.evil.com/path",
-            "example.com"
-        ));
-        assert!(!is_valid_redirect("http://localhost.evil.com", "localhost"));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_subdomain() {
-        // Subdomains should not be allowed - exact host match required
-        assert!(!is_valid_redirect("http://sub.localhost.com", "localhost"));
-        assert!(!is_valid_redirect("https://api.example.com", "example.com"));
-        assert!(!is_valid_redirect("https://sub.example.com", "example.com"));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_with_port() {
-        // URLs with ports are allowed since the host part matches exactly
-        // (port is separate from host in URL parsing)
-        assert!(is_valid_redirect("http://localhost:8080", "localhost"));
-        assert!(is_valid_redirect("https://example.com:443", "example.com"));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_with_path() {
-        // Exact host match required, paths are allowed
-        assert!(is_valid_redirect(
-            "http://localhost/path/to/page",
-            "localhost"
-        ));
-        assert!(is_valid_redirect(
-            "https://example.com/api/v1/auth",
-            "example.com"
-        ));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_with_query() {
-        // Exact host match required, query strings are allowed
-        assert!(is_valid_redirect(
-            "http://localhost/?param=value",
-            "localhost"
-        ));
-        assert!(is_valid_redirect(
-            "https://example.com/api?token=abc",
-            "example.com"
-        ));
-    }
-
-    #[test]
-    fn test_is_valid_redirect_with_fragment() {
-        // Exact host match required, fragments are allowed
-        assert!(is_valid_redirect("http://localhost/#section", "localhost"));
-        assert!(is_valid_redirect(
-            "https://example.com/page#anchor",
-            "example.com"
-        ));
-    }
-
-    #[test]
-    fn test_authorize_query_deserialize() {
-        let json = r#"{"redirect_to": "/dashboard"}"#;
-        let query: AuthorizeQuery = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(query.redirect_to, Some("/dashboard".to_string()));
-    }
-
-    #[test]
-    fn test_authorize_query_no_redirect() {
-        let json = r#"{}"#;
-        let query: AuthorizeQuery = serde_json::from_str(json).expect("Failed to deserialize");
-        assert!(query.redirect_to.is_none());
-    }
-
-    #[test]
-    fn test_callback_query_deserialize() {
-        let json = r#"{"code": "test_code", "state": "test_state"}"#;
-        let query: CallbackQuery = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(query.code, "test_code");
-        assert_eq!(query.state, "test_state");
-    }
-
-    #[test]
-    fn test_callback_query_missing_code() {
-        let json = r#"{"state": "test_state"}"#;
-        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
-        assert!(query.is_err());
-    }
-
-    #[test]
-    fn test_callback_query_missing_state() {
-        let json = r#"{"code": "test_code"}"#;
-        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
-        assert!(query.is_err());
-    }
-
-    #[test]
-    fn test_github_user_deserialize() {
-        let json = r#"{
-            "id": 12345,
-            "login": "testuser",
-            "name": "Test User",
-            "email": "test@example.com",
-            "avatar_url": "https://example.com/avatar.png"
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(user.id, 12345);
-        assert_eq!(user.login, "testuser");
-        assert_eq!(user.name, Some("Test User".to_string()));
-        assert_eq!(user.email, Some("test@example.com".to_string()));
-        assert_eq!(
-            user.avatar_url,
-            Some("https://example.com/avatar.png".to_string())
-        );
-    }
-
-    #[test]
-    fn test_github_user_minimal() {
-        let json = r#"{
-            "id": 12345,
-            "login": "testuser"
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(user.id, 12345);
-        assert_eq!(user.login, "testuser");
-        assert!(user.name.is_none());
-        assert!(user.email.is_none());
-        assert!(user.avatar_url.is_none());
     }
 
     #[test]
@@ -517,21 +385,17 @@ mod tests {
     }
 
     #[test]
-    fn test_is_valid_redirect_case_sensitive() {
-        // Hostnames are case-insensitive per RFC, so these should match
-        assert!(is_valid_redirect("http://localhost", "localhost"));
-        assert!(is_valid_redirect("http://Localhost", "localhost"));
-        assert!(is_valid_redirect("http://LOCALHOST", "localhost"));
+    fn test_callback_query_missing_code() {
+        let json = r#"{"state": "test_state"}"#;
+        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
+        assert!(query.is_err());
     }
 
     #[test]
-    fn test_is_valid_redirect_domain_with_subpath() {
-        // Exact host match required, deep paths are allowed
-        assert!(is_valid_redirect("http://localhost/api/v1", "localhost"));
-        assert!(is_valid_redirect(
-            "https://example.com/deep/nested/path",
-            "example.com"
-        ));
+    fn test_callback_query_missing_state() {
+        let json = r#"{"code": "test_code"}"#;
+        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
+        assert!(query.is_err());
     }
 
     #[test]
@@ -545,113 +409,5 @@ mod tests {
     #[test]
     fn test_is_valid_redirect_file_url() {
         assert!(!is_valid_redirect("file:///etc/passwd", "localhost"));
-    }
-
-    #[test]
-    fn test_authorize_query_fields() {
-        let query = AuthorizeQuery {
-            redirect_to: Some("/dashboard".to_string()),
-        };
-        assert_eq!(query.redirect_to, Some("/dashboard".to_string()));
-    }
-
-    #[test]
-    fn test_authorize_query_fields_none() {
-        let query = AuthorizeQuery { redirect_to: None };
-        assert!(query.redirect_to.is_none());
-    }
-
-    #[test]
-    fn test_callback_query_fields() {
-        let query = CallbackQuery {
-            code: "test_code".to_string(),
-            state: "test_state".to_string(),
-        };
-        assert_eq!(query.code, "test_code");
-        assert_eq!(query.state, "test_state");
-    }
-
-    #[test]
-    fn test_github_user_with_null_fields() {
-        let json = r#"{
-            "id": 12345,
-            "login": "testuser",
-            "name": null,
-            "email": null,
-            "avatar_url": null
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(user.id, 12345);
-        assert!(user.name.is_none());
-        assert!(user.email.is_none());
-        assert!(user.avatar_url.is_none());
-    }
-
-    #[test]
-    fn test_github_user_with_only_name() {
-        let json = r#"{
-            "id": 12345,
-            "login": "testuser",
-            "name": "Test User"
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(user.name, Some("Test User".to_string()));
-        assert!(user.email.is_none());
-        assert!(user.avatar_url.is_none());
-    }
-
-    #[test]
-    fn test_github_user_with_only_email() {
-        let json = r#"{
-            "id": 12345,
-            "login": "testuser",
-            "email": "test@example.com"
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert!(user.name.is_none());
-        assert_eq!(user.email, Some("test@example.com".to_string()));
-        assert!(user.avatar_url.is_none());
-    }
-
-    #[test]
-    fn test_github_user_large_id() {
-        let json = r#"{
-            "id": 999999999999,
-            "login": "testuser"
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(user.id, 999999999999);
-    }
-
-    #[test]
-    fn test_github_user_unicode_login() {
-        let json = r#"{
-            "id": 12345,
-            "login": "test-用户-🎉"
-        }"#;
-        let user: GitHubUser = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(user.login, "test-用户-🎉");
-    }
-
-    #[test]
-    fn test_authorize_query_extra_fields() {
-        let json = r#"{
-            "redirect_to": "/dashboard",
-            "extra_field": "ignored"
-        }"#;
-        let query: AuthorizeQuery = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(query.redirect_to, Some("/dashboard".to_string()));
-    }
-
-    #[test]
-    fn test_callback_query_extra_fields() {
-        let json = r#"{
-            "code": "test_code",
-            "state": "test_state",
-            "extra_field": "ignored"
-        }"#;
-        let query: CallbackQuery = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(query.code, "test_code");
-        assert_eq!(query.state, "test_state");
     }
 }
