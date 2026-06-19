@@ -7,10 +7,10 @@ use std::sync::Arc;
 
 use crate::app::AppState;
 use crate::router::build_axum_router;
-use tikv_jemallocator::Jemalloc;
 
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
-static ALLOC: Jemalloc = Jemalloc;
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub mod app;
 pub mod config;

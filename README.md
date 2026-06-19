@@ -149,7 +149,7 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 | Rate Limiting                  | Limit request rate to prevent abuse and DoS attacks                  | Core implemented / not applied globally                                               |
 | Traffic Blocking               | Block requests from malicious IPs or patterns                        | Infrastructure exists / not wired globally                                            |
 | CSRF Protection                | Prevent Cross-Site Request Forgery attacks on forms                  | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
-| CORS                           | Cross-Origin Resource Sharing for frontend-backend communication     | Planned                                                                               |
+| CORS                           | Cross-Origin Resource Sharing for frontend-backend communication     | Implemented                                                                           |
 | Metrics Endpoint               | Prometheus metrics for monitoring and observability                  | Feature-gated / partial                                                               |
 | S3 Storage                     | Object storage backend for file uploads (AWS S3, MinIO, etc.)        | Planned                                                                               |
 | Redis Rate Limiting            | Distributed rate limiting using Redis for multi-instance deployments | Planned                                                                               |

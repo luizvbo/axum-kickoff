@@ -66,7 +66,7 @@ pub async fn middleware(
     // For now, use hardcoded localhost as trusted proxies
     // TODO: Pass trusted_proxies from app state
     let trusted_proxies: Vec<ipnet::IpNet> =
-        vec!["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()];
+        vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
 
     let real_ip = extract_real_ip(req.headers(), socket_addr.ip(), &trusted_proxies);
 
@@ -129,7 +129,7 @@ mod tests {
         // Use localhost as socket IP since it's a trusted proxy
         let socket_ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
         let trusted_proxies: Vec<ipnet::IpNet> =
-            vec!["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()];
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         assert_eq!(real_ip, "203.0.113.1".parse::<std::net::IpAddr>().unwrap());
@@ -140,7 +140,7 @@ mod tests {
         let headers = HeaderMap::new();
         let socket_ip = "10.0.0.1".parse().unwrap();
         let trusted_proxies: Vec<ipnet::IpNet> =
-            vec!["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()];
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         assert_eq!(real_ip, socket_ip);
@@ -154,7 +154,7 @@ mod tests {
         // Use a non-localhost IP as socket IP (untrusted proxy)
         let socket_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
         let trusted_proxies: Vec<ipnet::IpNet> =
-            vec!["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()];
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         // Should ignore X-Forwarded-For and use socket IP
@@ -168,7 +168,7 @@ mod tests {
 
         let socket_ip = "10.0.0.1".parse().unwrap();
         let trusted_proxies: Vec<ipnet::IpNet> =
-            vec!["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()];
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         assert_eq!(real_ip, socket_ip);

@@ -20,12 +20,8 @@ run:
 dev:
     cargo watch -x 'run --bin server'
 
-[doc("Run tests")]
-test:
-    cargo test
-
 [doc("Run tests with nextest faster test runner (requires cargo-nextest)")]
-test-nextest:
+test:
     cargo nextest run
 
 [doc("Run tests with nextest and accept updated snapshots")]

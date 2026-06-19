@@ -2,7 +2,6 @@ use axum_kickoff::{build_handler, App};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::signal::unix::{signal, SignalKind};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -73,23 +72,33 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn shutdown_signal() {
-    let interrupt = async {
-        signal(SignalKind::interrupt())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
+    #[cfg(unix)]
+    {
+        let interrupt = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
 
-    let terminate = async {
-        signal(SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
 
-    tokio::select! {
-        _ = interrupt => {},
-        _ = terminate => {},
+        tokio::select! {
+            _ = interrupt => {},
+            _ = terminate => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
     }
 }
 

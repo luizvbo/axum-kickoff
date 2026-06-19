@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::extract::Extension;
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 use chrono::Utc;
 use http::{Method, StatusCode};
@@ -9,6 +9,9 @@ use tower_http::services::ServeDir;
 
 use crate::app::AppState;
 use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
+use crate::controllers::post::{
+    create_post, delete_post, list_posts, publish_post, show_post, unpublish_post, update_post,
+};
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
 use crate::middleware::{
     csrf_protect, get_or_create_csrf_token, require_session_user, SessionExtension,
@@ -32,6 +35,14 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))
         .route("/api/v1/tokens/{token_id}", post(revoke_token))
+        // Post CRUD routes
+        .route("/api/v1/posts", get(list_posts))
+        .route("/api/v1/posts", post(create_post))
+        .route("/api/v1/posts/{id}", get(show_post))
+        .route("/api/v1/posts/{id}", patch(update_post))
+        .route("/api/v1/posts/{id}", delete(delete_post))
+        .route("/api/v1/posts/{id}/publish", post(publish_post))
+        .route("/api/v1/posts/{id}/unpublish", post(unpublish_post))
         .route_layer(axum::middleware::from_fn(csrf_protect))
         .route_layer(axum::middleware::from_fn(require_session_user));
 
