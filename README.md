@@ -135,31 +135,31 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 
 ### Middleware Stack
 
-| Component | Status |
-|---|---|
-| GitHub OAuth | Implemented |
-| Session Management | Implemented |
-| Security Headers | Implemented |
-| Request Logging | Implemented |
-| Error Handling | Implemented |
-| Real IP Extraction | Implemented |
-| User Agent Validation | Implemented |
-| API Token Creation/List/Revoke | Implemented |
-| API Token Auth Middleware | Implemented (with CurrentUser/CurrentAuth extractors) |
-| Rate Limiting | Core implemented / not applied globally |
-| Traffic Blocking | Infrastructure exists / not wired globally |
-| CSRF Protection | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
-| CORS | Planned |
-| Metrics Endpoint | Feature-gated / partial |
-| S3 Storage | Planned |
-| Redis Rate Limiting | Planned |
-| Database-backed Rate Limiting | Planned |
-| QuickWit Integration | Planned |
-| OpenAPI | Planned |
-| Background Worker | Planned |
-| Email System | Planned |
-| Webhooks | Planned |
-| Read Replicas | Planned |
+| Component                      | Description                                                          | Status                                                                                |
+| ------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| GitHub OAuth                   | Authenticate users via GitHub OAuth                                  | Implemented                                                                           |
+| Session Management             | Secure cookie-based sessions for user authentication                 | Implemented                                                                           |
+| Security Headers               | HTTP security headers (CSP, HSTS, X-Frame-Options, etc.)             | Implemented                                                                           |
+| Request Logging                | Structured logging of all HTTP requests                              | Implemented                                                                           |
+| Error Handling                 | Centralized error handling and response formatting                   | Implemented                                                                           |
+| Real IP Extraction             | Extract client IP from headers (X-Forwarded-For, etc.)               | Implemented                                                                           |
+| User Agent Validation          | Validate User-Agent header to block malicious bots                   | Implemented                                                                           |
+| API Token Creation/List/Revoke | Manage scoped API tokens for programmatic access                     | Implemented                                                                           |
+| API Token Auth Middleware      | Authenticate requests via Bearer tokens with scope validation        | Implemented (with CurrentUser/CurrentAuth extractors)                                 |
+| Rate Limiting                  | Limit request rate to prevent abuse and DoS attacks                  | Core implemented / not applied globally                                               |
+| Traffic Blocking               | Block requests from malicious IPs or patterns                        | Infrastructure exists / not wired globally                                            |
+| CSRF Protection                | Prevent Cross-Site Request Forgery attacks on forms                  | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
+| CORS                           | Cross-Origin Resource Sharing for frontend-backend communication     | Planned                                                                               |
+| Metrics Endpoint               | Prometheus metrics for monitoring and observability                  | Feature-gated / partial                                                               |
+| S3 Storage                     | Object storage backend for file uploads (AWS S3, MinIO, etc.)        | Planned                                                                               |
+| Redis Rate Limiting            | Distributed rate limiting using Redis for multi-instance deployments | Planned                                                                               |
+| Database-backed Rate Limiting  | Persistent rate limiting using SQLite/PostgreSQL                     | Planned                                                                               |
+| QuickWit Integration           | Self-hosted error tracking and log aggregation                       | Planned                                                                               |
+| OpenAPI                        | Auto-generated API documentation (Swagger/OpenAPI)                   | Planned                                                                               |
+| Background Worker              | Async job processing for tasks like email, webhooks                  | Planned                                                                               |
+| Email System                   | Transactional email sending (SMTP, SendGrid, etc.)                   | Planned                                                                               |
+| Webhooks                       | Webhook delivery for event notifications                             | Planned                                                                               |
+| Read Replicas                  | Database read replicas for scaling read-heavy workloads              | Planned                                                                               |
 
 See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 
@@ -213,6 +213,7 @@ CMD ["server"]
 ### Environment Variables
 
 See [Deployment Documentation](docs/DEPLOYMENT.md) for production deployment guides including:
+
 - Docker deployment
 - Systemd service configuration
 - Nginx reverse proxy setup
