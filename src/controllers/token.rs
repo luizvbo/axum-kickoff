@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::middleware::real_ip::RealIp;
@@ -19,7 +20,7 @@ use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
 use crate::util::PlainToken;
 
 /// Request body for creating a new API token
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTokenRequest {
     /// The name of the token
     pub name: String,
@@ -104,7 +105,7 @@ pub struct ValidatedCreateTokenRequest {
 }
 
 /// Response for creating a new API token
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CreateTokenResponse {
     /// The plain text token (only shown once)
     pub token: String,
@@ -123,7 +124,7 @@ pub struct CreateTokenResponse {
 }
 
 /// Response for listing API tokens
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TokenListItem {
     /// The token ID
     pub id: u64,
@@ -147,6 +148,20 @@ pub struct TokenListItem {
 ///
 /// This endpoint creates a new API token for the authenticated user.
 /// The token is returned in plain text and should be stored securely by the client.
+#[utoipa::path(
+    post,
+    path = "/api/v1/tokens",
+    request_body = CreateTokenRequest,
+    responses(
+        (status = 201, description = "Token created", body = CreateTokenResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Bad request")
+    ),
+    tag = "Tokens",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn create_token(
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
@@ -231,6 +246,18 @@ pub async fn create_token(
 /// List all API tokens for the authenticated user
 ///
 /// This endpoint returns a list of all API tokens belonging to the authenticated user.
+#[utoipa::path(
+    get,
+    path = "/api/v1/tokens",
+    responses(
+        (status = 200, description = "List of tokens", body = Vec<TokenListItem>),
+        (status = 401, description = "Unauthorized")
+    ),
+    tag = "Tokens",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn list_tokens(
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
@@ -282,6 +309,22 @@ pub async fn list_tokens(
 /// Revoke an API token
 ///
 /// This endpoint revokes (deletes) an API token by ID.
+#[utoipa::path(
+    post,
+    path = "/api/v1/tokens/{token_id}",
+    params(
+        ("token_id" = u64, Path, description = "Token ID")
+    ),
+    responses(
+        (status = 204, description = "Token revoked"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Token not found")
+    ),
+    tag = "Tokens",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn revoke_token(
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,

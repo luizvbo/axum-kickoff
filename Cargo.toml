@@ -65,6 +65,8 @@ bytes = "1"
 urlencoding = "2"
 subtle = "2"
 ipnet = "2"
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 [dev-dependencies]
 insta = { version = "1.40", features = ["json"] }

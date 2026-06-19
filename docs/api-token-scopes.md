@@ -141,4 +141,3 @@ let resource_scopes = None; // Admin doesn't need resource restrictions
 let action_scopes = vec![ActionScope::Read];
 let resource_scopes = vec!["api*".to_string()]; // Only API endpoints
 ```
-
