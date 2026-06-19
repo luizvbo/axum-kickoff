@@ -194,6 +194,8 @@ pub struct CookieUser {
     app: super::test_app::TestApp,
     user_id: i32,
     session_key: cookie::Key,
+    /// Stored Set-Cookie header value for cookie persistence
+    session_cookie: Arc<Mutex<Option<String>>>,
 }
 
 impl CookieUser {
@@ -203,7 +205,13 @@ impl CookieUser {
             app,
             user_id,
             session_key,
+            session_cookie: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Update the stored session cookie from a response
+    pub fn update_session_cookie(&self, set_cookie_value: String) {
+        *self.session_cookie.lock().unwrap() = Some(set_cookie_value);
     }
 
     /// Get the user ID
@@ -212,29 +220,39 @@ impl CookieUser {
     }
 
     /// Get the CSRF token from the session
-    pub fn get_csrf_token(&self) -> String {
+    ///
+    /// Returns the CSRF token if it exists in the session, otherwise returns None.
+    /// This method does NOT generate a new token - tests should create CSRF tokens
+    /// by making a real GET request to a route that calls get_or_create_csrf_token.
+    pub fn get_csrf_token(&self) -> Option<String> {
         use crate::middleware::session::decode;
-        use cookie::Cookie;
+        use cookie::{Cookie, CookieJar};
 
-        // Decode the session cookie to get the CSRF token
-        let cookie = encode_session_header(&self.session_key, self.user_id);
-        let cookie_value = cookie.split(';').next().unwrap_or(&cookie);
-        let parts: Vec<&str> = cookie_value.splitn(2, '=').collect();
-        if parts.len() == 2 {
-            let value_with_sig = parts[1];
-            if value_with_sig.len() > 45 {
-                let actual_value = &value_with_sig[..value_with_sig.len() - 45];
-                let decoded_cookie = Cookie::new("axum_kickoff_session", actual_value);
-                let session_data = decode(decoded_cookie);
-                if let Some(token) = session_data.get("csrf_token") {
-                    return token.clone();
-                }
-            }
+        // Use stored session cookie if available (updated from responses)
+        let cookie_str = if let Some(cookie) = self.session_cookie.lock().unwrap().as_ref() {
+            cookie.clone()
+        } else {
+            // Otherwise, encode session cookie from user_id
+            encode_session_header(&self.session_key, self.user_id)
+        };
+
+        // URL-decode the cookie string (Set-Cookie headers are URL-encoded)
+        let cookie_str = urlencoding::decode(&cookie_str).ok()?.into_owned();
+
+        // Parse the cookie string into an owned Cookie
+        let cookie = Cookie::parse(cookie_str.clone()).ok()?;
+        if cookie.name() != "axum_kickoff_session" {
+            return None;
         }
 
-        // If no CSRF token exists, create one
-        use crate::middleware::csrf::generate_token;
-        generate_token()
+        // Try to verify the signed cookie
+        let mut jar = CookieJar::new();
+        jar.add_original(Cookie::new(cookie.name().to_string(), cookie.value().to_string()));
+        let verified_cookie = jar.signed(&self.session_key).get("axum_kickoff_session")?;
+
+        // Decode the verified cookie value
+        let session_data = decode(verified_cookie);
+        session_data.get("csrf_token").cloned()
     }
 }
 
@@ -246,7 +264,15 @@ impl RequestHelper for CookieUser {
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
 
-        // Encode session cookie
+        // Use stored session cookie if available (updated from responses)
+        if let Some(cookie) = self.session_cookie.lock().unwrap().as_ref() {
+            if let Ok(value) = HeaderValue::from_str(cookie) {
+                headers.insert(header::COOKIE, value);
+                return headers;
+            }
+        }
+
+        // Otherwise, encode session cookie from user_id
         let cookie = encode_session_header(&self.session_key, self.user_id);
         headers.insert(
             header::COOKIE,

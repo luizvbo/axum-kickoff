@@ -24,14 +24,11 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/api/v1/auth/github/authorize", get(github_authorize))
         .route("/api/v1/auth/github/callback", get(github_callback));
 
-    // Session-authenticated router - requires valid session
-    let session_router = Router::new()
+    // Session + CSRF protected router - requires both session auth and CSRF token
+    // All session-authenticated unsafe methods (POST, PUT, PATCH, DELETE) are CSRF-protected
+    let session_csrf_router = Router::new()
         .route("/api/v1/auth/logout", post(logout_api))
         .route("/logout", post(logout_html))
-        .route_layer(axum::middleware::from_fn(require_session_user));
-
-    // Session + CSRF protected router - requires both session auth and CSRF token
-    let session_csrf_router = Router::new()
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))
         .route("/api/v1/tokens/{token_id}", post(revoke_token))
@@ -40,7 +37,6 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
 
     let mut router = Router::new()
         .merge(public_router)
-        .merge(session_router)
         .merge(session_csrf_router)
         .nest_service(
             "/static",
