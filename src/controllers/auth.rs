@@ -92,7 +92,6 @@ pub async fn github_authorize(
     let (auth_url, csrf_token) = client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("read:user".to_string()))
-        .add_scope(Scope::new("user:email".to_string()))
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
@@ -255,9 +254,19 @@ pub async fn github_callback(
         }
     };
 
-    // Set user_id in session
+    // Session fixation protection: clear pre-login session data
+    // except redirect_to, then set fresh authenticated session
+    session.remove("github_oauth_state");
+    session.remove("github_pkce_verifier");
+    session.remove("csrf_token");
+
+    // Set user_id in session (this will trigger a fresh signed cookie)
     session.insert("user_id".to_string(), user.id.to_string());
     session.insert("user_login".to_string(), user.gh_login);
+
+    // Generate new CSRF token for the fresh session
+    use crate::middleware::csrf::generate_token;
+    session.insert("csrf_token".to_string(), generate_token());
 
     // Redirect to the stored redirect URL or default to home
     let redirect_to = session

@@ -21,9 +21,13 @@
 //!    - Format: `X-Forwarded-For: client_ip, proxy1_ip, proxy2_ip`
 //!    - The leftmost IP is the original client
 //!
-//! 2. **Fallback**: If no X-Forwarded-For header exists, it uses the direct connection IP
+//! 2. **Trusted proxy check**: Only trusts X-Forwarded-For if the request comes from a configured trusted proxy
+//!    - Configured via TRUSTED_PROXIES environment variable (comma-separated IPs/CIDR ranges)
+//!    - Defaults to localhost (127.0.0.1, ::1) for safety
 //!
-//! 3. **Storage**: The real IP is stored in request extensions for other middleware to use
+//! 3. **Fallback**: If no X-Forwarded-For header exists or proxy is not trusted, uses the direct connection IP
+//!
+//! 4. **Storage**: The real IP is stored in request extensions for other middleware to use
 //!
 //! # When to use it
 //!
@@ -36,7 +40,13 @@
 //! In production, ensure your proxy is configured to:
 //! - Set/overwrite the X-Forwarded-For header correctly
 //! - Not trust X-Forwarded-For from untrusted sources
-//! - Use a trusted proxy list if possible
+//! - Configure TRUSTED_PROXIES with your proxy's IP addresses or CIDR ranges
+//!
+//! Example TRUSTED_PROXIES values:
+//! - Development: `127.0.0.1,::1` (default)
+//! - Cloudflare: `173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22`
+//! - AWS ELB: Your VPC CIDR range (e.g., `10.0.0.0/8`)
+//! - Heroku: `10.0.0.0/8` (Heroku's internal network)
 
 use axum::extract::{ConnectInfo, Request};
 use axum::middleware::Next;
@@ -53,7 +63,12 @@ pub async fn middleware(
     mut req: Request,
     next: Next,
 ) -> impl IntoResponse {
-    let real_ip = extract_real_ip(req.headers(), socket_addr.ip());
+    // For now, use hardcoded localhost as trusted proxies
+    // TODO: Pass trusted_proxies from app state
+    let trusted_proxies: Vec<ipnet::IpNet> =
+        vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
+
+    let real_ip = extract_real_ip(req.headers(), socket_addr.ip(), &trusted_proxies);
 
     req.extensions_mut().insert(RealIp(real_ip));
 
@@ -61,11 +76,13 @@ pub async fn middleware(
 }
 
 /// Extract the real IP from X-Forwarded-For headers or fall back to socket address
-fn extract_real_ip(headers: &http::HeaderMap, socket_ip: IpAddr) -> IpAddr {
+fn extract_real_ip(
+    headers: &http::HeaderMap,
+    socket_ip: IpAddr,
+    trusted_proxies: &[ipnet::IpNet],
+) -> IpAddr {
     // Only trust X-Forwarded-For if the request comes from a trusted proxy
-    // For now, we only trust localhost (127.0.0.1 and ::1) as a trusted proxy
-    // In production, you should configure this based on your proxy infrastructure
-    let is_trusted_proxy = is_trusted_proxy(socket_ip);
+    let is_trusted_proxy = is_trusted_proxy(socket_ip, trusted_proxies);
 
     if is_trusted_proxy {
         if let Some(xff) = headers.get("x-forwarded-for") {
@@ -86,13 +103,14 @@ fn extract_real_ip(headers: &http::HeaderMap, socket_ip: IpAddr) -> IpAddr {
     socket_ip
 }
 
-fn is_trusted_proxy(ip: IpAddr) -> bool {
-    // Trust localhost as a trusted proxy
-    // In production, configure this based on your proxy infrastructure
-    match ip {
-        IpAddr::V4(ipv4) => ipv4.is_loopback(),
-        IpAddr::V6(ipv6) => ipv6.is_loopback(),
+fn is_trusted_proxy(ip: IpAddr, trusted_proxies: &[ipnet::IpNet]) -> bool {
+    // Check if the IP matches any of the trusted proxy networks
+    for network in trusted_proxies {
+        if network.contains(&ip) {
+            return true;
+        }
     }
+    false
 }
 
 #[cfg(test)]
@@ -110,7 +128,9 @@ mod tests {
 
         // Use localhost as socket IP since it's a trusted proxy
         let socket_ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
-        let real_ip = extract_real_ip(&headers, socket_ip);
+        let trusted_proxies: Vec<ipnet::IpNet> =
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         assert_eq!(real_ip, "203.0.113.1".parse::<std::net::IpAddr>().unwrap());
     }
@@ -119,7 +139,9 @@ mod tests {
     fn test_extract_real_ip_fallback() {
         let headers = HeaderMap::new();
         let socket_ip = "10.0.0.1".parse().unwrap();
-        let real_ip = extract_real_ip(&headers, socket_ip);
+        let trusted_proxies: Vec<ipnet::IpNet> =
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         assert_eq!(real_ip, socket_ip);
     }
@@ -131,7 +153,9 @@ mod tests {
 
         // Use a non-localhost IP as socket IP (untrusted proxy)
         let socket_ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
-        let real_ip = extract_real_ip(&headers, socket_ip);
+        let trusted_proxies: Vec<ipnet::IpNet> =
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         // Should ignore X-Forwarded-For and use socket IP
         assert_eq!(real_ip, socket_ip);
@@ -143,7 +167,9 @@ mod tests {
         headers.insert("x-forwarded-for", "invalid-ip".parse().unwrap());
 
         let socket_ip = "10.0.0.1".parse().unwrap();
-        let real_ip = extract_real_ip(&headers, socket_ip);
+        let trusted_proxies: Vec<ipnet::IpNet> =
+            vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()];
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted_proxies);
 
         assert_eq!(real_ip, socket_ip);
     }

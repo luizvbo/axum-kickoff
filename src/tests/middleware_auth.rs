@@ -89,8 +89,20 @@ async fn csrf_protected_route_with_valid_csrf_succeeds() {
     let session_key = app.config.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
 
+    // First, call a route that creates a CSRF token in the session
+    let response = cookie_user.get::<()>("/").await;
+
+    // Update the session cookie from the response
+    if let Some(set_cookie) = response.headers().get("set-cookie") {
+        if let Ok(set_cookie_str) = set_cookie.to_str() {
+            cookie_user.update_session_cookie(set_cookie_str.to_string());
+        }
+    }
+
     // Get the CSRF token from the session
-    let csrf_token = cookie_user.get_csrf_token();
+    let csrf_token = cookie_user
+        .get_csrf_token()
+        .expect("CSRF token should exist after GET request");
 
     // Create a request with the CSRF token in the header
     let mut headers = cookie_user.headers();
@@ -112,8 +124,22 @@ async fn malformed_json_returns_error() {
     let session_key = app.config.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
 
+    // First, call a route that creates a CSRF token in the session
+    let response = cookie_user.get::<()>("/").await;
+
+    // Update the session cookie from the response
+    if let Some(set_cookie) = response.headers().get("set-cookie") {
+        if let Ok(set_cookie_str) = set_cookie.to_str() {
+            cookie_user.update_session_cookie(set_cookie_str.to_string());
+        }
+    }
+
     // Get CSRF token
-    let csrf_token = cookie_user.get_csrf_token();
+    let csrf_token = cookie_user
+        .get_csrf_token()
+        .expect("CSRF token should exist after GET request");
+
+    // Create a request with the CSRF token in the header
     let mut headers = cookie_user.headers();
     headers.insert("X-CSRF-Token", csrf_token.parse().unwrap());
 

@@ -249,3 +249,34 @@ async fn oauth_callback_rejects_malformed_code() {
 
     response.assert_status(StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn forged_unsigned_session_cookie_is_rejected() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    // Build session data map with a forged user_id
+    let mut map = std::collections::HashMap::new();
+    map.insert("user_id".to_string(), "1".to_string());
+
+    // Encode the session data
+    let encoded = crate::middleware::session::encode(&map);
+
+    // Create an UNSIGNED cookie (no signature)
+    let cookie = cookie::Cookie::build(("axum_kickoff_session", encoded))
+        .path("/")
+        .http_only(true)
+        .same_site(cookie::SameSite::Lax)
+        .build();
+
+    // Update the anonymous user with the forged unsigned cookie
+    anon.update_session_cookie(cookie.to_string());
+
+    // Try to access a protected route with the forged cookie
+    let response = anon
+        .post::<serde_json::Value>("/api/v1/tokens", &[] as &[u8])
+        .await;
+
+    // Should return 401 because the unsigned cookie is rejected
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}

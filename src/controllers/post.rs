@@ -7,6 +7,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::app::AppState;
 use crate::middleware::CurrentUserId;
@@ -14,21 +15,21 @@ use crate::models::Post;
 use crate::util::errors::{bad_request, not_found, server_error, AppResult};
 
 /// Request body for creating a new post
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreatePostRequest {
     pub title: String,
     pub content: String,
 }
 
 /// Request body for updating a post
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdatePostRequest {
     pub title: String,
     pub content: String,
 }
 
 /// Response for a single post
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PostResponse {
     pub id: u64,
     pub title: String,
@@ -39,6 +40,18 @@ pub struct PostResponse {
 }
 
 /// List all posts for the current user
+#[utoipa::path(
+    get,
+    path = "/api/v1/posts",
+    responses(
+        (status = 200, description = "List of posts", body = Vec<PostResponse>),
+        (status = 401, description = "Unauthorized")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn list_posts(
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
@@ -66,6 +79,22 @@ pub async fn list_posts(
 }
 
 /// Show a single post
+#[utoipa::path(
+    get,
+    path = "/api/v1/posts/{id}",
+    params(
+        ("id" = u64, Path, description = "Post ID")
+    ),
+    responses(
+        (status = 200, description = "Post details", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn show_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
@@ -94,6 +123,20 @@ pub async fn show_post(
 }
 
 /// Create a new post
+#[utoipa::path(
+    post,
+    path = "/api/v1/posts",
+    request_body = CreatePostRequest,
+    responses(
+        (status = 201, description = "Post created", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Bad request")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn create_post(
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
@@ -136,6 +179,24 @@ pub async fn create_post(
 }
 
 /// Update a post
+#[utoipa::path(
+    patch,
+    path = "/api/v1/posts/{id}",
+    params(
+        ("id" = u64, Path, description = "Post ID")
+    ),
+    request_body = UpdatePostRequest,
+    responses(
+        (status = 200, description = "Post updated", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found"),
+        (status = 400, description = "Bad request")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn update_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
@@ -186,6 +247,22 @@ pub async fn update_post(
 }
 
 /// Delete a post
+#[utoipa::path(
+    delete,
+    path = "/api/v1/posts/{id}",
+    params(
+        ("id" = u64, Path, description = "Post ID")
+    ),
+    responses(
+        (status = 204, description = "Post deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn delete_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
@@ -210,6 +287,22 @@ pub async fn delete_post(
 }
 
 /// Publish a post
+#[utoipa::path(
+    post,
+    path = "/api/v1/posts/{id}/publish",
+    params(
+        ("id" = u64, Path, description = "Post ID")
+    ),
+    responses(
+        (status = 200, description = "Post published", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn publish_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
@@ -249,6 +342,22 @@ pub async fn publish_post(
 }
 
 /// Unpublish a post
+#[utoipa::path(
+    post,
+    path = "/api/v1/posts/{id}/unpublish",
+    params(
+        ("id" = u64, Path, description = "Post ID")
+    ),
+    responses(
+        (status = 200, description = "Post unpublished", body = PostResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Post not found")
+    ),
+    tag = "Posts",
+    security(
+        ("bearer_auth" = [])
+    )
+)]
 pub async fn unpublish_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,

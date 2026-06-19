@@ -9,10 +9,15 @@ license = "MIT OR Apache-2.0"
 [features]
 default = []
 metrics = ["dep:prometheus"]
+jemalloc = ["dep:tikv-jemallocator"]
 
 [[bin]]
 name = "server"
 path = "src/bin/server.rs"
+
+[[bin]]
+name = "toasty"
+path = "src/bin/cli.rs"
 
 [dependencies]
 anyhow = "1"
@@ -31,7 +36,7 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tikv-jemallocator = "0.7"
+tikv-jemallocator = { version = "0.7", optional = true }
 jiff = { version = "0.2", features = ["serde"] }
 toasty = { version = "0.7", features = ["sqlite", "jiff"] }
 toasty-cli = "0.7"
@@ -59,6 +64,9 @@ hex = "0.4"
 bytes = "1"
 urlencoding = "2"
 subtle = "2"
+ipnet = "2"
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 [dev-dependencies]
 insta = { version = "1.40", features = ["json"] }

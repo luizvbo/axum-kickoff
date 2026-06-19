@@ -4,11 +4,11 @@
 //! The session key is available in the app state for signing and verifying cookies.
 
 use axum::extract::{Request, State};
-use axum::http::header::SET_COOKIE;
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
+use axum_extra::extract::cookie::SignedCookieJar;
 use base64::{engine::general_purpose, Engine};
-use cookie::{Cookie, CookieJar, Key};
+use cookie::{Cookie, Key};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -98,32 +98,16 @@ pub fn encode(h: &HashMap<String, String>) -> String {
 
 /// Session middleware
 ///
-/// Extracts the session cookie from the request, decodes it, and provides
-/// a SessionExtension to handlers. After the handler runs, if the session
-/// was modified, it encodes it back to a signed cookie.
+/// Extracts the session cookie from the request, verifies its signature,
+/// decodes it, and provides a SessionExtension to handlers. After the handler
+/// runs, if the session was modified, it encodes it back to a signed cookie.
 pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next) -> Response {
-    // Extract session cookie from request
-    let session_data = req
-        .headers()
-        .get("cookie")
-        .and_then(|cookie_header| {
-            cookie_header
-                .to_str()
-                .ok()
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find_map(|cookie| Cookie::parse(cookie.trim()).ok())
-                })
-                .filter(|cookie| cookie.name() == COOKIE_NAME)
-        })
-        .map(|cookie| {
-            // Decode the cookie value
-            let value = cookie.value();
-            let decoded_cookie = Cookie::new(COOKIE_NAME.to_string(), value.to_string());
-            decode(decoded_cookie)
-        })
-        .unwrap_or_default();
+    // Create SignedCookieJar from request headers for automatic signature verification
+    let jar = SignedCookieJar::from_headers(req.headers(), session_key.clone());
+
+    // Decode session cookie - signature is automatically verified by SignedCookieJar
+    // If signature is invalid, get() returns None
+    let session_data = jar.get(COOKIE_NAME).map(decode).unwrap_or_default();
 
     // Create session extension
     let session = Session::new(session_data);
@@ -135,7 +119,7 @@ pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next
     req.extensions_mut().insert(session_extension);
 
     // Run the handler
-    let mut response = next.run(req).await;
+    let response = next.run(req).await;
 
     // Check if session was modified
     let session = session_arc.read();
@@ -150,19 +134,11 @@ pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next
             .same_site(cookie::SameSite::Lax)
             .build();
 
-        // Sign the cookie
-        let mut jar = CookieJar::new();
-        jar.signed_mut(&session_key).add(cookie);
-
-        // Add Set-Cookie header to response
-        if let Some(signed_cookie) = jar.get(COOKIE_NAME) {
-            response
-                .headers_mut()
-                .insert(SET_COOKIE, signed_cookie.to_string().parse().unwrap());
-        }
+        // Return updated jar with response - SignedCookieJar implements IntoResponse
+        (jar.add(cookie), response).into_response()
+    } else {
+        response
     }
-
-    response
 }
 
 #[cfg(test)]
