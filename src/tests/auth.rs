@@ -194,3 +194,58 @@ async fn session_middleware_adds_session_extension() {
 
     response.assert_status(StatusCode::OK);
 }
+
+#[tokio::test]
+async fn protected_route_requires_session() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    // Try to access a protected route without session
+    let response = anon
+        .post::<serde_json::Value>("/api/v1/tokens", &[] as &[u8])
+        .await;
+
+    // Should return 401 or 403 since no session exists
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_persists_across_requests() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    // First request to authorize
+    let auth_response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    auth_response.assert_status(StatusCode::SEE_OTHER);
+
+    // Extract and store the session cookie
+    let set_cookie = auth_response
+        .headers()
+        .get("set-cookie")
+        .and_then(|h| h.to_str().ok())
+        .expect("No Set-Cookie header");
+    anon.update_session_cookie(set_cookie.to_string());
+
+    // Second request should have the session cookie
+    let response = anon
+        .get::<()>("/api/v1/auth/github/callback?code=test&state=test")
+        .await;
+    // Should get BAD_REQUEST because state doesn't match, but session should be present
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn oauth_callback_rejects_malformed_code() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    // Call authorize first to set up session
+    let _ = anon.get::<()>("/api/v1/auth/github/authorize").await;
+
+    // Call callback with malformed code
+    let response = anon
+        .get::<()>("/api/v1/auth/github/callback?code=&state=test")
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}

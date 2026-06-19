@@ -302,7 +302,6 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "askama",
- "async-trait",
  "axum",
  "axum-extra",
  "base64",
@@ -338,7 +337,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "url",
  "urlencoding",
 ]
 

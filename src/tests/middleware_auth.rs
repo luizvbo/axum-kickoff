@@ -105,3 +105,24 @@ async fn csrf_protected_route_with_valid_csrf_succeeds() {
     // We're just testing that CSRF validation passes
     assert_ne!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn malformed_json_returns_error() {
+    let app = TestApp::new().await;
+    let session_key = app.config.session_key.clone();
+    let cookie_user = CookieUser::new(app, 42, session_key);
+
+    // Get CSRF token
+    let csrf_token = cookie_user.get_csrf_token();
+    let mut headers = cookie_user.headers();
+    headers.insert("X-CSRF-Token", csrf_token.parse().unwrap());
+
+    // Send malformed JSON
+    let malformed_json = b"{invalid json}";
+    let response = cookie_user
+        .post_with_headers::<serde_json::Value>("/api/v1/tokens", malformed_json, headers)
+        .await;
+
+    // Should return a client error (400 or 422)
+    assert!(response.status().is_client_error());
+}
