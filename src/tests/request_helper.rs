@@ -296,9 +296,9 @@ impl RequestHelper for TokenUser {
 /// Encode a session cookie header for mock requests
 ///
 /// This matches the session encoding used in the session middleware.
-/// The session middleware doesn't verify cookie signatures when reading,
-/// only when writing. So we send an unsigned cookie with the encoded data.
-pub fn encode_session_header(_session_key: &cookie::Key, user_id: i32) -> String {
+/// The cookie is signed with the session key to match the verification
+/// done by the middleware on every request.
+pub fn encode_session_header(session_key: &cookie::Key, user_id: i32) -> String {
     let cookie_name = "axum_kickoff_session";
 
     // Build session data map
@@ -308,14 +308,21 @@ pub fn encode_session_header(_session_key: &cookie::Key, user_id: i32) -> String
     // Use the same encoding as the session middleware
     let encoded = crate::middleware::session::encode(&map);
 
-    // Create an unsigned cookie (session middleware doesn't verify signatures on read)
+    // Create a signed cookie
     let cookie = cookie::Cookie::build((cookie_name, encoded))
         .path("/")
         .http_only(true)
         .same_site(cookie::SameSite::Lax)
         .build();
 
-    cookie.to_string()
+    // Sign the cookie using the session key
+    let mut jar = cookie::CookieJar::new();
+    jar.signed_mut(session_key).add(cookie);
+
+    // Get the signed cookie value
+    jar.get(cookie_name)
+        .expect("Failed to sign cookie")
+        .to_string()
 }
 
 #[cfg(test)]
