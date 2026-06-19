@@ -247,7 +247,10 @@ impl CookieUser {
 
         // Try to verify the signed cookie
         let mut jar = CookieJar::new();
-        jar.add_original(Cookie::new(cookie.name().to_string(), cookie.value().to_string()));
+        jar.add_original(Cookie::new(
+            cookie.name().to_string(),
+            cookie.value().to_string(),
+        ));
         let verified_cookie = jar.signed(&self.session_key).get("axum_kickoff_session")?;
 
         // Decode the verified cookie value
