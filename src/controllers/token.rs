@@ -303,7 +303,7 @@ pub async fn revoke_token(
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?
-        .ok_or_else(|| server_error("API token not found".to_string()))?;
+        .ok_or_else(crate::util::errors::not_found)?;
 
     // Mark the token as revoked using toasty::update!
     let mut token = token;
