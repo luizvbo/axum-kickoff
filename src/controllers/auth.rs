@@ -88,9 +88,6 @@ pub async fn github_authorize(
     // Generate PKCE code verifier and challenge
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
 
-    // Generate PKCE code verifier and challenge
-    let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-
     // Generate CSRF state token
     let (auth_url, csrf_token) = client
         .authorize_url(CsrfToken::new_random)
