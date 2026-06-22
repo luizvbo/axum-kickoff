@@ -1,0 +1,16 @@
+<!-- Partial template: Contact form success message -->
+<!-- This is returned as HTML fragment when form submission succeeds -->
+
+<div class="alert alert-success">
+    <div class="alert-icon">✓</div>
+    <div class="alert-content">
+        <h4>Message Sent!</h4>
+        <p>Thank you, {{ name }}. We've received your message and will get back to you at {{ email }}.</p>
+        <button
+            class="btn btn-secondary"
+            onclick="this.closest('.alert').remove();"
+        >
+            Clear
+        </button>
+    </div>
+</div>

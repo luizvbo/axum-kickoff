@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Form - HTMX + Askama Example</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <meta name="htmx-config" content='{"csrfToken": "{{ csrf_token }}"}'>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="logo">📝</span>
+                <span>HTMX + Askama Examples</span>
+            </div>
+            <div class="nav-links">
+                <a href="/">Back to Home</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <section class="section">
+            <h1 class="section-title">Contact Form Example</h1>
+            <p class="section-text">
+                This demonstrates a full-page Askama template with an HTMX form that validates
+                and returns partial HTML on success or error.
+            </p>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">Try It</h2>
+            
+            <!-- HTMX Form Example -->
+            <!-- 
+                Key HTMX attributes:
+                - hx-post: HTTP method and endpoint
+                - hx-target: Where to insert the response
+                - hx-swap: How to insert the response (innerHTML, outerHTML, beforeend, etc.)
+                - hx-indicator: Element to show during loading
+            -->
+            <form 
+                hx-post="/examples/contact"
+                hx-target="#form-result"
+                hx-swap="innerHTML"
+                hx-indicator="#loading-indicator"
+                class="contact-form"
+            >
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input 
+                        type="text" 
+                        id="name" 
+                        name="name" 
+                        required
+                        placeholder="Your name"
+                        class="form-input"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        required
+                        placeholder="your@email.com"
+                        class="form-input"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="message">Message *</label>
+                    <textarea 
+                        id="message" 
+                        name="message" 
+                        required
+                        rows="5"
+                        placeholder="Your message..."
+                        class="form-input"
+                    ></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-primary-solid">
+                    Send Message
+                </button>
+
+                <div id="loading-indicator" class="loading-indicator" style="display: none;">
+                    Sending...
+                </div>
+            </form>
+
+            <!-- Result container for HTMX response -->
+            <div id="form-result" class="form-result"></div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">How It Works</h2>
+            <div class="code-block">
+                <pre><code>1. User fills out the form and clicks "Send Message"
+2. HTMX sends a POST request to /examples/contact
+3. Server validates the input
+4. On success: Returns a success partial template
+5. On error: Returns an error partial template with validation messages
+6. HTMX swaps the response into #form-result</code></pre>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2 class="section-title">Key Patterns</h2>
+            <ul class="features-list">
+                <li class="feature-item">
+                    <span class="feature-icon">→</span>
+                    <span><strong>Full-page template</strong>: This HTML file is a complete page</span>
+                </li>
+                <li class="feature-item">
+                    <span class="feature-icon">→</span>
+                    <span><strong>HTMX form</strong>: Form submits via AJAX without page reload</span>
+                </li>
+                <li class="feature-item">
+                    <span class="feature-icon">→</span>
+                    <span><strong>Partial responses</strong>: Server returns HTML fragments, not full pages</span>
+                </li>
+                <li class="feature-item">
+                    <span class="feature-icon">→</span>
+                    <span><strong>CSRF protection</strong>: Token included via htmx-config</span>
+                </li>
+                <li class="feature-item">
+                    <span class="feature-icon">→</span>
+                    <span><strong>Loading indicator</strong>: Shows during request processing</span>
+                </li>
+            </ul>
+        </section>
+    </div>
+</body>
+</html>

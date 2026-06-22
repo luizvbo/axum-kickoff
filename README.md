@@ -18,7 +18,7 @@ A production-ready Rust web application starter template built on [Axum](https:/
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust (see `rust-toolchain.toml` for pinned version)
 - SQLite (for development)
 
 ### Installation
@@ -53,7 +53,7 @@ DOMAIN_NAME=localhost
 DATABASE_URL=sqlite:axum-kickoff.db
 
 # Session
-SESSION_KEY=your-secret-key-min-32-bytes
+SESSION_KEY=your-secret-key-min-64-bytes
 
 # GitHub OAuth
 GH_CLIENT_ID=your-github-client-id
@@ -72,6 +72,8 @@ See [Configuration Documentation](docs/CONFIGURATION.md) for all available optio
 ## Documentation
 
 - **[Getting Started Guide](docs/GETTING_STARTED.md)** - Detailed setup and first steps
+- **[Database Guide](docs/DATABASE.md)** - Toasty ORM usage, migrations, and querying
+- **[HTMX + Askama Patterns](docs/HTMX_ASKAMA_PATTERNS.md)** - Frontend patterns with live examples
 - **[How-to Guides](docs/HOW_TO_GUIDES.md)** - Common tasks and patterns
 - **[Architecture](docs/ARCHITECTURE.md)** - System architecture and design decisions
 - **[Authentication](docs/AUTHENTICATION.md)** - Authentication system overview

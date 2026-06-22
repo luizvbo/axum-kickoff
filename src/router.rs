@@ -11,6 +11,9 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::app::AppState;
 use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
+use crate::controllers::examples::{
+    contact_page, contact_submit, counter_decrement, counter_increment, counter_page, example_json,
+};
 use crate::controllers::post::{
     create_post, delete_post, list_posts, publish_post, show_post, unpublish_post, update_post,
 };
@@ -69,7 +72,14 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/health", get(health_check))
         .route("/api/server-time", get(server_time))
         .route("/api/v1/auth/github/authorize", get(github_authorize))
-        .route("/api/v1/auth/github/callback", get(github_callback));
+        .route("/api/v1/auth/github/callback", get(github_callback))
+        // Example routes for HTMX + Askama patterns
+        .route("/examples/contact", get(contact_page))
+        .route("/examples/contact", post(contact_submit))
+        .route("/examples/counter", get(counter_page))
+        .route("/examples/counter/increment", post(counter_increment))
+        .route("/examples/counter/decrement", post(counter_decrement))
+        .route("/examples/json", get(example_json));
 
     // Session + CSRF protected router - requires both session auth and CSRF token
     // All session-authenticated unsafe methods (POST, PUT, PATCH, DELETE) are CSRF-protected
@@ -157,7 +167,7 @@ struct ServerTimeTemplate {
     time: String,
 }
 
-struct HtmlTemplate<T>(T);
+pub struct HtmlTemplate<T>(pub T);
 
 impl<T> IntoResponse for HtmlTemplate<T>
 where

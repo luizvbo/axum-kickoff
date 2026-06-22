@@ -57,7 +57,7 @@ DOMAIN_NAME=localhost
 DATABASE_URL=sqlite:axum-kickoff.db
 
 # Session Key (generate a secure random key)
-SESSION_KEY=your-secret-key-minimum-32-bytes-long
+SESSION_KEY=your-secret-key-minimum-64-bytes-long
 
 # GitHub OAuth (required for authentication)
 GH_CLIENT_ID=your_github_client_id
@@ -291,10 +291,10 @@ Common issues:
 
 ### Session Key Errors
 
-Ensure your `SESSION_KEY` is at least 32 bytes long. Generate a new one:
+Ensure your `SESSION_KEY` is at least 64 bytes long. Generate a new one:
 
 ```bash
-openssl rand -base64 32
+openssl rand -base64 64
 ```
 
 ### Storage Permissions

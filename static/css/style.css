@@ -134,6 +134,33 @@ body {
     color: var(--primary);
 }
 
+/* Button styles for white backgrounds */
+.btn-primary-solid {
+    background: var(--primary);
+    color: white;
+    border: 2px solid var(--primary);
+}
+
+.btn-primary-solid:hover {
+    background: var(--secondary);
+    border-color: var(--secondary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-secondary-solid {
+    background: white;
+    color: var(--dark);
+    border: 2px solid var(--border);
+}
+
+.btn-secondary-solid:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
 /* Container */
 .container {
     max-width: 1200px;
@@ -193,6 +220,221 @@ body {
 .tech-card p {
     color: var(--text-light);
     font-size: 0.95rem;
+}
+
+/* Examples Grid */
+.examples-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.example-card {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.5rem 2rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    text-decoration: none;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.example-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    border-color: var(--primary);
+}
+
+.example-icon {
+    font-size: 2.5rem;
+    flex-shrink: 0;
+}
+
+.example-content {
+    flex: 1;
+}
+
+.example-content h3 {
+    color: var(--dark);
+    margin-bottom: 0.5rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.example-content p {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.example-arrow {
+    color: var(--primary);
+    font-size: 1.5rem;
+    font-weight: bold;
+    transition: transform 0.3s ease;
+    flex-shrink: 0;
+}
+
+.example-card:hover .example-arrow {
+    transform: translateX(4px);
+}
+
+.doc-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.doc-link:hover {
+    color: var(--secondary);
+    text-decoration: underline;
+}
+
+/* Form Styling */
+.contact-form {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--dark);
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: inherit;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    background: white;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-input::placeholder {
+    color: #999;
+}
+
+.contact-form .btn {
+    width: 100%;
+    margin-top: 1rem;
+}
+
+.loading-indicator {
+    margin-top: 1rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.form-result {
+    margin-top: 2rem;
+}
+
+/* Alert Styling */
+.alert {
+    padding: 1.25rem 1.5rem;
+    border-radius: 8px;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.alert-success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.alert-error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.alert-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.alert-content h4 {
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+
+.alert-content p {
+    margin-bottom: 0.5rem;
+}
+
+.alert-content .btn {
+    margin-top: 0.75rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    width: auto;
+}
+
+.error-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0 0;
+}
+
+.error-item {
+    padding: 0.25rem 0;
+    font-size: 0.95rem;
+}
+
+/* Counter Styling */
+.counter-container {
+    max-width: 400px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.counter-display {
+    margin-bottom: 2rem;
+}
+
+.counter-value {
+    font-size: 4rem;
+    font-weight: bold;
+    color: var(--primary);
+    margin-bottom: 0.5rem;
+}
+
+.counter-label {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.counter-controls {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.counter-controls .btn {
+    min-width: 140px;
 }
 
 /* Features List */

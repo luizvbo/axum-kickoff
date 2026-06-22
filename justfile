@@ -51,27 +51,27 @@ test-cov args='':
 
 [doc("Generate a new migration based on model changes")]
 migration-generate:
-    cargo run --bin cli -- migration generate
+    cargo run --bin toasty -- migration generate
 
 [doc("Apply pending migrations to the database")]
 migration-apply:
-    cargo run --bin cli -- migration apply
+    cargo run --bin toasty -- migration apply
 
 [doc("Create a schema snapshot for future migration generation")]
 migration-snapshot:
-    cargo run --bin cli -- migration snapshot
+    cargo run --bin toasty -- migration snapshot
 
 [doc("Drop the last migration file")]
 migration-drop:
-    cargo run --bin cli -- migration drop
+    cargo run --bin toasty -- migration drop
 
 [doc("Reset the database - WARNING: This will delete all data")]
 migration-reset:
-    cargo run --bin cli -- migration reset
+    cargo run --bin toasty -- migration reset
 
 [doc("Inspect the current database schema as SQL")]
 migration-inspect:
-    cargo run --bin cli -- migration inspect
+    cargo run --bin toasty -- migration inspect
 
 # ============================================================================
 # Code Quality Commands
