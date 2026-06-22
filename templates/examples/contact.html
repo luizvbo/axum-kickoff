@@ -32,16 +32,16 @@
 
         <section class="section">
             <h2 class="section-title">Try It</h2>
-            
+
             <!-- HTMX Form Example -->
-            <!-- 
+            <!--
                 Key HTMX attributes:
                 - hx-post: HTTP method and endpoint
                 - hx-target: Where to insert the response
                 - hx-swap: How to insert the response (innerHTML, outerHTML, beforeend, etc.)
                 - hx-indicator: Element to show during loading
             -->
-            <form 
+            <form
                 hx-post="/examples/contact"
                 hx-target="#form-result"
                 hx-swap="innerHTML"
@@ -50,10 +50,10 @@
             >
                 <div class="form-group">
                     <label for="name">Name *</label>
-                    <input 
-                        type="text" 
-                        id="name" 
-                        name="name" 
+                    <input
+                        type="text"
+                        id="name"
+                        name="name"
                         required
                         placeholder="Your name"
                         class="form-input"
@@ -62,10 +62,10 @@
 
                 <div class="form-group">
                     <label for="email">Email *</label>
-                    <input 
-                        type="email" 
-                        id="email" 
-                        name="email" 
+                    <input
+                        type="email"
+                        id="email"
+                        name="email"
                         required
                         placeholder="your@email.com"
                         class="form-input"
@@ -74,9 +74,9 @@
 
                 <div class="form-group">
                     <label for="message">Message *</label>
-                    <textarea 
-                        id="message" 
-                        name="message" 
+                    <textarea
+                        id="message"
+                        name="message"
                         required
                         rows="5"
                         placeholder="Your message..."

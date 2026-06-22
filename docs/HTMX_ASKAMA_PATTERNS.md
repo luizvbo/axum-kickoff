@@ -148,7 +148,7 @@ pub async fn contact_submit(Form(form): Form<ContactForm>) -> Response {
     let template = ContactSuccessTemplate {
         name: form.name,
     };
-    
+
     match template.render() {
         Ok(html) => Html(html).into_response(),
         Err(err) => (
@@ -182,7 +182,7 @@ HTMX forms submit via AJAX without page reloads, returning HTML partials for suc
 ### Form with HTMX Attributes
 
 ```html
-<form 
+<form
     hx-post="/examples/contact"
     hx-target="#form-result"
     hx-swap="innerHTML"
@@ -221,11 +221,11 @@ pub struct ContactForm {
 pub async fn contact_submit(Form(form): Form<ContactForm>) -> Response {
     // Validate
     let mut errors = Vec::new();
-    
+
     if form.name.trim().is_empty() {
         errors.push("Name is required".to_string());
     }
-    
+
     if !errors.is_empty() {
         let template = ContactErrorsTemplate { errors };
         return match template.render() {
@@ -337,7 +337,7 @@ use axum::extract::HeaderMap;
 
 pub async fn some_handler(headers: HeaderMap) -> Response {
     let is_htmx = headers.get("HX-Request").is_some();
-    
+
     if is_htmx {
         // Return HTML partial
     } else {
@@ -552,7 +552,7 @@ async fn test_contact_submit_valid() {
     };
 
     let response = contact_submit(Form(form)).await;
-    
+
     // Assert response is HTML
     // Assert success message is present
 }

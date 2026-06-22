@@ -153,7 +153,8 @@ pub async fn counter_page(Extension(session): Extension<SessionExtension>) -> im
 
 /// Increment counter (HTMX endpoint)
 pub async fn counter_increment(Form(params): Form<HashMap<String, String>>) -> impl IntoResponse {
-    let count: i32 = params.get("count")
+    let count: i32 = params
+        .get("count")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
@@ -163,7 +164,8 @@ pub async fn counter_increment(Form(params): Form<HashMap<String, String>>) -> i
 
 /// Decrement counter (HTMX endpoint)
 pub async fn counter_decrement(Form(params): Form<HashMap<String, String>>) -> impl IntoResponse {
-    let count: i32 = params.get("count")
+    let count: i32 = params
+        .get("count")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
