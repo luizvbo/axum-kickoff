@@ -106,11 +106,11 @@ impl Server {
         })?;
         let session_key = cookie::Key::try_from(session_key.as_bytes()).map_err(|e| {
             tracing::error!(
-                "Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.",
+                "Invalid SESSION_KEY: {}. The key must be at least 64 bytes long.",
                 e
             );
             anyhow::anyhow!(
-                "Invalid SESSION_KEY: {}. The key must be at least 32 bytes long.",
+                "Invalid SESSION_KEY: {}. The key must be at least 64 bytes long.",
                 e
             )
         })?;
@@ -167,7 +167,7 @@ impl Server {
 /// Defaults to "127.0.0.1,::1" (localhost) for safety
 fn parse_trusted_proxies() -> anyhow::Result<Vec<ipnet::IpNet>> {
     let trusted_proxies_str =
-        dotenvy::var("TRUSTED_PROXIES").unwrap_or_else(|_| "127.0.0.1,::1".to_string());
+        dotenvy::var("TRUSTED_PROXIES").unwrap_or_else(|_| "127.0.0.1/32,::1/128".to_string());
 
     let mut result = Vec::new();
 
