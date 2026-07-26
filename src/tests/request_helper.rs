@@ -192,7 +192,7 @@ impl RequestHelper for AnonymousUser {
 /// User authenticated via session cookie
 pub struct CookieUser {
     app: super::test_app::TestApp,
-    user_id: i32,
+    user_id: u64,
     session_key: cookie::Key,
     /// Stored Set-Cookie header value for cookie persistence
     session_cookie: Arc<Mutex<Option<String>>>,
@@ -200,7 +200,7 @@ pub struct CookieUser {
 
 impl CookieUser {
     /// Create a new cookie-authenticated user
-    pub fn new(app: super::test_app::TestApp, user_id: i32, session_key: cookie::Key) -> Self {
+    pub fn new(app: super::test_app::TestApp, user_id: u64, session_key: cookie::Key) -> Self {
         Self {
             app,
             user_id,
@@ -215,7 +215,7 @@ impl CookieUser {
     }
 
     /// Get the user ID
-    pub fn user_id(&self) -> i32 {
+    pub fn user_id(&self) -> u64 {
         self.user_id
     }
 
@@ -327,7 +327,7 @@ impl RequestHelper for TokenUser {
 /// This matches the session encoding used in the session middleware.
 /// The cookie is signed with the session key to match the verification
 /// done by the middleware on every request.
-pub fn encode_session_header(session_key: &cookie::Key, user_id: i32) -> String {
+pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String {
     let cookie_name = "axum_kickoff_session";
 
     // Build session data map
