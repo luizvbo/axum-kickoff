@@ -2,8 +2,8 @@
 //!
 //! Provides secure token generation and hashing for API tokens.
 
-use rand::distributions::Alphanumeric;
-use rand::Rng;
+use rand::distr::Alphanumeric;
+use rand::RngExt;
 use secrecy::{ExposeSecret, SecretSlice, SecretString};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -90,7 +90,7 @@ impl ExposeSecret<str> for PlainToken {
 
 /// Generate a cryptographically secure random alphanumeric string
 fn generate_secure_alphanumeric_string(len: usize) -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..len).map(|_| rng.sample(Alphanumeric) as char).collect()
 }
 

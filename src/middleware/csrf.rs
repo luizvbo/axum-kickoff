@@ -37,8 +37,8 @@
 use axum::http::Method;
 use axum::middleware::Next;
 use axum::response::Response;
-use rand::distributions::Alphanumeric;
-use rand::Rng;
+use rand::distr::Alphanumeric;
+use rand::RngExt;
 
 use crate::middleware::SessionExtension;
 use crate::util::errors::{bad_request, AppResult};
@@ -49,7 +49,7 @@ pub static CSRF_FORM_FIELD: &str = "csrf_token";
 
 /// Generate a cryptographically secure random CSRF token
 pub fn generate_token() -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(32)
         .map(char::from)
