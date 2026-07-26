@@ -110,27 +110,25 @@ fn safe_storage_path(base: &Path, input: &str) -> anyhow::Result<PathBuf> {
 
 impl Storage {
     /// Create storage from configuration
-    pub fn from_config(config: &StorageConfig) -> Self {
+    pub fn from_config(config: &StorageConfig) -> anyhow::Result<Self> {
         let cdn_prefix = config.cdn_prefix.clone();
 
         match &config.backend {
             StorageBackend::LocalFileSystem { path } => {
                 tracing::info!(?path, "Using local file system for storage");
 
-                std::fs::create_dir_all(path)
-                    .context("Failed to create storage directory")
-                    .unwrap();
+                std::fs::create_dir_all(path).context("Failed to create storage directory")?;
 
-                Self {
+                Ok(Self {
                     cdn_prefix,
                     base_path: path.clone(),
-                }
+                })
             }
         }
     }
 
     /// Create storage from environment variables
-    pub fn from_environment() -> Self {
+    pub fn from_environment() -> anyhow::Result<Self> {
         Self::from_config(&StorageConfig::from_environment())
     }
 
@@ -319,7 +317,10 @@ fn normalize_path(path: &str) -> Result<String, String> {
     }
 
     // Reject paths with parent directory components
-    if trimmed.contains("..") {
+    if Path::new(trimmed)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Err("Path cannot contain parent directory references (..)".to_string());
     }
 
@@ -339,7 +340,7 @@ mod tests {
     async fn prepare_storage() -> (Storage, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let config = StorageConfig::local_filesystem(temp_dir.path());
-        let storage = Storage::from_config(&config);
+        let storage = Storage::from_config(&config).expect("Failed to create storage");
         (storage, temp_dir)
     }
 
@@ -434,7 +435,7 @@ mod tests {
     #[test]
     fn test_public_url() {
         let config = StorageConfig::local_filesystem("/tmp");
-        let storage = Storage::from_config(&config);
+        let storage = Storage::from_config(&config).unwrap();
 
         assert_eq!(
             storage.public_url("test.txt").unwrap(),
@@ -446,7 +447,7 @@ mod tests {
     fn test_public_url_with_cdn() {
         let config =
             StorageConfig::local_filesystem_with_cdn("/tmp", "cdn.example.com".to_string());
-        let storage = Storage::from_config(&config);
+        let storage = Storage::from_config(&config).unwrap();
 
         assert_eq!(
             storage.public_url("test.txt").unwrap(),
@@ -458,7 +459,7 @@ mod tests {
     fn test_public_url_with_https_cdn() {
         let config =
             StorageConfig::local_filesystem_with_cdn("/tmp", "https://cdn.example.com".to_string());
-        let storage = Storage::from_config(&config);
+        let storage = Storage::from_config(&config).unwrap();
 
         assert_eq!(
             storage.public_url("test.txt").unwrap(),
@@ -499,6 +500,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_normalize_path_accepts_double_dot_in_filename() {
+        assert_eq!(
+            normalize_path("file..backup.txt").unwrap(),
+            "file..backup.txt"
+        );
+        assert_eq!(normalize_path("dir/file..bak").unwrap(), "dir/file..bak");
+    }
+
     #[tokio::test]
     async fn upload_rejects_path_traversal() {
         let (storage, _temp_dir) = prepare_storage().await;
@@ -533,6 +543,9 @@ mod tests {
 
     #[test]
     fn test_config_from_environment() {
+        let original_storage_path = std::env::var("STORAGE_PATH").ok();
+        let original_cdn_prefix = std::env::var("CDN_PREFIX").ok();
+
         std::env::set_var("STORAGE_PATH", "/custom/path");
         std::env::set_var("CDN_PREFIX", "cdn.example.com");
 
@@ -543,7 +556,16 @@ mod tests {
         ));
         assert_eq!(config.cdn_prefix, Some("cdn.example.com".to_string()));
 
-        std::env::remove_var("STORAGE_PATH");
-        std::env::remove_var("CDN_PREFIX");
+        // Restore original values
+        if let Some(val) = original_storage_path {
+            std::env::set_var("STORAGE_PATH", val);
+        } else {
+            std::env::remove_var("STORAGE_PATH");
+        }
+        if let Some(val) = original_cdn_prefix {
+            std::env::set_var("CDN_PREFIX", val);
+        } else {
+            std::env::remove_var("CDN_PREFIX");
+        }
     }
 }

@@ -47,7 +47,7 @@ impl TestApp {
             .expect("Failed to connect to test database");
 
         // Create app state
-        let app = App::new(config.clone(), db.clone());
+        let app = App::new(config.clone(), db.clone()).expect("Failed to create test app");
 
         // Build router with test configuration and middleware
         let app_arc = Arc::new(app);
@@ -98,11 +98,7 @@ impl TestApp {
 
     /// Get the app state (useful for extractors that need it)
     pub fn state(&self) -> AppState {
-        // Extract the state from the router
-        // This is a simplification - in practice you might need to store it separately
-        // For now, we'll create a new state from the existing components
-        let app = App::new(self.config.clone(), self.db.clone());
-        AppState(Arc::new(app))
+        self.state.clone()
     }
 
     /// Create a new user builder

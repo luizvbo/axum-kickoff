@@ -32,9 +32,9 @@ pub struct App {
 
 impl App {
     /// Create a new App instance with the given configuration and database
-    pub fn new(config: config::Server, database: Database) -> Self {
+    pub fn new(config: config::Server, database: Database) -> anyhow::Result<Self> {
         let session_key = config.session_key.clone();
-        let storage = Storage::from_config(&config.storage_config);
+        let storage = Storage::from_config(&config.storage_config)?;
 
         // Initialize rate limiter with default configuration
         let mut rate_limit_config = HashMap::new();
@@ -49,7 +49,7 @@ impl App {
         }
         let rate_limiter = RateLimiter::new(rate_limit_config);
 
-        Self {
+        Ok(Self {
             config: Arc::new(config),
             database,
             storage,
@@ -57,7 +57,7 @@ impl App {
             metrics: InstanceMetrics::new(),
             session_key,
             rate_limiter,
-        }
+        })
     }
 
     /// Get the server's IP address
