@@ -21,6 +21,7 @@ pub mod error_handler;
 #[cfg(feature = "metrics")]
 pub mod metrics;
 pub mod real_ip;
+pub mod request_id;
 pub mod require_user_agent;
 pub mod security_headers;
 pub mod session;
@@ -39,8 +40,9 @@ pub use error_handler::middleware as error_handler;
 #[cfg(feature = "metrics")]
 pub use metrics::update_metrics;
 pub use real_ip::middleware as real_ip;
+pub use request_id::{middleware as request_id, RequestId};
 pub use require_user_agent::require_user_agent;
-pub use security_headers::middleware as security_headers;
+pub use security_headers::{middleware as security_headers, CspNonce};
 pub use session::{middleware as session_middleware, SessionExtension};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
@@ -72,6 +74,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))
+        .layer(from_fn(self::request_id::middleware))
         .layer(from_fn_with_state(session_key, self::session_middleware))
         .layer(from_fn(self::csrf::ensure_token))
         .layer(CatchPanicLayer::new())

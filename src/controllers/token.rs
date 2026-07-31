@@ -3,12 +3,12 @@
 //! Provides endpoints for creating, listing, and revoking API tokens.
 
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::app::AppState;
 use crate::middleware::real_ip::RealIp;
@@ -16,8 +16,9 @@ use crate::middleware::SessionExtension;
 use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
 use crate::rate_limiter::LimitedAction;
-use crate::util::errors::{bad_request, server_error, unauthorized, AppResult};
+use crate::util::errors::{bad_request, internal_error, rate_limited, unauthorized, AppResult};
 use crate::util::PlainToken;
+use crate::util::ApiResponse;
 
 /// Request body for creating a new API token
 #[derive(Debug, Deserialize, ToSchema)]
@@ -174,7 +175,7 @@ pub async fn create_token(
         .rate_limiter
         .check_by_ip(real_ip.0, LimitedAction::TokenCreation)
         .await
-        .map_err(|e| bad_request(e.to_string()))?;
+        .map_err(|e| rate_limited(e.action.error_message(), e.retry_after))?;
 
     let user_id = session
         .get("user_id")
@@ -214,7 +215,7 @@ pub async fn create_token(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     // Convert scopes back to strings for response
     let resource_scopes_response = validated.resource_scopes.map(|scopes| {
@@ -231,7 +232,7 @@ pub async fn create_token(
     use secrecy::ExposeSecret;
     Ok((
         StatusCode::CREATED,
-        Json(CreateTokenResponse {
+        Json(ApiResponse::new(CreateTokenResponse {
             token: plain_token.expose_secret().to_string(),
             id: token_record.id,
             name: token_record.name,
@@ -239,18 +240,44 @@ pub async fn create_token(
             resource_scopes: resource_scopes_response,
             action_scopes: action_scopes_response,
             expires_at: expires_at_response,
-        }),
+        })),
     ))
 }
 
+/// Query parameters for token list pagination
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ListTokensParams {
+    /// Page number (1-based, default 1)
+    #[param(minimum = 1)]
+    pub page: Option<u32>,
+    /// Items per page (default 20, max 100)
+    #[param(minimum = 1)]
+    pub per_page: Option<u32>,
+}
+
+/// Response for paginated token list
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ListTokensResponse {
+    pub data: Vec<TokenListItem>,
+    pub page: u32,
+    pub per_page: usize,
+}
+
+const DEFAULT_TOKEN_PER_PAGE: usize = 20;
+const MAX_TOKEN_PER_PAGE: usize = 100;
+
 /// List all API tokens for the authenticated user
 ///
-/// This endpoint returns a list of all API tokens belonging to the authenticated user.
+/// This endpoint returns a paginated list of all API tokens belonging to the authenticated user.
 #[utoipa::path(
     get,
     path = "/api/v1/tokens",
+    params(
+        ListTokensParams
+    ),
     responses(
-        (status = 200, description = "List of tokens", body = Vec<TokenListItem>),
+        (status = 200, description = "Paginated list of tokens", body = ListTokensResponse),
         (status = 401, description = "Unauthorized")
     ),
     tag = "Tokens",
@@ -261,6 +288,7 @@ pub async fn create_token(
 pub async fn list_tokens(
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
+    Query(params): Query<ListTokensParams>,
 ) -> AppResult<impl IntoResponse> {
     let user_id = session
         .get("user_id")
@@ -269,15 +297,24 @@ pub async fn list_tokens(
         .parse::<u64>()
         .map_err(|_| unauthorized("Invalid session"))?;
 
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params
+        .per_page
+        .map(|p| (p as usize).min(MAX_TOKEN_PER_PAGE))
+        .unwrap_or(DEFAULT_TOKEN_PER_PAGE);
+    let offset = ((page - 1) as usize) * per_page;
+
     let mut db = state.0.database.db_clone();
 
-    // Query all tokens for the user using Toasty's filter API
+    // Query tokens for the user using Toasty's filter API with pagination
     let tokens = ApiToken::filter(ApiToken::fields().user_id().eq(user_id))
+        .limit(per_page)
+        .offset(offset)
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(internal_error)?;
 
-    let token_list: Vec<TokenListItem> = tokens
+    let data: Vec<TokenListItem> = tokens
         .into_iter()
         .map(|token| {
             let resource_scopes = token.parse_resource_scopes().map(|scopes| {
@@ -303,7 +340,11 @@ pub async fn list_tokens(
         })
         .collect();
 
-    Ok(Json(token_list))
+    Ok(Json(ListTokensResponse {
+        data,
+        page,
+        per_page,
+    }))
 }
 
 /// Revoke an API token
@@ -345,7 +386,7 @@ pub async fn revoke_token(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(crate::util::errors::not_found)?;
 
     // Mark the token as revoked using toasty::update!
@@ -353,7 +394,7 @@ pub async fn revoke_token(
     toasty::update!(token { revoked: true })
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(internal_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }

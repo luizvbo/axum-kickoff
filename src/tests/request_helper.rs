@@ -146,6 +146,40 @@ pub trait RequestHelper {
 
         self.run(request).await
     }
+
+    /// Make a DELETE request with custom headers
+    async fn delete_with_headers<T>(&self, path: &str, headers: HeaderMap) -> Response<T> {
+        let mut request = self.request_builder(Method::DELETE, path);
+
+        for (name, value) in headers.iter() {
+            request.headers_mut().insert(name, value.clone());
+        }
+
+        self.run(request).await
+    }
+
+    /// Make a PATCH request with a JSON body and custom headers
+    async fn patch_with_headers<T>(
+        &self,
+        path: &str,
+        body: impl Serialize,
+        headers: HeaderMap,
+    ) -> Response<T> {
+        let json_body = serde_json::to_string(&body).expect("Failed to serialize body");
+
+        let mut request = self.request_builder(Method::PATCH, path);
+        request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        *request.body_mut() = Body::from(json_body);
+
+        for (name, value) in headers.iter() {
+            request.headers_mut().insert(name, value.clone());
+        }
+
+        self.run(request).await
+    }
 }
 
 /// Anonymous user (no authentication)
@@ -217,6 +251,28 @@ impl CookieUser {
     /// Get the user ID
     pub fn user_id(&self) -> u64 {
         self.user_id
+    }
+
+    /// Initialize CSRF token by making a GET request to "/" and storing the session cookie.
+    /// Returns the CSRF token to use in subsequent requests.
+    pub async fn init_csrf(&self) -> String {
+        let response = self.get::<()>("/").await;
+
+        if let Some(set_cookie) = response.headers().get("set-cookie") {
+            if let Ok(set_cookie_str) = set_cookie.to_str() {
+                self.update_session_cookie(set_cookie_str.to_string());
+            }
+        }
+
+        self.get_csrf_token()
+            .expect("CSRF token should exist after GET request")
+    }
+
+    /// Get headers including the CSRF token for making protected requests.
+    pub fn headers_with_csrf(&self, csrf_token: &str) -> HeaderMap {
+        let mut headers = self.headers();
+        headers.insert("X-CSRF-Token", csrf_token.parse().expect("Invalid CSRF token"));
+        headers
     }
 
     /// Get the CSRF token from the session

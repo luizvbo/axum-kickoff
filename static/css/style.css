@@ -22,6 +22,24 @@ body {
     min-height: 100vh;
 }
 
+/* Skip Link */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--primary);
+    color: white;
+    padding: 0.5rem 1rem;
+    z-index: 2000;
+    text-decoration: none;
+    border-radius: 0 0 4px 0;
+    transition: top 0.2s;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
 /* Navbar */
 .navbar {
     background: white;
@@ -186,6 +204,10 @@ body {
     margin-bottom: 2rem;
 }
 
+.section-text-mt {
+    margin-top: 1.5rem;
+}
+
 /* Tech Grid */
 .tech-grid {
     display: grid;
@@ -343,6 +365,7 @@ body {
     color: var(--text-light);
     font-size: 0.9rem;
     text-align: center;
+    display: none;
 }
 
 .form-result {

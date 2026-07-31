@@ -9,7 +9,8 @@
     <meta name="htmx-config" content='{"csrfToken": "{{ csrf_token }}"}'>
 </head>
 <body>
-    <nav class="navbar">
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <nav class="navbar" aria-label="Main navigation">
         <div class="nav-container">
             <div class="nav-brand">
                 <span class="logo">📝</span>
@@ -21,7 +22,7 @@
         </div>
     </nav>
 
-    <div class="container">
+    <div class="container" id="main-content">
         <section class="section">
             <h1 class="section-title">Contact Form Example</h1>
             <p class="section-text">
@@ -57,6 +58,7 @@
                         required
                         placeholder="Your name"
                         class="form-input"
+                        aria-describedby="name-error"
                     >
                 </div>
 
@@ -69,6 +71,7 @@
                         required
                         placeholder="your@email.com"
                         class="form-input"
+                        aria-describedby="email-error"
                     >
                 </div>
 
@@ -81,6 +84,7 @@
                         rows="5"
                         placeholder="Your message..."
                         class="form-input"
+                        aria-describedby="message-error"
                     ></textarea>
                 </div>
 
@@ -88,13 +92,13 @@
                     Send Message
                 </button>
 
-                <div id="loading-indicator" class="loading-indicator" style="display: none;">
+                <div id="loading-indicator" class="loading-indicator">
                     Sending...
                 </div>
             </form>
 
             <!-- Result container for HTMX response -->
-            <div id="form-result" class="form-result"></div>
+            <div id="form-result" class="form-result" aria-live="assertive"></div>
         </section>
 
         <section class="section">

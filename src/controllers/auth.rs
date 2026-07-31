@@ -16,7 +16,7 @@ use crate::middleware::real_ip::RealIp;
 use crate::middleware::session::SessionExtension;
 use crate::models::User;
 use crate::rate_limiter::LimitedAction;
-use crate::util::errors::{bad_request, forbidden, server_error, BoxedAppError};
+use crate::util::errors::{bad_request, forbidden, internal_error, rate_limited, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 use secrecy::ExposeSecret;
 
@@ -68,7 +68,7 @@ pub async fn github_authorize(
         .rate_limiter
         .check_by_ip(real_ip.0, LimitedAction::OAuthAuthorize)
         .await
-        .map_err(|e| bad_request(e.to_string()))?;
+        .map_err(|e| rate_limited(e.action.error_message(), e.retry_after))?;
 
     let config = &state.0.config;
 
@@ -144,7 +144,7 @@ pub async fn github_callback(
         .rate_limiter
         .check_by_ip(real_ip.0, LimitedAction::OAuthCallback)
         .await
-        .map_err(|e| bad_request(e.to_string()))?;
+        .map_err(|e| rate_limited(e.action.error_message(), e.retry_after))?;
 
     let config = &state.0.config;
 
@@ -185,7 +185,7 @@ pub async fn github_callback(
         .set_pkce_verifier(pkce_verifier)
         .request_async(&ReqwestClient(state.0.http_client.clone()))
         .await
-        .map_err(|e| bad_request(format!("Failed to exchange authorization code: {}", e)))?;
+        .map_err(|e| server_error(format!("Failed to exchange authorization code: {}", e)))?;
 
     // Fetch user profile from GitHub
     let user_response = state
@@ -199,16 +199,16 @@ pub async fn github_callback(
         .header("User-Agent", "axum-kickoff")
         .send()
         .await
-        .map_err(|e| bad_request(format!("Failed to fetch user profile: {}", e)))?;
+        .map_err(|e| server_error(format!("Failed to fetch user profile: {}", e)))?;
 
     if !user_response.status().is_success() {
-        return Err(bad_request("Failed to fetch user profile from GitHub"));
+        return Err(server_error("Failed to fetch user profile from GitHub"));
     }
 
     let github_user: GitHubUser = user_response
         .json()
         .await
-        .map_err(|e| bad_request(format!("Failed to parse user profile: {}", e)))?;
+        .map_err(|e| server_error(format!("Failed to parse user profile: {}", e)))?;
 
     let mut db = state.0.database.db_clone();
 
@@ -236,7 +236,7 @@ pub async fn github_callback(
                 .update()
                 .exec(&mut db)
                 .await
-                .map_err(|e| server_error(e.to_string()))?;
+                .map_err(internal_error)?;
 
             existing_user
         }
@@ -256,7 +256,7 @@ pub async fn github_callback(
             })
             .exec(&mut db)
             .await
-            .map_err(|e| server_error(e.to_string()))?
+            .map_err(internal_error)?
         }
     };
 

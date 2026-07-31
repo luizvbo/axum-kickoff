@@ -12,7 +12,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::app::AppState;
 use crate::middleware::CurrentUserId;
 use crate::models::Post;
-use crate::util::errors::{bad_request, not_found, server_error, AppResult};
+use crate::util::errors::{bad_request, internal_error, not_found, AppResult};
+use crate::util::ApiResponse;
 
 /// Request body for creating a new post
 #[derive(Debug, Deserialize, ToSchema)]
@@ -97,7 +98,7 @@ pub async fn list_posts(
         .offset(offset)
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(internal_error)?;
 
     let data: Vec<PostResponse> = posts
         .into_iter()
@@ -139,7 +140,7 @@ pub async fn show_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
     let mut db = state.0.database.db_clone();
 
     let post = Post::filter(Post::fields().id().eq(id))
@@ -147,7 +148,7 @@ pub async fn show_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let post_response = PostResponse {
@@ -159,7 +160,7 @@ pub async fn show_post(
         updated_at: post.updated_at.to_string(),
     };
 
-    Ok(Json(post_response))
+    Ok(Json(ApiResponse::new(post_response)))
 }
 
 /// Create a new post
@@ -204,7 +205,7 @@ pub async fn create_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -215,7 +216,7 @@ pub async fn create_post(
         updated_at: post.updated_at.to_string(),
     };
 
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok((StatusCode::CREATED, Json(ApiResponse::new(response))))
 }
 
 /// Update a post
@@ -242,7 +243,7 @@ pub async fn update_post(
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
     Json(req): Json<UpdatePostRequest>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
     // Validate input
     if req.title.trim().is_empty() {
         return Err(bad_request("Title cannot be empty"));
@@ -258,7 +259,7 @@ pub async fn update_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let new_title = req.title.clone();
@@ -272,7 +273,7 @@ pub async fn update_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -283,7 +284,7 @@ pub async fn update_post(
         updated_at: new_updated_at.to_string(),
     };
 
-    Ok(Json(response))
+    Ok(Json(ApiResponse::new(response)))
 }
 
 /// Delete a post
@@ -315,13 +316,13 @@ pub async fn delete_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     post.delete()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(internal_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -347,7 +348,7 @@ pub async fn publish_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
     let mut db = state.0.database.db_clone();
 
     let mut post = Post::filter(Post::fields().id().eq(id))
@@ -355,7 +356,7 @@ pub async fn publish_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let new_published = true;
@@ -367,7 +368,7 @@ pub async fn publish_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -378,7 +379,7 @@ pub async fn publish_post(
         updated_at: new_updated_at.to_string(),
     };
 
-    Ok(Json(response))
+    Ok(Json(ApiResponse::new(response)))
 }
 
 /// Unpublish a post
@@ -402,7 +403,7 @@ pub async fn unpublish_post(
     Path(id): Path<u64>,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
     let mut db = state.0.database.db_clone();
 
     let mut post = Post::filter(Post::fields().id().eq(id))
@@ -410,7 +411,7 @@ pub async fn unpublish_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let new_published = false;
@@ -422,7 +423,7 @@ pub async fn unpublish_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -433,5 +434,5 @@ pub async fn unpublish_post(
         updated_at: new_updated_at.to_string(),
     };
 
-    Ok(Json(response))
+    Ok(Json(ApiResponse::new(response)))
 }

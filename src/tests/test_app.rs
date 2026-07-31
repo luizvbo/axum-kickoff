@@ -8,7 +8,7 @@ use crate::config::AllowedOrigins;
 use crate::config::Server;
 use crate::db::Database;
 use crate::storage::StorageConfig;
-use crate::tests::builders::{ApiTokenBuilder, UserBuilder};
+use crate::tests::builders::{ApiTokenBuilder, PostBuilder, UserBuilder};
 use axum::Router;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -30,12 +30,15 @@ pub struct TestApp {
 impl TestApp {
     /// Create a new test application with an in-memory SQLite database
     pub async fn new() -> Self {
+        let config = Self::test_config();
+        Self::with_config(config).await
+    }
+
+    /// Create a new test application with a custom configuration
+    pub async fn with_config(config: Server) -> Self {
         // Create a temporary file for the SQLite database
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
-
-        // Set up test configuration
-        let config = Self::test_config();
 
         // Create database connection
         let db_config = crate::config::DatabaseConfig {
@@ -64,7 +67,7 @@ impl TestApp {
     }
 
     /// Create test configuration with minimal required settings
-    fn test_config() -> Server {
+    pub fn test_config() -> Server {
         use crate::config::base::Base;
         use crate::Env;
         use std::net::IpAddr;
@@ -109,6 +112,11 @@ impl TestApp {
     /// Create a new API token builder
     pub fn token_builder(&self, user_id: u64, name: &str) -> ApiTokenBuilder {
         ApiTokenBuilder::new(user_id, name)
+    }
+
+    /// Create a new post builder
+    pub fn post_builder(&self, user_id: u64, title: &str) -> PostBuilder {
+        PostBuilder::new(user_id, title)
     }
 }
 

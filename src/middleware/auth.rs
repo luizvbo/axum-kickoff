@@ -145,20 +145,3 @@ pub async fn require_login(State(_state): State<AppState>, req: Request, next: N
 
     next.run(req).await
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_current_user_id_struct() {
-        // This is a compile-time test to ensure the struct exists
-        // Actual functionality tests would require a full test app setup
-        let _ = std::marker::PhantomData::<CurrentUserId>;
-    }
-
-    #[test]
-    fn test_optional_current_user_id_struct() {
-        let _ = std::marker::PhantomData::<OptionalCurrentUserId>;
-    }
-}

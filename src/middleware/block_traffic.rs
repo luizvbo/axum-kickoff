@@ -291,10 +291,11 @@ mod tests {
 
     #[test]
     fn test_block_criteria_invalid_regex() {
-        let result = BlockCriteria::try_from(r"/unclosed[");
-        // The regex might be valid in some cases, so we just check it doesn't panic
-        // and returns a result (either ok or err is acceptable)
-        let _ = result;
+        let result = BlockCriteria::try_from(r"/unclosed[/");
+        assert!(
+            result.is_err(),
+            "Expected invalid regex to return an error"
+        );
     }
 
     #[test]

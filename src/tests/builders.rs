@@ -3,7 +3,7 @@
 //! Provides a fluent API for creating test data, inserting directly
 //! into the database using Toasty ORM.
 
-use crate::models::{ActionScope, ApiToken, ResourceScope, User};
+use crate::models::{ActionScope, ApiToken, Post, ResourceScope, User};
 use crate::util::PlainToken;
 use secrecy::ExposeSecret;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -153,6 +153,52 @@ impl ApiTokenBuilder {
         .await?;
 
         Ok((api_token, plain_token.expose_secret().to_string()))
+    }
+}
+
+/// Builder for Post models
+pub struct PostBuilder {
+    user_id: u64,
+    title: String,
+    content: String,
+    published: bool,
+}
+
+impl PostBuilder {
+    pub fn new(user_id: u64, title: &str) -> Self {
+        Self {
+            user_id,
+            title: title.to_string(),
+            content: "Default test content".to_string(),
+            published: false,
+        }
+    }
+
+    pub fn content(mut self, content: &str) -> Self {
+        self.content = content.to_string();
+        self
+    }
+
+    pub fn published(mut self, published: bool) -> Self {
+        self.published = published;
+        self
+    }
+
+    /// Build and insert the post into the database
+    pub async fn build(self, db: &mut toasty::Db) -> anyhow::Result<Post> {
+        let now = jiff::Timestamp::now();
+        let post = toasty::create!(Post {
+            user_id: self.user_id,
+            title: self.title,
+            content: self.content,
+            published: self.published,
+            created_at: now,
+            updated_at: now,
+        })
+        .exec(db)
+        .await?;
+
+        Ok(post)
     }
 }
 

@@ -32,7 +32,7 @@
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::Response;
-use tracing::error;
+use tracing::{error, warn};
 
 /// Error handling middleware
 ///
@@ -57,8 +57,7 @@ pub async fn middleware(req: Request, next: Next) -> Response {
             response.status()
         );
     } else if response.status().is_client_error() {
-        // Log 4xx errors at info level for debugging
-        error!(
+        warn!(
             "Client error response: {} {} - Status: {}",
             method,
             uri,
@@ -67,12 +66,4 @@ pub async fn middleware(req: Request, next: Next) -> Response {
     }
 
     response
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_error_handler_middleware() {
-        // This test verifies the middleware compiles and can be used
-    }
 }

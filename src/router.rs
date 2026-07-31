@@ -1,10 +1,10 @@
 use askama::Template;
-use axum::extract::Extension;
+use axum::extract::{Extension, State};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::Router;
-use chrono::Utc;
 use http::{Method, StatusCode};
+use serde::Serialize;
 use tower_http::services::ServeDir;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -21,6 +21,7 @@ use crate::controllers::token::{create_token, list_tokens, revoke_token};
 use crate::middleware::{
     csrf_protect, get_or_create_csrf_token, require_session_user, SessionExtension,
 };
+use crate::models::User;
 use crate::Env;
 
 #[derive(OpenApi)]
@@ -46,6 +47,7 @@ use crate::Env;
             crate::controllers::token::CreateTokenRequest,
             crate::controllers::token::CreateTokenResponse,
             crate::controllers::token::TokenListItem,
+            crate::controllers::token::ListTokensResponse,
         )
     ),
     tags(
@@ -141,8 +143,26 @@ async fn home(Extension(session): Extension<SessionExtension>) -> impl IntoRespo
     HtmlTemplate(template)
 }
 
-async fn health_check() -> &'static str {
-    "OK"
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let mut db = state.0.database.db_clone();
+    let db_ok = User::filter(User::fields().id().eq(0))
+        .first()
+        .exec(&mut db)
+        .await
+        .is_ok();
+
+    let status = if db_ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let body = HealthResponse {
+        status: if db_ok { "ok" } else { "degraded" },
+        database: db_ok,
+    };
+    (status, axum::Json(body))
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    database: bool,
 }
 
 async fn debug_info() -> &'static str {
@@ -150,7 +170,7 @@ async fn debug_info() -> &'static str {
 }
 
 async fn server_time() -> impl IntoResponse {
-    let time = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let time = jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S UTC").to_string();
     let template = ServerTimeTemplate { time };
     HtmlTemplate(template)
 }

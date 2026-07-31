@@ -34,6 +34,9 @@ impl Database {
             .connect(&config.url)
             .await?;
 
+        // Create tables if they don't exist
+        db.push_schema().await?;
+
         Ok(Self { db: Arc::new(db) })
     }
 
