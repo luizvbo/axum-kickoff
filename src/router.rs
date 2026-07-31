@@ -42,6 +42,7 @@ use crate::Env;
             crate::controllers::post::CreatePostRequest,
             crate::controllers::post::UpdatePostRequest,
             crate::controllers::post::PostResponse,
+            crate::controllers::post::ListPostsResponse,
             crate::controllers::token::CreateTokenRequest,
             crate::controllers::token::CreateTokenResponse,
             crate::controllers::token::TokenListItem,

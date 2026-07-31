@@ -28,6 +28,8 @@ pub struct App {
     pub session_key: cookie::Key,
     /// Rate limiter for API request throttling
     pub rate_limiter: RateLimiter,
+    /// Shared HTTP client for outbound requests (OAuth, GitHub API)
+    pub http_client: reqwest::Client,
 }
 
 impl App {
@@ -49,6 +51,10 @@ impl App {
         }
         let rate_limiter = RateLimiter::new(rate_limit_config);
 
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()?;
+
         Ok(Self {
             config: Arc::new(config),
             database,
@@ -57,6 +63,7 @@ impl App {
             metrics: InstanceMetrics::new(),
             session_key,
             rate_limiter,
+            http_client,
         })
     }
 

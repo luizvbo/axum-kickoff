@@ -14,7 +14,7 @@
 //! - `BLOCKED_TRAFFIC`: Comma-separated list of header=value pairs for blocking traffic (optional).
 //! - `GH_CLIENT_ID`: GitHub OAuth client ID (required for OAuth).
 //! - `GH_CLIENT_SECRET`: GitHub OAuth client secret (required for OAuth).
-//! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "http://localhost:8888/api/v1/auth/github/callback").
+//! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "https://<domain>:<port>/api/v1/auth/github/callback" in production, "http://" in development).
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 //! - `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs/CIDR ranges (defaults to "127.0.0.1,::1").
@@ -23,6 +23,7 @@ use crate::middleware::block_traffic::BlockCriteria;
 use crate::storage::StorageConfig;
 use crate::Env;
 use http::HeaderValue;
+use secrecy::SecretString;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -43,7 +44,7 @@ pub struct Server {
     pub session_key: cookie::Key,
     pub trusted_proxies: Vec<ipnet::IpNet>,
     pub gh_client_id: String,
-    pub gh_client_secret: String,
+    pub gh_client_secret: SecretString,
     pub gh_redirect_uri: String,
     pub storage_config: StorageConfig,
 }
@@ -124,10 +125,16 @@ impl Server {
             tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
             anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
         })?;
+        let gh_client_secret = SecretString::from(gh_client_secret);
         let gh_redirect_uri = dotenvy::var("GH_REDIRECT_URI").unwrap_or_else(|_| {
+            let scheme = if base.env == Env::Production {
+                "https"
+            } else {
+                "http"
+            };
             format!(
-                "http://{}:{}/api/v1/auth/github/callback",
-                domain_name, port
+                "{}://{}:{}/api/v1/auth/github/callback",
+                scheme, domain_name, port
             )
         });
 

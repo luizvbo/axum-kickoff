@@ -33,6 +33,7 @@ pub use auth::{require_login, require_session_user, CurrentUserId, OptionalCurre
 pub use block_traffic::middleware as block_traffic;
 pub use csrf::{
     csrf_protect, ensure_token, get_or_create_csrf_token, protect, validate_csrf_token,
+    verify_origin,
 };
 pub use error_handler::middleware as error_handler;
 #[cfg(feature = "metrics")]
@@ -63,6 +64,11 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let router = router
         .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(cors)
+        .layer(from_fn_with_state(
+            config.allowed_origins.clone(),
+            self::csrf::verify_origin,
+        ))
+        .layer(from_fn_with_state(state.clone(), self::block_traffic))
         .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(log_request))
         .layer(from_fn(self::error_handler::middleware))

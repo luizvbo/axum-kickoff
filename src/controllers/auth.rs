@@ -18,6 +18,7 @@ use crate::models::User;
 use crate::rate_limiter::LimitedAction;
 use crate::util::errors::{bad_request, forbidden, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
+use secrecy::ExposeSecret;
 
 /// OAuth authorize query parameters
 #[derive(Debug, Deserialize)]
@@ -80,7 +81,9 @@ pub async fn github_authorize(
         RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
-        .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
+        .set_client_secret(ClientSecret::new(
+            config.gh_client_secret.expose_secret().to_string(),
+        ))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url)
         .set_redirect_uri(redirect_url);
@@ -169,7 +172,9 @@ pub async fn github_callback(
         RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
-        .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
+        .set_client_secret(ClientSecret::new(
+            config.gh_client_secret.expose_secret().to_string(),
+        ))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url)
         .set_redirect_uri(redirect_url);
@@ -178,13 +183,14 @@ pub async fn github_callback(
     let token = client
         .exchange_code(oauth2::AuthorizationCode::new(query.code.clone()))
         .set_pkce_verifier(pkce_verifier)
-        .request_async(&ReqwestClient(reqwest::Client::new()))
+        .request_async(&ReqwestClient(state.0.http_client.clone()))
         .await
         .map_err(|e| bad_request(format!("Failed to exchange authorization code: {}", e)))?;
 
     // Fetch user profile from GitHub
-    let http_client = reqwest::Client::new();
-    let user_response = http_client
+    let user_response = state
+        .0
+        .http_client
         .get("https://api.github.com/user")
         .header(
             "Authorization",
@@ -299,6 +305,7 @@ pub async fn logout_api(
     session.remove("github_oauth_state");
     session.remove("github_pkce_verifier");
     session.remove("redirect_to");
+    session.remove("csrf_token");
 
     Ok(Json(json!({"success": true})))
 }
@@ -320,6 +327,7 @@ pub async fn logout_html(
     session.remove("github_oauth_state");
     session.remove("github_pkce_verifier");
     session.remove("redirect_to");
+    session.remove("csrf_token");
 
     Ok(Redirect::to("/"))
 }

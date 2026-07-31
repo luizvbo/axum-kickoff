@@ -34,12 +34,17 @@
 //! // )))
 //! ```
 
-use axum::http::Method;
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::{HeaderMap, Method};
 use axum::middleware::Next;
 use axum::response::Response;
+use http_body_util::BodyExt;
 use rand::distr::Alphanumeric;
 use rand::RngExt;
+use subtle::ConstantTimeEq;
 
+use crate::config::AllowedOrigins;
 use crate::middleware::SessionExtension;
 use crate::util::errors::{bad_request, AppResult};
 
@@ -73,7 +78,7 @@ pub fn validate_csrf_token(session: &SessionExtension, provided_token: &str) -> 
         .get(CSRF_TOKEN_KEY)
         .ok_or_else(|| bad_request("CSRF token not found in session. Please refresh the page."))?;
 
-    if session_token == provided_token {
+    if session_token.as_bytes().ct_eq(provided_token.as_bytes()).into() {
         Ok(())
     } else {
         Err(bad_request(
@@ -82,36 +87,66 @@ pub fn validate_csrf_token(session: &SessionExtension, provided_token: &str) -> 
     }
 }
 
-/// Extract CSRF token from request (header or form field)
-fn extract_csrf_token_from_request(
+/// Extract CSRF token from request headers or form body
+///
+/// If the token is found in the header, returns it immediately.
+/// Otherwise, if the request is form-encoded, reads the body to find the token.
+/// Returns (token, optional reconstructed request body bytes).
+async fn extract_csrf_token(
     method: &Method,
-    headers: &axum::http::HeaderMap,
-    form_data: Option<&str>,
-) -> Option<String> {
+    headers: &HeaderMap,
+    mut req: axum::extract::Request,
+) -> (Option<String>, axum::extract::Request) {
     // Only validate unsafe methods
     if !is_unsafe_method(method) {
-        return Some(String::new()); // Safe methods don't need CSRF
+        return (Some(String::new()), req); // Safe methods don't need CSRF
     }
 
     // First check header (for HTMX and API clients)
     if let Some(header_value) = headers.get(CSRF_HEADER_NAME) {
         if let Ok(token) = header_value.to_str() {
-            return Some(token.to_string());
+            return (Some(token.to_string()), req);
         }
     }
 
-    // Then check form field
-    if let Some(form_data) = form_data {
-        for pair in form_data.split('&') {
-            let parts: Vec<&str> = pair.splitn(2, '=').collect();
-            if parts.len() == 2 && parts[0] == CSRF_FORM_FIELD {
-                if let Ok(decoded) = urlencoding::decode(parts[1]) {
-                    return Some(decoded.into_owned());
-                }
+    // Then check form field if content-type is form-encoded
+    let is_form_encoded = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.starts_with("application/x-www-form-urlencoded"))
+        .unwrap_or(false);
+
+    if is_form_encoded {
+        // Read body bytes
+        let body = std::mem::replace(req.body_mut(), Body::empty());
+        match body.collect().await {
+            Ok(collected) => {
+                let bytes = collected.to_bytes();
+                let body_str = String::from_utf8_lossy(&bytes);
+                let token = extract_csrf_from_form_data(&body_str);
+                // Reconstruct the request with the same body bytes
+                *req.body_mut() = Body::from(bytes);
+                return (token, req);
+            }
+            Err(_) => {
+                return (None, req);
             }
         }
     }
 
+    (None, req)
+}
+
+/// Parse CSRF token from URL-encoded form data
+fn extract_csrf_from_form_data(form_data: &str) -> Option<String> {
+    for pair in form_data.split('&') {
+        let parts: Vec<&str> = pair.splitn(2, '=').collect();
+        if parts.len() == 2 && parts[0] == CSRF_FORM_FIELD {
+            if let Ok(decoded) = urlencoding::decode(parts[1]) {
+                return Some(decoded.into_owned());
+            }
+        }
+    }
     None
 }
 
@@ -121,6 +156,44 @@ fn is_unsafe_method(method: &Method) -> bool {
         *method,
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
     )
+}
+
+/// Verify the Origin header for unsafe methods as defense-in-depth against CSRF.
+///
+/// Checks the `Origin` header against the allowed origins list.
+/// If no `Origin` header is present, falls back to `Referer` header.
+/// Requests with no origin/referer are allowed (same-origin browser navigations
+/// may omit these headers).
+///
+/// This is designed to be used as `from_fn_with_state` middleware with `AllowedOrigins`.
+pub async fn verify_origin(
+    State(allowed_origins): State<AllowedOrigins>,
+    req: axum::extract::Request,
+    next: Next,
+) -> Response {
+    let method = req.method();
+
+    if is_unsafe_method(method) {
+        let headers = req.headers();
+
+        // Check Origin header first
+        let origin = headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok());
+
+        if let Some(origin) = origin {
+            if let Ok(header_value) = axum::http::HeaderValue::from_str(origin) {
+                if !allowed_origins.contains(&header_value) {
+                    return bad_request(
+                        "Origin not allowed. Request blocked by origin verification.",
+                    )
+                    .response();
+                }
+            } else {
+                return bad_request("Invalid Origin header.").response();
+            }
+        }
+    }
+
+    next.run(req).await
 }
 
 /// CSRF protection middleware
@@ -138,20 +211,20 @@ fn is_unsafe_method(method: &Method) -> bool {
 /// in the request body. This works with axum's Form extractor.
 /// If no session exists or the session is empty, the request passes through unchanged (for API endpoints).
 pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
-    let method = req.method();
-    let headers = req.headers();
+    let method = req.method().clone();
+    let headers = req.headers().clone();
 
     // Only validate unsafe methods if session exists and has data
-    if is_unsafe_method(method) {
-        if let Some(session) = req.extensions().get::<SessionExtension>() {
+    if is_unsafe_method(&method) {
+        if let Some(session) = req.extensions().get::<SessionExtension>().cloned() {
             // Only validate if session has actual data (not empty/anonymous)
             if session.get("user_id").is_some() || session.get(CSRF_TOKEN_KEY).is_some() {
-                // Try to extract CSRF token from header
-                let provided_token = extract_csrf_token_from_request(method, headers, None);
+                // Extract CSRF token from header or form body
+                let (provided_token, req) = extract_csrf_token(&method, &headers, req).await;
 
                 let validation_result = if let Some(token) = provided_token {
                     if !token.is_empty() {
-                        validate_csrf_token(session, &token)
+                        validate_csrf_token(&session, &token)
                     } else {
                         Err(bad_request(
                             "CSRF token missing. Please include a CSRF token in your request.",
@@ -167,6 +240,8 @@ pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
                 if let Err(err) = validation_result {
                     return err.response();
                 }
+
+                return next.run(req).await;
             }
         }
     }
@@ -190,20 +265,20 @@ pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
 ///
 /// If no session exists or the session is empty, the request passes through unchanged.
 pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
-    let method = req.method();
-    let headers = req.headers();
+    let method = req.method().clone();
+    let headers = req.headers().clone();
 
     // Only validate unsafe methods if session exists and has CSRF token
-    if is_unsafe_method(method) {
-        if let Some(session) = req.extensions().get::<SessionExtension>() {
+    if is_unsafe_method(&method) {
+        if let Some(session) = req.extensions().get::<SessionExtension>().cloned() {
             // Only validate if session has CSRF token
             if session.get(CSRF_TOKEN_KEY).is_some() {
-                // Try to extract CSRF token from header
-                let provided_token = extract_csrf_token_from_request(method, headers, None);
+                // Extract CSRF token from header or form body
+                let (provided_token, req) = extract_csrf_token(&method, &headers, req).await;
 
                 let validation_result = if let Some(token) = provided_token {
                     if !token.is_empty() {
-                        validate_csrf_token(session, &token)
+                        validate_csrf_token(&session, &token)
                     } else {
                         Err(bad_request(
                             "CSRF token missing. Please include a CSRF token in your request.",
@@ -219,6 +294,8 @@ pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
                 if let Err(err) = validation_result {
                     return err.response();
                 }
+
+                return next.run(req).await;
             }
         }
     }
@@ -274,38 +351,84 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_csrf_token_from_header() {
-        let mut headers = axum::http::HeaderMap::new();
-        headers.insert(CSRF_HEADER_NAME, "test_token_123".parse().unwrap());
-
-        let token = extract_csrf_token_from_request(&Method::POST, &headers, None);
-        assert_eq!(token, Some("test_token_123".to_string()));
-    }
-
-    #[test]
-    fn test_extract_csrf_token_from_form() {
+    fn test_extract_csrf_from_form_data() {
         let form_data = "username=test&csrf_token=abc123&other=value";
-
-        let token = extract_csrf_token_from_request(
-            &Method::POST,
-            &axum::http::HeaderMap::new(),
-            Some(form_data),
-        );
+        let token = extract_csrf_from_form_data(form_data);
         assert_eq!(token, Some("abc123".to_string()));
     }
 
     #[test]
-    fn test_extract_csrf_token_safe_method() {
-        let token =
-            extract_csrf_token_from_request(&Method::GET, &axum::http::HeaderMap::new(), None);
-        // Safe methods return empty string (valid)
-        assert_eq!(token, Some(String::new()));
+    fn test_extract_csrf_from_form_data_none() {
+        let form_data = "username=test&other=value";
+        let token = extract_csrf_from_form_data(form_data);
+        assert!(token.is_none());
     }
 
     #[test]
-    fn test_extract_csrf_token_none() {
-        let token =
-            extract_csrf_token_from_request(&Method::POST, &axum::http::HeaderMap::new(), None);
+    fn test_extract_csrf_from_form_data_empty() {
+        let token = extract_csrf_from_form_data("");
+        assert!(token.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_extract_csrf_token_from_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(CSRF_HEADER_NAME, "test_token_123".parse().unwrap());
+
+        let req = axum::extract::Request::builder()
+            .method(Method::POST)
+            .body(Body::empty())
+            .unwrap();
+
+        let (token, _) = extract_csrf_token(&Method::POST, &headers, req).await;
+        assert_eq!(token, Some("test_token_123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_extract_csrf_token_safe_method() {
+        let req = axum::extract::Request::builder()
+            .method(Method::GET)
+            .body(Body::empty())
+            .unwrap();
+
+        let (token, _) =
+            extract_csrf_token(&Method::GET, &axum::http::HeaderMap::new(), req).await;
+        assert_eq!(token, Some(String::new()));
+    }
+
+    #[tokio::test]
+    async fn test_extract_csrf_token_from_form_body() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded"
+                .parse()
+                .unwrap(),
+        );
+
+        let body = "username=test&csrf_token=abc123&other=value";
+        let req = axum::extract::Request::builder()
+            .method(Method::POST)
+            .header(
+                axum::http::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(Body::from(body))
+            .unwrap();
+
+        let (token, _) = extract_csrf_token(&Method::POST, &headers, req).await;
+        assert_eq!(token, Some("abc123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_extract_csrf_token_none() {
+        let req = axum::extract::Request::builder()
+            .method(Method::POST)
+            .body(Body::empty())
+            .unwrap();
+
+        let (token, _) =
+            extract_csrf_token(&Method::POST, &axum::http::HeaderMap::new(), req).await;
         assert!(token.is_none());
     }
 }

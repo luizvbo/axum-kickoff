@@ -12,6 +12,15 @@ default:
 # Development Commands
 # ============================================================================
 
+[doc("Install dependencies and vendor JS libraries (run after clone or when package.json changes)")]
+setup:
+    @echo "📦 Installing dependencies..."
+    npm install
+    @echo "🚚 Vendoring JS libraries..."
+    @mkdir -p static/vendor
+    @cp node_modules/htmx.org/dist/htmx.min.js static/vendor/htmx.min.js
+    @cp node_modules/@alpinejs/csp/dist/cdn.min.js static/vendor/alpine.js
+
 [doc("Run the development server")]
 run:
     cargo run --bin server

@@ -21,5 +21,6 @@ target
 #.idea/
 /axum_kickoff.db
 /node_modules
+/static/vendor
 /tmp
 /.env

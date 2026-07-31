@@ -68,8 +68,8 @@ ipnet = "2"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 uuid = { version = "1", features = ["v4"] }
+http-body-util = "0.1"
 
 [dev-dependencies]
 insta = { version = "1.48", features = ["json"] }
 tempfile = "3"
-http-body-util = "0.1"

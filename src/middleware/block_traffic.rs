@@ -81,16 +81,16 @@
 
 use crate::app::AppState;
 use crate::middleware::real_ip::RealIp;
-use axum::extract::{Extension, MatchedPath, Request};
+use axum::extract::{Extension, MatchedPath, Request, State};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use http::StatusCode;
 use regex::Regex;
 
 pub async fn middleware(
+    State(state): State<AppState>,
     Extension(real_ip): Extension<RealIp>,
     matched_path: Option<MatchedPath>,
-    state: AppState,
     req: Request,
     next: Next,
 ) -> Result<impl IntoResponse, Response> {
