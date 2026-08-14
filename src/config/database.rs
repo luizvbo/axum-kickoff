@@ -7,48 +7,56 @@
 //!   PostgreSQL format: `postgresql://user:password@host:port/database`
 //! - `TEST_DATABASE_URL`: The database connection URL for tests (optional).
 
+use crate::config::env;
 use anyhow::Result;
+use secrecy::SecretString;
 
 pub struct DatabaseConfig {
-    pub url: String,
+    pub url: SecretString,
 }
 
 impl DatabaseConfig {
     pub fn from_environment() -> Result<Self> {
-        let url = dotenvy::var("DATABASE_URL")
-            .or_else(|_| dotenvy::var("TEST_DATABASE_URL"))
-            .unwrap_or_else(|_| "sqlite:./axum_kickoff.db".to_string());
+        let url = if let Some(url) = env::var("DATABASE_URL")? {
+            url
+        } else if let Some(url) = env::var("TEST_DATABASE_URL")? {
+            url
+        } else {
+            "sqlite:./axum_kickoff.db".to_string()
+        };
 
-        Ok(Self { url })
+        Ok(Self {
+            url: SecretString::from(url),
+        })
     }
 
     #[cfg(test)]
     pub fn test_config() -> Result<Self> {
-        let url =
-            dotenvy::var("TEST_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
+        let url = env::var("TEST_DATABASE_URL")?.unwrap_or_else(|| "sqlite::memory:".to_string());
 
-        Ok(Self { url })
+        Ok(Self {
+            url: SecretString::from(url),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
 
     // Serialize tests that mutate process environment variables.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    #[test]
-    fn test_from_environment_with_database_url() {
-        let _guard = ENV_LOCK.lock();
+    fn save_and_clear_database_env() -> (Option<String>, Option<String>) {
         let original_db = std::env::var("DATABASE_URL").ok();
         let original_test = std::env::var("TEST_DATABASE_URL").ok();
-        std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
+        std::env::remove_var("DATABASE_URL");
+        std::env::remove_var("TEST_DATABASE_URL");
+        (original_db, original_test)
+    }
 
-        let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        assert_eq!(config.url, "postgresql://user:pass@localhost/db");
-
-        // Restore original values
+    fn restore_database_env(original_db: Option<String>, original_test: Option<String>) {
         if let Some(val) = original_db {
             std::env::set_var("DATABASE_URL", val);
         } else {
@@ -59,85 +67,60 @@ mod tests {
         } else {
             std::env::remove_var("TEST_DATABASE_URL");
         }
+    }
+
+    #[test]
+    fn test_from_environment_with_database_url() {
+        let _guard = ENV_LOCK.lock();
+        let (original_db, original_test) = save_and_clear_database_env();
+        std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
+
+        let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
+        assert_eq!(
+            config.url.expose_secret(),
+            "postgresql://user:pass@localhost/db"
+        );
+
+        restore_database_env(original_db, original_test);
     }
 
     #[test]
     fn test_from_environment_with_test_database_url() {
         let _guard = ENV_LOCK.lock();
-        // Note: This test may fail if there's a .env file with DATABASE_URL set
-        // since dotenvy reads from .env files. This is a known limitation.
-        let original_db = std::env::var("DATABASE_URL").ok();
-        let original_test = std::env::var("TEST_DATABASE_URL").ok();
-        std::env::remove_var("DATABASE_URL");
+        let (original_db, original_test) = save_and_clear_database_env();
         std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        // Only assert if we're not getting the default value (which means .env is interfering)
-        if config.url != "sqlite:./axum_kickoff.db" {
-            assert_eq!(config.url, "sqlite::memory:");
-        }
+        assert_eq!(config.url.expose_secret(), "sqlite::memory:");
 
-        // Restore original values
-        if let Some(val) = original_db {
-            std::env::set_var("DATABASE_URL", val);
-        } else {
-            std::env::remove_var("DATABASE_URL");
-        }
-        if let Some(val) = original_test {
-            std::env::set_var("TEST_DATABASE_URL", val);
-        } else {
-            std::env::remove_var("TEST_DATABASE_URL");
-        }
+        restore_database_env(original_db, original_test);
     }
 
     #[test]
     fn test_from_environment_test_url_takes_precedence() {
         let _guard = ENV_LOCK.lock();
-        let original_db = std::env::var("DATABASE_URL").ok();
-        let original_test = std::env::var("TEST_DATABASE_URL").ok();
+        let (original_db, original_test) = save_and_clear_database_env();
         std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
         std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        // DATABASE_URL takes precedence in the implementation
-        assert_eq!(config.url, "postgresql://user:pass@localhost/db");
+        assert_eq!(
+            config.url.expose_secret(),
+            "postgresql://user:pass@localhost/db"
+        );
 
-        // Restore original values
-        if let Some(val) = original_db {
-            std::env::set_var("DATABASE_URL", val);
-        } else {
-            std::env::remove_var("DATABASE_URL");
-        }
-        if let Some(val) = original_test {
-            std::env::set_var("TEST_DATABASE_URL", val);
-        } else {
-            std::env::remove_var("TEST_DATABASE_URL");
-        }
+        restore_database_env(original_db, original_test);
     }
 
     #[test]
     fn test_from_environment_default() {
         let _guard = ENV_LOCK.lock();
-        let original_db = std::env::var("DATABASE_URL").ok();
-        let original_test = std::env::var("TEST_DATABASE_URL").ok();
-        // Ensure neither DATABASE_URL nor TEST_DATABASE_URL is set
-        std::env::remove_var("DATABASE_URL");
-        std::env::remove_var("TEST_DATABASE_URL");
+        let (original_db, original_test) = save_and_clear_database_env();
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        assert_eq!(config.url, "sqlite:./axum_kickoff.db");
+        assert_eq!(config.url.expose_secret(), "sqlite:./axum_kickoff.db");
 
-        // Restore original values
-        if let Some(val) = original_db {
-            std::env::set_var("DATABASE_URL", val);
-        } else {
-            std::env::remove_var("DATABASE_URL");
-        }
-        if let Some(val) = original_test {
-            std::env::set_var("TEST_DATABASE_URL", val);
-        } else {
-            std::env::remove_var("TEST_DATABASE_URL");
-        }
+        restore_database_env(original_db, original_test);
     }
 
     #[test]
@@ -147,9 +130,8 @@ mod tests {
         std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
 
         let config = DatabaseConfig::test_config().expect("Failed to create test Database config");
-        assert_eq!(config.url, "sqlite::memory:");
+        assert_eq!(config.url.expose_secret(), "sqlite::memory:");
 
-        // Restore original value
         if let Some(val) = original {
             std::env::set_var("TEST_DATABASE_URL", val);
         } else {
@@ -164,9 +146,8 @@ mod tests {
         std::env::remove_var("TEST_DATABASE_URL");
 
         let config = DatabaseConfig::test_config().expect("Failed to create test Database config");
-        assert_eq!(config.url, "sqlite::memory:");
+        assert_eq!(config.url.expose_secret(), "sqlite::memory:");
 
-        // Restore original value
         if let Some(val) = original {
             std::env::set_var("TEST_DATABASE_URL", val);
         } else {

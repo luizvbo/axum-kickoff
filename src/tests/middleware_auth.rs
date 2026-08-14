@@ -92,7 +92,7 @@ async fn oauth_authorize_without_session_succeeds() {
 #[tokio::test]
 async fn csrf_protected_route_with_session_but_no_csrf_returns_error() {
     let app = TestApp::new().await;
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
 
     // First, call a route that creates a CSRF token in the session
@@ -113,7 +113,7 @@ async fn csrf_protected_route_with_session_but_no_csrf_returns_error() {
 #[tokio::test]
 async fn csrf_protected_route_with_valid_csrf_succeeds() {
     let app = TestApp::new().await;
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
 
     // First, call a route that creates a CSRF token in the session
@@ -148,7 +148,7 @@ async fn csrf_protected_route_with_valid_csrf_succeeds() {
 #[tokio::test]
 async fn malformed_json_returns_error() {
     let app = TestApp::new().await;
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
 
     // First, call a route that creates a CSRF token in the session

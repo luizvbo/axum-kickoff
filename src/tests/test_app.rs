@@ -5,11 +5,13 @@
 
 use crate::app::{App, AppState};
 use crate::config::AllowedOrigins;
+use crate::config::LogFormat;
 use crate::config::Server;
 use crate::db::Database;
 use crate::storage::StorageConfig;
 use crate::tests::builders::{ApiTokenBuilder, PostBuilder, UserBuilder};
 use axum::Router;
+use secrecy::SecretString;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 
@@ -42,7 +44,7 @@ impl TestApp {
 
         // Create database connection
         let db_config = crate::config::DatabaseConfig {
-            url: db_url.clone(),
+            url: SecretString::from(db_url),
         };
 
         let db = Database::from_config(&db_config)
@@ -75,8 +77,11 @@ impl TestApp {
         use std::net::IpAddr;
         use std::time::Duration;
 
-        // Generate a random session key for tests
-        let session_key = cookie::Key::generate();
+        // Use a deterministic secret string for cookie key derivation in tests.
+        // It should be at least 64 bytes long to satisfy the cookie key requirements.
+        let session_key = SecretString::from(
+            "test-session-key-that-is-long-enough-for-cookie-key-derivation-foobar".to_string(),
+        );
 
         Server {
             base: Base { env: Env::Test },
@@ -91,7 +96,7 @@ impl TestApp {
             session_key,
             trusted_proxies: vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()],
             gh_client_id: "test_client_id".to_string(),
-            gh_client_secret: secrecy::SecretString::from("test_client_secret"),
+            gh_client_secret: SecretString::from("test_client_secret"),
             gh_redirect_uri: "http://localhost:8888/api/v1/auth/github/callback".to_string(),
             storage_config: StorageConfig::local_filesystem("./test_uploads"),
             rate_limiter_config: LimitedAction::VARIANTS
@@ -106,6 +111,9 @@ impl TestApp {
                     )
                 })
                 .collect::<HashMap<_, _>>(),
+            metrics_token: None,
+            sentry_dsn: None,
+            log_format: LogFormat::Pretty,
         }
     }
 

@@ -322,14 +322,17 @@ mod tests {
     use super::*;
     use crate::config::DatabaseConfig;
     use crate::db::Database;
+    use secrecy::SecretString;
     use tempfile::NamedTempFile;
 
     async fn test_database() -> (NamedTempFile, Database) {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
-        let database = Database::from_config(&DatabaseConfig { url: db_url })
-            .await
-            .expect("Failed to create test database");
+        let database = Database::from_config(&DatabaseConfig {
+            url: SecretString::from(db_url),
+        })
+        .await
+        .expect("Failed to create test database");
         (db_file, database)
     }
 

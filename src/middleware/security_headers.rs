@@ -91,12 +91,14 @@
 //! Permissions-Policy: geolocation=(), camera=(), microphone=()
 //! ```
 
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::middleware::Next;
 use axum::response::Response;
 use base64::Engine;
 use http::header::{HeaderName, HeaderValue};
 use std::time::Duration;
+
+use crate::Env;
 
 /// Per-request CSP nonce for allowing inline scripts/styles in templates.
 /// Inserted into request extensions by the security headers middleware.
@@ -150,12 +152,13 @@ impl Default for SecurityHeadersConfig {
 }
 
 impl SecurityHeadersConfig {
-    /// Create configuration from environment variables
-    pub fn from_environment() -> Self {
+    /// Create configuration from environment variables, using the deployment
+    /// environment to drive secure defaults.
+    pub fn for_env(env: Env) -> Self {
         let hsts_enabled = dotenvy::var("SECURITY_HSTS_ENABLED")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(false);
+            .unwrap_or(env == Env::Production);
 
         let hsts_max_age = dotenvy::var("SECURITY_HSTS_MAX_AGE")
             .ok()
@@ -416,8 +419,11 @@ fn generate_permissions_policy(config: &SecurityHeadersConfig) -> String {
 }
 
 /// Middleware to add security headers to all responses
-pub async fn middleware(req: Request, next: Next) -> Response {
-    let config = SecurityHeadersConfig::from_environment();
+pub async fn middleware(
+    State(config): State<SecurityHeadersConfig>,
+    req: Request,
+    next: Next,
+) -> Response {
     security_headers_middleware(config, req, next).await
 }
 
