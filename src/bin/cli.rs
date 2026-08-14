@@ -8,6 +8,7 @@
 //! - migration reset: Reset the database (drop all tables and reapply migrations)
 
 use anyhow::Result;
+use secrecy::ExposeSecret;
 use toasty_cli::{Config, ToastyCli};
 
 #[tokio::main]
@@ -19,7 +20,7 @@ async fn main() -> Result<()> {
 
     let db = toasty::Db::builder()
         .models(toasty::models!(axum_kickoff::*))
-        .connect(&db_config.url)
+        .connect(db_config.url.expose_secret())
         .await?;
 
     let cli = ToastyCli::with_config(db, config);

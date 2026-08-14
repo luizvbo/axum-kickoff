@@ -3,22 +3,29 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 const CORE_THREADS: usize = 4;
 
 fn main() -> anyhow::Result<()> {
+    // Load configuration from environment first so the log format is known.
+    let config = axum_kickoff::config::Server::from_environment()?;
+
+    let fmt_layer: Box<dyn Layer<tracing_subscriber::Registry> + Send + Sync> = match config
+        .log_format
+    {
+        axum_kickoff::config::LogFormat::Json => tracing_subscriber::fmt::layer().json().boxed(),
+        _ => tracing_subscriber::fmt::layer().boxed(),
+    };
+
     // Initialize logging
     tracing_subscriber::registry()
+        .with(fmt_layer)
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
-        .with(tracing_subscriber::fmt::layer())
         .init();
-
-    // Load configuration from environment
-    let config = axum_kickoff::config::Server::from_environment()?;
 
     // Load database configuration
     let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;

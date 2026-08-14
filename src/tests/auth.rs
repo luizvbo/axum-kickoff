@@ -104,7 +104,7 @@ async fn github_callback_with_invalid_state_returns_error() {
 #[tokio::test]
 async fn logout_clears_session() {
     let app = TestApp::new().await;
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
     let csrf_token = cookie_user.init_csrf().await;
 

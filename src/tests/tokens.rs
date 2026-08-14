@@ -20,7 +20,7 @@ async fn setup_auth_user() -> (CookieUser, String, u64) {
         .expect("Failed to create user");
 
     let user_id = user.id;
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, user_id, session_key);
     let csrf_token = cookie_user.init_csrf().await;
 
@@ -153,7 +153,7 @@ async fn list_tokens_only_returns_own_tokens() {
         .await
         .expect("Failed to create token for user2");
 
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, user1.id, session_key);
     let _ = cookie_user.init_csrf().await;
 
@@ -235,7 +235,7 @@ async fn revoke_token_returns_404_for_other_users_token() {
         .await
         .expect("Failed to create token");
 
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, user2.id, session_key);
     let csrf_token = cookie_user.init_csrf().await;
 
@@ -284,7 +284,7 @@ async fn create_token_without_csrf_returns_error() {
         .await
         .expect("Failed to create user");
 
-    let session_key = app.config.session_key.clone();
+    let session_key = app.state.session_key.clone();
     let cookie_user = CookieUser::new(app, user.id, session_key);
     let _ = cookie_user.init_csrf().await;
 

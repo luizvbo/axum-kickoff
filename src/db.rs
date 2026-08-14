@@ -4,6 +4,7 @@
 
 use crate::config::DatabaseConfig;
 use anyhow::Result;
+use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
 use toasty::Db;
@@ -31,7 +32,7 @@ impl Database {
             .pool_create_timeout(Some(Duration::from_secs(10)))
             .pool_health_check_interval(Some(Duration::from_secs(60)))
             .pool_pre_ping(true)
-            .connect(&config.url)
+            .connect(config.url.expose_secret())
             .await?;
 
         // Create tables if they don't exist
@@ -54,7 +55,7 @@ impl Database {
             .pool_create_timeout(create_timeout)
             .pool_health_check_interval(Some(Duration::from_secs(60)))
             .pool_pre_ping(true)
-            .connect(&config.url)
+            .connect(config.url.expose_secret())
             .await?;
 
         Ok(Self { db: Arc::new(db) })
@@ -79,6 +80,7 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::SecretString;
     use tempfile::NamedTempFile;
 
     #[tokio::test]
@@ -87,7 +89,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: SecretString::from(db_url.clone()),
         };
         let db = Database::from_config(&config)
             .await
@@ -105,7 +107,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: SecretString::from(db_url.clone()),
         };
         let db = Database::from_config_with_pool(
             &config,
@@ -126,7 +128,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: SecretString::from(db_url.clone()),
         };
         let db = Database::from_config(&config)
             .await
@@ -146,7 +148,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: SecretString::from(db_url.clone()),
         };
         let db = Database::from_config(&config)
             .await
@@ -167,7 +169,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: SecretString::from(db_url.clone()),
         };
         let db = Database::from_config_with_pool(
             &config, 2, None, // wait_timeout

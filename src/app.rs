@@ -6,6 +6,7 @@ use crate::db::Database;
 use crate::metrics::InstanceMetrics;
 use crate::rate_limiter::RateLimiter;
 use crate::storage::Storage;
+use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,7 +35,7 @@ pub struct App {
 impl App {
     /// Create a new App instance with the given configuration and database
     pub fn new(config: config::Server, database: Database) -> anyhow::Result<Self> {
-        let session_key = config.session_key.clone();
+        let session_key = cookie::Key::derive_from(config.session_key.expose_secret().as_bytes());
         let storage = Storage::from_config(&config.storage_config)?;
 
         // Initialize rate limiter from server config or default configuration
