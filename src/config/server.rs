@@ -382,6 +382,9 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_empty() {
+        let _guard = ENV_LOCK.lock();
+        std::env::remove_var("BLOCKED_TRAFFIC");
+
         let result = parse_blocked_traffic();
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());

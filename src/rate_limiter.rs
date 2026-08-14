@@ -330,6 +330,10 @@ mod tests {
         let database = Database::from_config(&DatabaseConfig { url: db_url })
             .await
             .expect("Failed to create test database");
+        database
+            .migrate()
+            .await
+            .expect("Failed to apply test database migrations");
         (db_file, database)
     }
 

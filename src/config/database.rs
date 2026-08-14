@@ -6,8 +6,14 @@
 //!   SQLite format: `sqlite:./path/to/db.sqlite` or `sqlite::memory:`
 //!   PostgreSQL format: `postgresql://user:password@host:port/database`
 //! - `TEST_DATABASE_URL`: The database connection URL for tests (optional).
+//! - `DATABASE_APPLICATION_NAME`: Override the PostgreSQL `application_name`.
+//! - `DATABASE_STATEMENT_TIMEOUT`: Override the PostgreSQL `statement_timeout`.
+//! - `DATABASE_SSLMODE`: Override the PostgreSQL `sslmode`.
 
 use anyhow::Result;
+use secrecy::SecretString;
+use std::collections::HashMap;
+use url::Url;
 
 pub struct DatabaseConfig {
     pub url: String,
@@ -28,6 +34,60 @@ impl DatabaseConfig {
             dotenvy::var("TEST_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
 
         Ok(Self { url })
+    }
+
+    /// Returns the connection URL with per-driver defaults merged into the query string.
+    pub fn connect_url(&self) -> Result<SecretString> {
+        let mut url = Url::parse(&self.url)
+            .map_err(|e| anyhow::anyhow!("failed to parse database URL: {e}"))?;
+
+        let mut query: HashMap<String, String> = url
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+
+        match url.scheme() {
+            "sqlite" => {
+                if !query.contains_key("busy_timeout") {
+                    query.insert("busy_timeout".to_string(), "5000".to_string());
+                }
+            }
+            "postgresql" | "postgres" => {
+                if !query.contains_key("application_name") {
+                    let application_name = dotenvy::var("DATABASE_APPLICATION_NAME")
+                        .unwrap_or_else(|_| "axum_kickoff".to_string());
+                    query.insert("application_name".to_string(), application_name);
+                }
+
+                if !query.contains_key("options") {
+                    let statement_timeout = dotenvy::var("DATABASE_STATEMENT_TIMEOUT")
+                        .unwrap_or_else(|_| "30s".to_string());
+                    query.insert(
+                        "options".to_string(),
+                        format!("-c statement_timeout={statement_timeout}"),
+                    );
+                }
+
+                if !query.contains_key("sslmode") {
+                    if let Ok(sslmode) = dotenvy::var("DATABASE_SSLMODE") {
+                        query.insert("sslmode".to_string(), sslmode);
+                    } else if dotenvy::var("HEROKU").is_ok() {
+                        query.insert("sslmode".to_string(), "require".to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.clear();
+            for (key, value) in &query {
+                pairs.append_pair(key, value);
+            }
+        }
+
+        Ok(SecretString::from(url.to_string()))
     }
 }
 

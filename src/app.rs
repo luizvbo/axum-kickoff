@@ -76,6 +76,16 @@ impl App {
         &self.database
     }
 
+    /// Get a database handle for read operations.
+    pub fn db_read(&self) -> Database {
+        self.database.clone()
+    }
+
+    /// Get a database handle for write operations.
+    pub fn db_write(&self) -> Database {
+        self.database.clone()
+    }
+
     /// Get the storage backend
     pub fn storage(&self) -> &Storage {
         &self.storage

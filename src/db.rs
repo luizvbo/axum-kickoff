@@ -4,6 +4,7 @@
 
 use crate::config::DatabaseConfig;
 use anyhow::Result;
+use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
 use toasty::Db;
@@ -31,11 +32,8 @@ impl Database {
             .pool_create_timeout(Some(Duration::from_secs(10)))
             .pool_health_check_interval(Some(Duration::from_secs(60)))
             .pool_pre_ping(true)
-            .connect(&config.url)
+            .connect(config.connect_url()?.expose_secret())
             .await?;
-
-        // Create tables if they don't exist
-        db.push_schema().await?;
 
         Ok(Self { db: Arc::new(db) })
     }
@@ -54,7 +52,7 @@ impl Database {
             .pool_create_timeout(create_timeout)
             .pool_health_check_interval(Some(Duration::from_secs(60)))
             .pool_pre_ping(true)
-            .connect(&config.url)
+            .connect(config.connect_url()?.expose_secret())
             .await?;
 
         Ok(Self { db: Arc::new(db) })
@@ -73,6 +71,13 @@ impl Database {
     /// Get a cloned Db handle for mutations
     pub fn db_clone(&self) -> Db {
         self.db.as_ref().clone()
+    }
+
+    /// Apply pending Toasty migrations.
+    pub async fn migrate(&self) -> Result<()> {
+        let config = toasty_cli::Config::load()?;
+        let cli = toasty_cli::ToastyCli::with_config(self.db_clone(), config);
+        cli.parse_from(["toasty", "migration", "apply"]).await
     }
 }
 

@@ -17,10 +17,8 @@ async fn main() -> Result<()> {
     // Load database configuration from environment
     let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
 
-    let db = toasty::Db::builder()
-        .models(toasty::models!(axum_kickoff::*))
-        .connect(&db_config.url)
-        .await?;
+    let database = axum_kickoff::db::Database::from_config(&db_config).await?;
+    let db = database.db_clone();
 
     let cli = ToastyCli::with_config(db, config);
     cli.parse_and_run().await?;

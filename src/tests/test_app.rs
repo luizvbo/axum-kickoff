@@ -49,6 +49,10 @@ impl TestApp {
             .await
             .expect("Failed to connect to test database");
 
+        db.migrate()
+            .await
+            .expect("Failed to apply test database migrations");
+
         // Create app state
         let app = App::new(config.clone(), db.clone()).expect("Failed to create test app");
 

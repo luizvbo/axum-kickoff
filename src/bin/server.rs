@@ -17,6 +17,10 @@ fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    if std::env::args().nth(1).as_deref() == Some("migrate") {
+        return run_migrate();
+    }
+
     // Load configuration from environment
     let config = axum_kickoff::config::Server::from_environment()?;
 
@@ -69,6 +73,16 @@ fn main() -> anyhow::Result<()> {
 
     info!("Server has gracefully shutdown!");
     Ok(())
+}
+
+fn run_migrate() -> anyhow::Result<()> {
+    let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let database = axum_kickoff::db::Database::from_config(&db_config).await?;
+        database.migrate().await
+    })
 }
 
 async fn shutdown_signal() {

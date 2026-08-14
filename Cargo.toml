@@ -5,9 +5,11 @@ version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/luizvbo/axum-kickoff"
 license = "MIT OR Apache-2.0"
+default-run = "server"
 
 [features]
 default = []
+postgresql = ["toasty/postgresql"]
 metrics = ["dep:prometheus"]
 jemalloc = ["dep:tikv-jemallocator"]
 
@@ -38,6 +40,7 @@ thiserror = "2"
 tikv-jemallocator = { version = "0.7", optional = true }
 jiff = { version = "0.2", features = ["serde"] }
 toasty = { version = "0.9", features = ["sqlite", "jiff"] }
+url = "2"
 toasty-cli = "0.9"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
