@@ -14,16 +14,13 @@ metrics = ["dep:prometheus"]
 jemalloc = ["dep:tikv-jemallocator"]
 
 [[bin]]
-name = "server"
-path = "src/bin/server.rs"
-
-[[bin]]
-name = "toasty"
-path = "src/bin/cli.rs"
+name = "axum-kickoff"
+path = "src/bin/main.rs"
 
 [dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["macros"] }
+clap = { version = "4", features = ["derive"] }
 axum-extra = { version = "0.12", features = ["typed-header", "cookie-signed", "erased-json"] }
 cookie = { version = "0.18", features = ["secure"] }
 base64 = "0.23"
@@ -54,7 +51,7 @@ tower-http = { version = "0.7", features = [
   "normalize-path",
 ] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 askama = "0.16"
 oauth2 = "5"
 reqwest = { version = "0.13", features = ["json"] }

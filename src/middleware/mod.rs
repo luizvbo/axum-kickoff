@@ -48,6 +48,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
     let session_key = state.0.session_key.clone();
+    let security_headers_config = self::security_headers::SecurityHeadersConfig::for_env(env);
 
     // Build CORS layer from allowed origins
     let cors = CorsLayer::new()
@@ -82,7 +83,10 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(from_fn(self::request_id::middleware))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
-        .layer(from_fn(self::security_headers::middleware))
+        .layer(from_fn_with_state(
+            security_headers_config,
+            self::security_headers::middleware,
+        ))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),

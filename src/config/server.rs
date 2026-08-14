@@ -6,6 +6,8 @@
 //! - `PORT`: The port to listen on (defaults to 8888).
 //! - `DEV_DOCKER`: Set to any value to indicate running in Docker (defaults to 127.0.0.1 bind).
 //! - `HEROKU`: Set to any value to indicate running on Heroku (defaults to 0.0.0.0 bind).
+//! - `APP_ENV`: The environment the application is running in (`development`, `test`,
+//!   or `production`).
 //! - `SERVER_THREADS`: Maximum number of blocking threads (optional).
 //! - `DOMAIN_NAME`: The domain name of the application (defaults to "localhost").
 //! - `WEB_ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required).
@@ -18,19 +20,59 @@
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 //! - `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs/CIDR ranges (defaults to "127.0.0.1,::1").
+//! - `METRICS_TOKEN`: Optional token for accessing the metrics endpoint.
+//! - `SENTRY_DSN`: Optional Sentry DSN.
+//! - `LOG_FORMAT`: Optional log format override (`pretty`, `full`, `compact`, or `json`).
 
 use crate::middleware::block_traffic::BlockCriteria;
 use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
 use crate::storage::StorageConfig;
 use crate::Env;
+use anyhow::Context;
 use http::HeaderValue;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
 use super::base::Base;
+use super::env;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LogFormat {
+    /// Human-readable, multi-line output. Default for development and test.
+    #[default]
+    Pretty,
+    /// Default single-line output.
+    Full,
+    /// Shorter single-line output.
+    Compact,
+    /// JSON output. Default for production.
+    Json,
+}
+
+impl FromStr for LogFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pretty" => Ok(LogFormat::Pretty),
+            "full" => Ok(LogFormat::Full),
+            "compact" => Ok(LogFormat::Compact),
+            "json" => Ok(LogFormat::Json),
+            _ => Err(format!("Invalid log format: {s}")),
+        }
+    }
+}
+
+fn default_log_format(env: Env) -> LogFormat {
+    if env == Env::Production {
+        LogFormat::Json
+    } else {
+        LogFormat::Pretty
+    }
+}
 
 #[derive(Clone)]
 pub struct Server {
@@ -43,13 +85,16 @@ pub struct Server {
     pub blocked_ips: HashSet<IpAddr>,
     pub blocked_routes: HashSet<String>,
     pub blocked_traffic: Vec<(String, Vec<BlockCriteria>)>,
-    pub session_key: cookie::Key,
+    pub session_key: SecretString,
     pub trusted_proxies: Vec<ipnet::IpNet>,
     pub gh_client_id: String,
     pub gh_client_secret: SecretString,
     pub gh_redirect_uri: String,
     pub storage_config: StorageConfig,
     pub rate_limiter_config: HashMap<LimitedAction, RateLimiterConfig>,
+    pub metrics_token: Option<SecretString>,
+    pub sentry_dsn: Option<SecretString>,
+    pub log_format: LogFormat,
 }
 
 impl Server {
@@ -59,8 +104,8 @@ impl Server {
     ///
     /// This function panics if the Server configuration is invalid.
     pub fn from_environment() -> anyhow::Result<Self> {
-        let docker = std::env::var("DEV_DOCKER").is_ok();
-        let heroku = std::env::var("HEROKU").is_ok();
+        let docker = env::var("DEV_DOCKER")?.is_some();
+        let heroku = env::var("HEROKU")?.is_some();
 
         let ip = if heroku || docker {
             [0, 0, 0, 0].into()
@@ -68,24 +113,17 @@ impl Server {
             [127, 0, 0, 1].into()
         };
 
-        let port = dotenvy::var("PORT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(8888);
-
-        let max_blocking_threads = dotenvy::var("SERVER_THREADS")
-            .ok()
-            .and_then(|s| s.parse().ok());
+        let port = env::var_parsed("PORT")?.unwrap_or(8888);
+        let max_blocking_threads = env::var_parsed("SERVER_THREADS")?;
 
         let base = Base::from_environment()?;
 
-        let domain_name = dotenvy::var("DOMAIN_NAME").unwrap_or_else(|_| "localhost".into());
+        let domain_name = env::var("DOMAIN_NAME")?.unwrap_or_else(|| "localhost".into());
 
         let allowed_origins = AllowedOrigins::from_default_env()?;
 
         // Parse blocked IPs
-        let blocked_ips: HashSet<IpAddr> = dotenvy::var("BLOCKED_IPS")
-            .ok()
+        let blocked_ips: HashSet<IpAddr> = env::var("BLOCKED_IPS")?
             .and_then(|s| {
                 s.split(',')
                     .map(|ip| ip.trim().parse::<IpAddr>())
@@ -95,8 +133,7 @@ impl Server {
             .unwrap_or_default();
 
         // Parse blocked routes
-        let blocked_routes: HashSet<String> = dotenvy::var("BLOCKED_ROUTES")
-            .ok()
+        let blocked_routes: HashSet<String> = env::var("BLOCKED_ROUTES")?
             .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
             .unwrap_or_default();
 
@@ -104,32 +141,12 @@ impl Server {
         let blocked_traffic = parse_blocked_traffic()?;
 
         // Load session key for signing cookies
-        let session_key = dotenvy::var("SESSION_KEY").map_err(|_| {
-            tracing::error!("Required environment variable 'SESSION_KEY' is not set");
-            anyhow::anyhow!("Required environment variable 'SESSION_KEY' is not set")
-        })?;
-        let session_key = cookie::Key::try_from(session_key.as_bytes()).map_err(|e| {
-            tracing::error!(
-                "Invalid SESSION_KEY: {}. The key must be at least 64 bytes long.",
-                e
-            );
-            anyhow::anyhow!(
-                "Invalid SESSION_KEY: {}. The key must be at least 64 bytes long.",
-                e
-            )
-        })?;
+        let session_key = SecretString::from(env::required_var("SESSION_KEY")?);
 
         // Load GitHub OAuth credentials
-        let gh_client_id = dotenvy::var("GH_CLIENT_ID").map_err(|_| {
-            tracing::error!("Required environment variable 'GH_CLIENT_ID' is not set");
-            anyhow::anyhow!("Required environment variable 'GH_CLIENT_ID' is not set")
-        })?;
-        let gh_client_secret = dotenvy::var("GH_CLIENT_SECRET").map_err(|_| {
-            tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
-            anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
-        })?;
-        let gh_client_secret = SecretString::from(gh_client_secret);
-        let gh_redirect_uri = dotenvy::var("GH_REDIRECT_URI").unwrap_or_else(|_| {
+        let gh_client_id = env::required_var("GH_CLIENT_ID")?;
+        let gh_client_secret = SecretString::from(env::required_var("GH_CLIENT_SECRET")?);
+        let gh_redirect_uri = env::var("GH_REDIRECT_URI")?.unwrap_or_else(|| {
             let scheme = if base.env == Env::Production {
                 "https"
             } else {
@@ -150,6 +167,16 @@ impl Server {
         // Parse rate limiter configuration from environment
         let rate_limiter_config = parse_rate_limiter_config()?;
 
+        let metrics_token = env::var("METRICS_TOKEN")?.map(SecretString::from);
+        let sentry_dsn = env::var("SENTRY_DSN")?.map(SecretString::from);
+
+        let log_format = match env::var("LOG_FORMAT")? {
+            Some(value) => value
+                .parse()
+                .unwrap_or_else(|_| default_log_format(base.env)),
+            None => default_log_format(base.env),
+        };
+
         Ok(Server {
             base,
             ip,
@@ -161,27 +188,38 @@ impl Server {
             blocked_routes,
             blocked_traffic,
             session_key,
+            trusted_proxies,
             gh_client_id,
             gh_client_secret,
             gh_redirect_uri,
             storage_config,
             rate_limiter_config,
-            trusted_proxies,
+            metrics_token,
+            sentry_dsn,
+            log_format,
         })
     }
 
     pub fn env(&self) -> Env {
         self.base.env
     }
+
+    pub fn cookie_key(&self) -> cookie::Key {
+        cookie::Key::derive_from(self.session_key.expose_secret().as_bytes())
+    }
+
+    pub fn sentry_enabled(&self) -> bool {
+        self.sentry_dsn.is_some() && self.base.env == Env::Production
+    }
 }
 
 /// Parse TRUSTED_PROXIES environment variable
 ///
 /// Format: "127.0.0.1,::1,10.0.0.0/8"
-/// Defaults to "127.0.0.1,::1" (localhost) for safety
+/// Defaults to "127.0.0.1/32,::1/128" (localhost) for safety
 fn parse_trusted_proxies() -> anyhow::Result<Vec<ipnet::IpNet>> {
     let trusted_proxies_str =
-        dotenvy::var("TRUSTED_PROXIES").unwrap_or_else(|_| "127.0.0.1/32,::1/128".to_string());
+        env::var("TRUSTED_PROXIES")?.unwrap_or_else(|| "127.0.0.1/32,::1/128".to_string());
 
     let mut result = Vec::new();
 
@@ -193,7 +231,7 @@ fn parse_trusted_proxies() -> anyhow::Result<Vec<ipnet::IpNet>> {
 
         let ipnet: ipnet::IpNet = entry
             .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid trusted proxy entry '{}': {}", entry, e))?;
+            .with_context(|| format!("Invalid trusted proxy entry '{entry}'"))?;
 
         result.push(ipnet);
     }
@@ -216,15 +254,11 @@ fn parse_rate_limiter_config() -> anyhow::Result<HashMap<LimitedAction, RateLimi
 
     for action in LimitedAction::VARIANTS {
         let key = action.env_var_key();
-        let rate = dotenvy::var(format!("RATE_LIMITER_{}_RATE_SECONDS", key))
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
+        let rate = env::var_parsed::<u64>(&format!("RATE_LIMITER_{key}_RATE_SECONDS"))?
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(action.default_rate_seconds()));
 
-        let burst = dotenvy::var(format!("RATE_LIMITER_{}_BURST", key))
-            .ok()
-            .and_then(|s| s.parse::<i32>().ok())
+        let burst = env::var_parsed::<i32>(&format!("RATE_LIMITER_{key}_BURST"))?
             .unwrap_or(action.default_burst());
 
         config.insert(action, RateLimiterConfig { rate, burst });
@@ -238,9 +272,9 @@ fn parse_rate_limiter_config() -> anyhow::Result<HashMap<LimitedAction, RateLimi
 /// Format: "Header1=ENV_VAR1,Header2=ENV_VAR2"
 /// Each ENV_VAR should contain comma-separated values to block
 fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> {
-    let blocked_traffic_str = match std::env::var("BLOCKED_TRAFFIC") {
-        Ok(s) => s,
-        Err(_) => return Ok(Vec::new()),
+    let blocked_traffic_str = match env::var("BLOCKED_TRAFFIC")? {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
     };
 
     let mut result = Vec::new();
@@ -250,14 +284,14 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
         let parts: Vec<&str> = pair.split('=').collect();
 
         if parts.len() != 2 {
-            return Err(anyhow::anyhow!("Invalid BLOCKED_TRAFFIC format: {}", pair));
+            return Err(anyhow::anyhow!("Invalid BLOCKED_TRAFFIC format: {pair}"));
         }
 
         let header_name = parts[0].trim().to_string();
         let env_var_name = parts[1].trim();
 
-        let env_value = std::env::var(env_var_name)
-            .map_err(|_| anyhow::anyhow!("Environment variable {} not found", env_var_name))?;
+        let env_value = env::var(env_var_name)?
+            .with_context(|| format!("Environment variable {env_var_name} not found"))?;
 
         let blocked_values: Vec<BlockCriteria> = env_value
             .split(',')
@@ -265,7 +299,7 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
             .filter(|v| !v.is_empty())
             .map(BlockCriteria::try_from)
             .collect::<Result<_, _>>()
-            .map_err(|e| anyhow::anyhow!("Invalid block criteria: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid block criteria: {e}"))?;
 
         if !blocked_values.is_empty() {
             result.push((header_name, blocked_values));
@@ -289,9 +323,7 @@ impl AllowedOrigins {
     }
 
     pub fn from_default_env() -> anyhow::Result<Self> {
-        let value = dotenvy::var("WEB_ALLOWED_ORIGINS").map_err(|_| {
-            anyhow::anyhow!("Required environment variable 'WEB_ALLOWED_ORIGINS' is not set")
-        })?;
+        let value = env::required_var("WEB_ALLOWED_ORIGINS")?;
         Ok(Self::parse(&value))
     }
 
