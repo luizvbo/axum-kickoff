@@ -110,7 +110,10 @@ mod tests {
         std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        assert_eq!(config.url.expose_secret(), "postgresql://user:pass@localhost/db");
+        assert_eq!(
+            config.url.expose_secret(),
+            "postgresql://user:pass@localhost/db"
+        );
 
         // Restore original values
         if let Some(val) = original_db {
@@ -164,7 +167,10 @@ mod tests {
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
         // DATABASE_URL takes precedence in the implementation
-        assert_eq!(config.url.expose_secret(), "postgresql://user:pass@localhost/db");
+        assert_eq!(
+            config.url.expose_secret(),
+            "postgresql://user:pass@localhost/db"
+        );
 
         // Restore original values
         if let Some(val) = original_db {
