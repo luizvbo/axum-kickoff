@@ -106,10 +106,9 @@ async fn logout_clears_session() {
     let app = TestApp::new().await;
     let session_key = app.config.session_key.clone();
     let cookie_user = CookieUser::new(app, 42, session_key);
+    let csrf_token = cookie_user.init_csrf().await;
 
-    // Add CSRF token to the request
-    let mut headers = cookie_user.headers();
-    headers.insert("X-CSRF-Token", "test_token".parse().unwrap());
+    let headers = cookie_user.headers_with_csrf(&csrf_token);
 
     let response = cookie_user
         .post_with_headers::<serde_json::Value>("/api/v1/auth/logout", &[] as &[u8], headers)

@@ -12,11 +12,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::middleware::real_ip::RealIp;
 use crate::middleware::session::SessionExtension;
 use crate::models::User;
-use crate::rate_limiter::LimitedAction;
-use crate::util::errors::{bad_request, forbidden, internal_error, rate_limited, server_error, BoxedAppError};
+use crate::util::errors::{bad_request, forbidden, internal_error, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 use secrecy::ExposeSecret;
 
@@ -60,16 +58,7 @@ pub async fn github_authorize(
     Query(query): Query<AuthorizeQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
-    Extension(real_ip): Extension<RealIp>,
 ) -> Result<Redirect, BoxedAppError> {
-    // Apply rate limiting for OAuth authorize requests
-    state
-        .0
-        .rate_limiter
-        .check_by_ip(real_ip.0, LimitedAction::OAuthAuthorize)
-        .await
-        .map_err(|e| rate_limited(e.action.error_message(), e.retry_after))?;
-
     let config = &state.0.config;
 
     // Create OAuth2 client
@@ -136,16 +125,7 @@ pub async fn github_callback(
     Query(query): Query<CallbackQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
-    Extension(real_ip): Extension<RealIp>,
 ) -> Result<Redirect, BoxedAppError> {
-    // Apply rate limiting for OAuth callback requests
-    state
-        .0
-        .rate_limiter
-        .check_by_ip(real_ip.0, LimitedAction::OAuthCallback)
-        .await
-        .map_err(|e| rate_limited(e.action.error_message(), e.retry_after))?;
-
     let config = &state.0.config;
 
     // Verify CSRF state

@@ -69,8 +69,11 @@ impl TestApp {
     /// Create test configuration with minimal required settings
     pub fn test_config() -> Server {
         use crate::config::base::Base;
+        use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
         use crate::Env;
+        use std::collections::HashMap;
         use std::net::IpAddr;
+        use std::time::Duration;
 
         // Generate a random session key for tests
         let session_key = cookie::Key::generate();
@@ -91,6 +94,18 @@ impl TestApp {
             gh_client_secret: secrecy::SecretString::from("test_client_secret"),
             gh_redirect_uri: "http://localhost:8888/api/v1/auth/github/callback".to_string(),
             storage_config: StorageConfig::local_filesystem("./test_uploads"),
+            rate_limiter_config: LimitedAction::VARIANTS
+                .iter()
+                .map(|&a| {
+                    (
+                        a,
+                        RateLimiterConfig {
+                            rate: Duration::from_millis(1),
+                            burst: 10_000,
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>(),
         }
     }
 

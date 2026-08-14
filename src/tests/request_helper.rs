@@ -271,7 +271,10 @@ impl CookieUser {
     /// Get headers including the CSRF token for making protected requests.
     pub fn headers_with_csrf(&self, csrf_token: &str) -> HeaderMap {
         let mut headers = self.headers();
-        headers.insert("X-CSRF-Token", csrf_token.parse().expect("Invalid CSRF token"));
+        headers.insert(
+            "X-CSRF-Token",
+            csrf_token.parse().expect("Invalid CSRF token"),
+        );
         headers
     }
 

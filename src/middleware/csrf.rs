@@ -9,9 +9,9 @@
 //!
 //! # Usage
 //!
-//! ```rust
-//! use axum::{Form, extract::Extension};
-//! use crate::middleware::{SessionExtension, CsrfToken};
+//! ```ignore
+//! use axum::{Form, extract::Extension, response::Html};
+//! use crate::middleware::SessionExtension;
 //!
 //! // In a handler that renders a form:
 //! async fn show_form(
@@ -46,6 +46,7 @@ use subtle::ConstantTimeEq;
 
 use crate::config::AllowedOrigins;
 use crate::middleware::SessionExtension;
+use crate::util::auth::Authentication;
 use crate::util::errors::{bad_request, AppResult};
 
 pub static CSRF_TOKEN_KEY: &str = "csrf_token";
@@ -78,7 +79,11 @@ pub fn validate_csrf_token(session: &SessionExtension, provided_token: &str) -> 
         .get(CSRF_TOKEN_KEY)
         .ok_or_else(|| bad_request("CSRF token not found in session. Please refresh the page."))?;
 
-    if session_token.as_bytes().ct_eq(provided_token.as_bytes()).into() {
+    if session_token
+        .as_bytes()
+        .ct_eq(provided_token.as_bytes())
+        .into()
+    {
         Ok(())
     } else {
         Err(bad_request(
@@ -177,7 +182,9 @@ pub async fn verify_origin(
         let headers = req.headers();
 
         // Check Origin header first
-        let origin = headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok());
+        let origin = headers
+            .get(axum::http::header::ORIGIN)
+            .and_then(|v| v.to_str().ok());
 
         if let Some(origin) = origin {
             if let Ok(header_value) = axum::http::HeaderValue::from_str(origin) {
@@ -213,6 +220,16 @@ pub async fn verify_origin(
 pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
     let method = req.method().clone();
     let headers = req.headers().clone();
+
+    // API token-authenticated requests do not require CSRF protection
+    if is_unsafe_method(&method)
+        && req
+            .extensions()
+            .get::<Authentication>()
+            .is_some_and(|auth| auth.is_token())
+    {
+        return next.run(req).await;
+    }
 
     // Only validate unsafe methods if session exists and has data
     if is_unsafe_method(&method) {
@@ -267,6 +284,16 @@ pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
 pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
     let method = req.method().clone();
     let headers = req.headers().clone();
+
+    // API token-authenticated requests do not require CSRF protection
+    if is_unsafe_method(&method)
+        && req
+            .extensions()
+            .get::<Authentication>()
+            .is_some_and(|auth| auth.is_token())
+    {
+        return next.run(req).await;
+    }
 
     // Only validate unsafe methods if session exists and has CSRF token
     if is_unsafe_method(&method) {
@@ -391,8 +418,7 @@ mod tests {
             .body(Body::empty())
             .unwrap();
 
-        let (token, _) =
-            extract_csrf_token(&Method::GET, &axum::http::HeaderMap::new(), req).await;
+        let (token, _) = extract_csrf_token(&Method::GET, &axum::http::HeaderMap::new(), req).await;
         assert_eq!(token, Some(String::new()));
     }
 
@@ -401,9 +427,7 @@ mod tests {
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             axum::http::header::CONTENT_TYPE,
-            "application/x-www-form-urlencoded"
-                .parse()
-                .unwrap(),
+            "application/x-www-form-urlencoded".parse().unwrap(),
         );
 
         let body = "username=test&csrf_token=abc123&other=value";

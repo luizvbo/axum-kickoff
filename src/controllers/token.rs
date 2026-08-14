@@ -3,7 +3,7 @@
 //! Provides endpoints for creating, listing, and revoking API tokens.
 
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
@@ -11,14 +11,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::app::AppState;
-use crate::middleware::real_ip::RealIp;
-use crate::middleware::SessionExtension;
+use crate::middleware::CurrentUserId;
 use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
-use crate::rate_limiter::LimitedAction;
-use crate::util::errors::{bad_request, internal_error, rate_limited, unauthorized, AppResult};
-use crate::util::PlainToken;
+use crate::util::auth::{AuthCheck, Authentication};
+use crate::util::errors::{bad_request, internal_error, AppResult};
 use crate::util::ApiResponse;
+use crate::util::PlainToken;
 
 /// Request body for creating a new API token
 #[derive(Debug, Deserialize, ToSchema)]
@@ -164,25 +163,15 @@ pub struct TokenListItem {
     )
 )]
 pub async fn create_token(
+    auth: Authentication,
+    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-    Extension(session): Extension<SessionExtension>,
-    Extension(real_ip): Extension<RealIp>,
     Json(req): Json<CreateTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
-    // Apply rate limiting for token creation requests
-    state
-        .0
-        .rate_limiter
-        .check_by_ip(real_ip.0, LimitedAction::TokenCreation)
-        .await
-        .map_err(|e| rate_limited(e.action.error_message(), e.retry_after))?;
-
-    let user_id = session
-        .get("user_id")
-        .ok_or_else(|| unauthorized("Not logged in"))?;
-    let user_id = user_id
-        .parse::<u64>()
-        .map_err(|_| unauthorized("Invalid session"))?;
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Create)
+        .for_crate("tokens")
+        .check(&auth)?;
 
     // Validate the request
     let validated = req.validate().map_err(bad_request)?;
@@ -286,16 +275,15 @@ const MAX_TOKEN_PER_PAGE: usize = 100;
     )
 )]
 pub async fn list_tokens(
+    auth: Authentication,
+    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-    Extension(session): Extension<SessionExtension>,
     Query(params): Query<ListTokensParams>,
 ) -> AppResult<impl IntoResponse> {
-    let user_id = session
-        .get("user_id")
-        .ok_or_else(|| unauthorized("Not logged in"))?;
-    let user_id = user_id
-        .parse::<u64>()
-        .map_err(|_| unauthorized("Invalid session"))?;
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Read)
+        .for_crate("tokens")
+        .check(&auth)?;
 
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params
@@ -367,16 +355,15 @@ pub async fn list_tokens(
     )
 )]
 pub async fn revoke_token(
+    auth: Authentication,
+    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-    Extension(session): Extension<SessionExtension>,
     Path(token_id): Path<u64>,
 ) -> AppResult<impl IntoResponse> {
-    let user_id = session
-        .get("user_id")
-        .ok_or_else(|| unauthorized("Not logged in"))?;
-    let user_id = user_id
-        .parse::<u64>()
-        .map_err(|_| unauthorized("Invalid session"))?;
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Delete)
+        .for_crate("tokens")
+        .check(&auth)?;
 
     let mut db = state.0.database.db_clone();
 

@@ -35,8 +35,12 @@ impl DatabaseConfig {
 mod tests {
     use super::*;
 
+    // Serialize tests that mutate process environment variables.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_from_environment_with_database_url() {
+        let _guard = ENV_LOCK.lock();
         let original_db = std::env::var("DATABASE_URL").ok();
         let original_test = std::env::var("TEST_DATABASE_URL").ok();
         std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
@@ -59,6 +63,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_with_test_database_url() {
+        let _guard = ENV_LOCK.lock();
         // Note: This test may fail if there's a .env file with DATABASE_URL set
         // since dotenvy reads from .env files. This is a known limitation.
         let original_db = std::env::var("DATABASE_URL").ok();
@@ -87,6 +92,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_test_url_takes_precedence() {
+        let _guard = ENV_LOCK.lock();
         let original_db = std::env::var("DATABASE_URL").ok();
         let original_test = std::env::var("TEST_DATABASE_URL").ok();
         std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
@@ -111,6 +117,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_default() {
+        let _guard = ENV_LOCK.lock();
         let original_db = std::env::var("DATABASE_URL").ok();
         let original_test = std::env::var("TEST_DATABASE_URL").ok();
         // Ensure neither DATABASE_URL nor TEST_DATABASE_URL is set
@@ -135,6 +142,7 @@ mod tests {
 
     #[test]
     fn test_test_config_with_env() {
+        let _guard = ENV_LOCK.lock();
         let original = std::env::var("TEST_DATABASE_URL").ok();
         std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
 
@@ -151,6 +159,7 @@ mod tests {
 
     #[test]
     fn test_test_config_default() {
+        let _guard = ENV_LOCK.lock();
         let original = std::env::var("TEST_DATABASE_URL").ok();
         std::env::remove_var("TEST_DATABASE_URL");
 

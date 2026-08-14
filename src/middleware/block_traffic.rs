@@ -292,10 +292,7 @@ mod tests {
     #[test]
     fn test_block_criteria_invalid_regex() {
         let result = BlockCriteria::try_from(r"/unclosed[/");
-        assert!(
-            result.is_err(),
-            "Expected invalid regex to return an error"
-        );
+        assert!(result.is_err(), "Expected invalid regex to return an error");
     }
 
     #[test]

@@ -11,7 +11,9 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::app::AppState;
 use crate::middleware::CurrentUserId;
+use crate::models::token::ActionScope;
 use crate::models::Post;
+use crate::util::auth::{AuthCheck, Authentication};
 use crate::util::errors::{bad_request, internal_error, not_found, AppResult};
 use crate::util::ApiResponse;
 
@@ -80,7 +82,6 @@ pub struct ListPostsResponse {
     )
 )]
 pub async fn list_posts(
-    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
     Query(params): Query<ListPostsParams>,
 ) -> AppResult<Json<ListPostsResponse>> {
@@ -93,7 +94,8 @@ pub async fn list_posts(
 
     let mut db = state.0.database.db_clone();
 
-    let posts = Post::filter(Post::fields().user_id().eq(user_id))
+    // Public read: list all posts, optionally paginated.
+    let posts = Post::filter(Post::fields().id().ge(0u64))
         .limit(per_page)
         .offset(offset)
         .exec(&mut db)
@@ -138,13 +140,11 @@ pub async fn list_posts(
 )]
 pub async fn show_post(
     Path(id): Path<u64>,
-    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<Json<ApiResponse<PostResponse>>> {
     let mut db = state.0.database.db_clone();
 
     let post = Post::filter(Post::fields().id().eq(id))
-        .filter(Post::fields().user_id().eq(user_id))
         .first()
         .exec(&mut db)
         .await
@@ -179,10 +179,15 @@ pub async fn show_post(
     )
 )]
 pub async fn create_post(
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
     Json(req): Json<CreatePostRequest>,
 ) -> AppResult<impl IntoResponse> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Create)
+        .for_crate("posts")
+        .check(&auth)?;
     // Validate input
     if req.title.trim().is_empty() {
         return Err(bad_request("Title cannot be empty"));
@@ -240,10 +245,16 @@ pub async fn create_post(
 )]
 pub async fn update_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
     Json(req): Json<UpdatePostRequest>,
 ) -> AppResult<Json<ApiResponse<PostResponse>>> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Update)
+        .for_crate("posts")
+        .check(&auth)?;
+
     // Validate input
     if req.title.trim().is_empty() {
         return Err(bad_request("Title cannot be empty"));
@@ -306,9 +317,14 @@ pub async fn update_post(
 )]
 pub async fn delete_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<StatusCode> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Delete)
+        .for_crate("posts")
+        .check(&auth)?;
     let mut db = state.0.database.db_clone();
 
     let post = Post::filter(Post::fields().id().eq(id))
@@ -319,10 +335,7 @@ pub async fn delete_post(
         .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
-    post.delete()
-        .exec(&mut db)
-        .await
-        .map_err(internal_error)?;
+    post.delete().exec(&mut db).await.map_err(internal_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -346,9 +359,14 @@ pub async fn delete_post(
 )]
 pub async fn publish_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<Json<ApiResponse<PostResponse>>> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Update)
+        .for_crate("posts")
+        .check(&auth)?;
     let mut db = state.0.database.db_clone();
 
     let mut post = Post::filter(Post::fields().id().eq(id))
@@ -401,9 +419,14 @@ pub async fn publish_post(
 )]
 pub async fn unpublish_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<Json<ApiResponse<PostResponse>>> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Update)
+        .for_crate("posts")
+        .check(&auth)?;
     let mut db = state.0.database.db_clone();
 
     let mut post = Post::filter(Post::fields().id().eq(id))

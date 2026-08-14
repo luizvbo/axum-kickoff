@@ -123,7 +123,8 @@ impl fmt::Display for RateLimitAppError {
 
 impl AppError for RateLimitAppError {
     fn response(&self) -> Response {
-        let error_response = ErrorResponse::with_type(self.detail.to_string(), "rate_limit_exceeded");
+        let error_response =
+            ErrorResponse::with_type(self.detail.to_string(), "rate_limit_exceeded");
         let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(error_response)).into_response();
         if let Ok(value) = http::HeaderValue::from_str(&self.retry_after_secs.to_string()) {
             response.headers_mut().insert("retry-after", value);
@@ -133,7 +134,10 @@ impl AppError for RateLimitAppError {
 }
 
 /// Create a rate limit error (429) with a Retry-After header
-pub fn rate_limited(detail: impl Into<Cow<'static, str>>, retry_after: std::time::Duration) -> Box<dyn AppError> {
+pub fn rate_limited(
+    detail: impl Into<Cow<'static, str>>,
+    retry_after: std::time::Duration,
+) -> Box<dyn AppError> {
     Box::new(RateLimitAppError::new(detail, retry_after))
 }
 

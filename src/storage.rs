@@ -12,7 +12,7 @@
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let config = StorageConfig::local_filesystem("/tmp/uploads");
-//! let storage = Storage::from_config(&config);
+//! let storage = Storage::from_config(&config)?;
 //!
 //! // Upload a file
 //! let bytes = Bytes::from_static(b"hello world");

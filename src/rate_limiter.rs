@@ -1,79 +1,52 @@
-//! In-memory rate limiter using token bucket algorithm
+//! Database-backed rate limiter using token bucket algorithm
 //!
-//! This provides a simple rate limiting solution suitable for single-instance deployments.
+//! This rate limiter persists bucket state in the configured database (Toasty/SQLite
+//! by default, PostgreSQL in production). Each request consumes one token from the
+//! bucket identified by the action and the bucket key (authenticated user ID or IP
+//! address). Tokens refill over time at the configured rate.
 //!
-//! # Important: Single-Instance Limitation
+//! # Important
 //!
-//! **This rate limiter uses in-memory storage and only works for single-instance deployments.**
-//!
-//! If you run multiple instances of your application (e.g., behind a load balancer),
-//! each instance will have its own independent rate limit state. This means:
-//! - Rate limits are not shared across instances
-//! - Users could bypass limits by hitting different instances
-//! - State is lost on restart/redeploy
-//!
-//! For production deployments with multiple instances, you must use a distributed rate limiting
-//! solution (e.g., Redis-backed rate limiting). This template provides an in-memory implementation
-//! for development and single-instance production use.
-//!
-//! For production use with persistence or distributed systems, see the upgrade documentation
-//! in `docs/rate-limiting-redis-upgrade.md`.
-//!
-//! # What is Rate Limiting?
-//!
-//! Rate limiting controls how many requests a user can make in a given time period.
-//! This prevents abuse, protects your server from overload, and ensures fair usage
-//! among all users.
-//!
-//! # How It Works
-//!
-//! This implementation uses the **token bucket algorithm** with in-memory storage:
-//! - Each user has a "bucket" of tokens stored in memory
-//! - Each request consumes one token
-//! - Tokens refill over time at a configured rate
-//! - If the bucket is empty, requests are rejected
-//! - The "burst" size is the maximum tokens a bucket can hold
+//! This is a single-database token bucket implementation. It is persistent across
+//! restarts and shared by all instances connecting to the same database. Under very
+//! high concurrency with SQLite, the database may lock; for highly concurrent or
+//! multi-instance production deployments, consider a dedicated rate-limiting service
+//! (e.g. Redis-backed) on top of this schema.
 //!
 //! # Example Usage
 //!
-//! ```no_run
+//! ```ignore
 //! use axum_kickoff::rate_limiter::{RateLimiter, LimitedAction, RateLimiterConfig};
 //! use std::time::Duration;
 //! use std::collections::HashMap;
-//! use std::net::IpAddr;
 //!
 //! # async fn example() {
-//! // Configure rate limits
 //! let mut config = HashMap::new();
 //! config.insert(
 //!     LimitedAction::ApiRequest,
 //!     RateLimiterConfig {
-//!         rate: Duration::from_secs(1),  // 1 token per second
-//!         burst: 10,                     // max 10 tokens in bucket
+//!         rate: Duration::from_secs(1),
+//!         burst: 10,
 //!     },
 //! );
 //!
-//! let rate_limiter = RateLimiter::new(config);
+//! let rate_limiter = RateLimiter::new(config, database);
 //!
-//! // Check if a request is allowed
-//! let ip_address = IpAddr::from([127, 0, 0, 1]);
-//! match rate_limiter.check_by_ip(ip_address, LimitedAction::ApiRequest).await {
+//! match rate_limiter.check_rate_limit("127.0.0.1", LimitedAction::ApiRequest).await {
 //!     Ok(()) => { /* allow request */ },
 //!     Err(e) => { /* return 429 Too Many Requests */ },
 //! }
 //! # }
 //! ```
 
-use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use crate::db::Database;
+use crate::models::RateLimitBucket;
 
 /// Actions that can be rate limited
-///
-/// These are common actions for web applications. You can add custom actions
-/// by extending this enum or using string-based keys in your own implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LimitedAction {
     /// General API requests
@@ -110,14 +83,14 @@ impl LimitedAction {
 
     pub fn default_rate_seconds(&self) -> u64 {
         match self {
-            LimitedAction::ApiRequest => 1,      // 1 request per second
-            LimitedAction::LoginAttempt => 5,    // 1 login every 5 seconds
-            LimitedAction::PasswordReset => 60,  // 1 reset per minute
-            LimitedAction::FileUpload => 10,     // 1 upload every 10 seconds
-            LimitedAction::FormSubmission => 30, // 1 form every 30 seconds
-            LimitedAction::OAuthAuthorize => 5,  // 1 authorize every 5 seconds
-            LimitedAction::OAuthCallback => 5,   // 1 callback every 5 seconds
-            LimitedAction::TokenCreation => 10,  // 1 token creation every 10 seconds
+            LimitedAction::ApiRequest => 1,
+            LimitedAction::LoginAttempt => 5,
+            LimitedAction::PasswordReset => 60,
+            LimitedAction::FileUpload => 10,
+            LimitedAction::FormSubmission => 30,
+            LimitedAction::OAuthAuthorize => 5,
+            LimitedAction::OAuthCallback => 5,
+            LimitedAction::TokenCreation => 10,
         }
     }
 
@@ -190,66 +163,97 @@ pub struct RateLimiterConfig {
     pub burst: i32,
 }
 
-/// Token bucket state for a single key
-#[derive(Debug, Clone)]
-struct TokenBucket {
-    tokens: i32,
-    last_refill: Instant,
-}
-
-/// In-memory rate limiter using token bucket algorithm
+/// Database-backed rate limiter using token bucket algorithm
 #[derive(Clone)]
 pub struct RateLimiter {
     config: HashMap<LimitedAction, RateLimiterConfig>,
-    buckets: Arc<RwLock<HashMap<String, TokenBucket>>>,
+    database: Database,
 }
 
 impl RateLimiter {
-    pub fn new(config: HashMap<LimitedAction, RateLimiterConfig>) -> Self {
-        Self {
-            config,
-            buckets: Arc::new(RwLock::new(HashMap::new())),
-        }
+    pub fn new(config: HashMap<LimitedAction, RateLimiterConfig>, database: Database) -> Self {
+        Self { config, database }
     }
 
-    /// Check if an action is allowed for a given key (e.g., IP address or user ID)
+    /// Check if an action is allowed for a given key (e.g. IP address or user ID)
     pub async fn check_rate_limit(
         &self,
-        key: &str,
+        bucket_id: &str,
         action: LimitedAction,
     ) -> Result<(), RateLimitError> {
         let config = self.config_for_action(action);
-        let bucket_key = format!("{}:{}", action.as_str(), key);
+        let bucket_key = format!("{}:{}", action.as_str(), bucket_id);
 
-        let mut buckets = self.buckets.write();
-        let now = Instant::now();
+        let mut db = self.database.db_clone();
 
-        let bucket = buckets
-            .entry(bucket_key.clone())
-            .or_insert_with(|| TokenBucket {
-                tokens: config.burst,
-                last_refill: now,
-            });
+        // Try to find an existing bucket
+        let existing = RateLimitBucket::filter(
+            RateLimitBucket::fields()
+                .bucket_key()
+                .eq(bucket_key.clone()),
+        )
+        .first()
+        .exec(&mut db)
+        .await
+        .map_err(|e| RateLimitError {
+            action,
+            retry_after: config.rate,
+            source: Some(e),
+        })?;
 
-        // Calculate tokens to add based on time elapsed
-        let elapsed = now.duration_since(bucket.last_refill);
-        let refill_rate_secs = config.rate.as_secs_f64();
-        let tokens_to_add = (elapsed.as_secs_f64() / refill_rate_secs).floor() as i32;
+        let now = jiff::Timestamp::now();
 
-        if tokens_to_add > 0 {
-            bucket.tokens = (bucket.tokens + tokens_to_add).min(config.burst);
-            bucket.last_refill = now;
-        }
+        if let Some(mut bucket) = existing {
+            let elapsed = now.as_nanosecond() - bucket.last_refill.as_nanosecond();
+            let tokens_to_add =
+                (elapsed as f64 / (config.rate.as_secs_f64() * 1_000_000_000.0)).floor() as i32;
+            let new_tokens = (bucket.tokens + tokens_to_add).min(config.burst);
+            let new_last_refill = if tokens_to_add > 0 {
+                now
+            } else {
+                bucket.last_refill
+            };
 
-        // Check if we have tokens available
-        if bucket.tokens > 0 {
-            bucket.tokens -= 1;
-            Ok(())
+            if new_tokens > 0 {
+                let new_tokens = new_tokens - 1;
+
+                bucket.tokens = new_tokens;
+                bucket.last_refill = new_last_refill;
+
+                toasty::update!(bucket {
+                    tokens: new_tokens,
+                    last_refill: new_last_refill,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| RateLimitError {
+                    action,
+                    retry_after: config.rate,
+                    source: Some(e),
+                })?;
+
+                Ok(())
+            } else {
+                Err(RateLimitError {
+                    action,
+                    retry_after: config.rate,
+                    source: None,
+                })
+            }
         } else {
-            Err(RateLimitError {
-                action,
-                retry_after: config.rate,
+            // New bucket: create it with one token already consumed.
+            let tokens = config.burst.saturating_sub(1);
+            let _ = toasty::create!(RateLimitBucket {
+                bucket_key,
+                action: action.as_str().to_string(),
+                bucket_id: bucket_id.to_string(),
+                tokens,
+                last_refill: now,
             })
+            .exec(&mut db)
+            .await;
+
+            Ok(())
         }
     }
 
@@ -263,14 +267,24 @@ impl RateLimiter {
     }
 
     /// Clear all rate limit buckets (useful for testing)
-    pub fn clear_all(&self) {
-        self.buckets.write().clear();
+    pub async fn clear_all(&self) -> Result<(), toasty::Error> {
+        let mut db = self.database.db_clone();
+        RateLimitBucket::filter(RateLimitBucket::fields().bucket_key().ne(String::new()))
+            .delete()
+            .exec(&mut db)
+            .await?;
+        Ok(())
     }
 
     /// Clear rate limit bucket for a specific key
-    pub fn clear_key(&self, key: &str, action: LimitedAction) {
+    pub async fn clear_key(&self, key: &str, action: LimitedAction) -> Result<(), toasty::Error> {
         let bucket_key = format!("{}:{}", action.as_str(), key);
-        self.buckets.write().remove(&bucket_key);
+        let mut db = self.database.db_clone();
+        RateLimitBucket::filter(RateLimitBucket::fields().bucket_key().eq(bucket_key))
+            .delete()
+            .exec(&mut db)
+            .await?;
+        Ok(())
     }
 
     fn config_for_action(&self, action: LimitedAction) -> RateLimiterConfig {
@@ -288,6 +302,7 @@ impl RateLimiter {
 pub struct RateLimitError {
     pub action: LimitedAction,
     pub retry_after: Duration,
+    source: Option<toasty::Error>,
 }
 
 impl std::fmt::Display for RateLimitError {
@@ -296,11 +311,27 @@ impl std::fmt::Display for RateLimitError {
     }
 }
 
-impl std::error::Error for RateLimitError {}
+impl std::error::Error for RateLimitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|e| e as _)
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::DatabaseConfig;
+    use crate::db::Database;
+    use tempfile::NamedTempFile;
+
+    async fn test_database() -> (NamedTempFile, Database) {
+        let db_file = NamedTempFile::new().expect("Failed to create temp database file");
+        let db_url = format!("sqlite:{}", db_file.path().display());
+        let database = Database::from_config(&DatabaseConfig { url: db_url })
+            .await
+            .expect("Failed to create test database");
+        (db_file, database)
+    }
 
     #[tokio::test]
     async fn test_basic_rate_limiting() {
@@ -313,10 +344,10 @@ mod tests {
             },
         );
 
-        let rate_limiter = RateLimiter::new(config);
+        let (_db_file, database) = test_database().await;
+        let rate_limiter = RateLimiter::new(config, database);
         let ip = "127.0.0.1".parse().unwrap();
 
-        // Should allow 5 requests
         for _ in 0..5 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::ApiRequest)
@@ -324,7 +355,6 @@ mod tests {
                 .is_ok());
         }
 
-        // 6th request should be rate limited
         assert!(rate_limiter
             .check_by_ip(ip, LimitedAction::ApiRequest)
             .await
@@ -342,10 +372,10 @@ mod tests {
             },
         );
 
-        let rate_limiter = RateLimiter::new(config);
+        let (_db_file, database) = test_database().await;
+        let rate_limiter = RateLimiter::new(config, database);
         let ip = "127.0.0.1".parse().unwrap();
 
-        // Use all tokens
         for _ in 0..5 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::ApiRequest)
@@ -357,10 +387,8 @@ mod tests {
             .await
             .is_err());
 
-        // Wait for refill
         tokio::time::sleep(Duration::from_millis(150)).await;
 
-        // Should allow another request
         assert!(rate_limiter
             .check_by_ip(ip, LimitedAction::ApiRequest)
             .await
@@ -378,11 +406,11 @@ mod tests {
             },
         );
 
-        let rate_limiter = RateLimiter::new(config);
+        let (_db_file, database) = test_database().await;
+        let rate_limiter = RateLimiter::new(config, database);
         let ip1 = "127.0.0.1".parse().unwrap();
         let ip2 = "127.0.0.2".parse().unwrap();
 
-        // Each IP should have independent limits
         for _ in 0..2 {
             assert!(rate_limiter
                 .check_by_ip(ip1, LimitedAction::ApiRequest)
@@ -394,7 +422,6 @@ mod tests {
                 .is_ok());
         }
 
-        // Both should be rate limited now
         assert!(rate_limiter
             .check_by_ip(ip1, LimitedAction::ApiRequest)
             .await
@@ -423,10 +450,10 @@ mod tests {
             },
         );
 
-        let rate_limiter = RateLimiter::new(config);
+        let (_db_file, database) = test_database().await;
+        let rate_limiter = RateLimiter::new(config, database);
         let ip = "127.0.0.1".parse().unwrap();
 
-        // API requests should be limited to 2
         for _ in 0..2 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::ApiRequest)
@@ -438,7 +465,6 @@ mod tests {
             .await
             .is_err());
 
-        // Login attempts should still have 5 available
         for _ in 0..5 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::LoginAttempt)
@@ -462,10 +488,10 @@ mod tests {
             },
         );
 
-        let rate_limiter = RateLimiter::new(config);
+        let (_db_file, database) = test_database().await;
+        let rate_limiter = RateLimiter::new(config, database);
         let ip = "127.0.0.1".parse().unwrap();
 
-        // Use all tokens
         for _ in 0..2 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::ApiRequest)
@@ -477,10 +503,11 @@ mod tests {
             .await
             .is_err());
 
-        // Clear the bucket
-        rate_limiter.clear_key(&ip.to_string(), LimitedAction::ApiRequest);
+        rate_limiter
+            .clear_key(&ip.to_string(), LimitedAction::ApiRequest)
+            .await
+            .expect("clear_key should succeed");
 
-        // Should allow requests again
         for _ in 0..2 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::ApiRequest)
@@ -491,10 +518,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_config() {
-        let rate_limiter = RateLimiter::new(HashMap::new());
+        let (_db_file, database) = test_database().await;
+        let rate_limiter = RateLimiter::new(HashMap::new(), database);
         let ip = "127.0.0.1".parse().unwrap();
 
-        // Should use default config for ApiRequest (burst: 10)
         for _ in 0..10 {
             assert!(rate_limiter
                 .check_by_ip(ip, LimitedAction::ApiRequest)

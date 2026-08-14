@@ -32,7 +32,9 @@ pub async fn middleware(mut req: Request, next: Next) -> Response {
     let mut response = async { next.run(req).await }.instrument(span).await;
 
     if let Ok(header_value) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert(REQUEST_ID_HEADER, header_value);
+        response
+            .headers_mut()
+            .insert(REQUEST_ID_HEADER, header_value);
     }
 
     response

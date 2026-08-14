@@ -6,6 +6,33 @@ use crate::tests::{AnonymousUser, CookieUser, RequestHelper, TestApp};
 use http::StatusCode;
 
 #[tokio::test]
+async fn rate_limit_blocks_excessive_anonymous_requests() {
+    use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
+
+    let mut config = TestApp::test_config();
+    config.rate_limiter_config.insert(
+        LimitedAction::ApiRequest,
+        RateLimiterConfig {
+            rate: std::time::Duration::from_secs(1),
+            burst: 2,
+        },
+    );
+
+    let app = TestApp::with_config(config).await;
+    let anon = AnonymousUser::new(app);
+
+    // Exhaust the API request burst allowance
+    for _ in 0..2 {
+        let response = anon.get::<()>("/health").await;
+        response.assert_status(StatusCode::OK);
+    }
+
+    // The next request within the same window should be rate limited
+    let response = anon.get::<()>("/health").await;
+    response.assert_status(StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
 async fn health_check_succeeds_without_session() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
