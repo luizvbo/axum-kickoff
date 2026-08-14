@@ -23,11 +23,11 @@ setup:
 
 [doc("Run the development server")]
 run:
-    cargo run --bin server
+    cargo run --bin axum-kickoff -- server
 
 [doc("Run the development server with auto-reload (requires cargo-watch)")]
 dev:
-    cargo watch -x 'run --bin server'
+    cargo watch -x 'run --bin axum-kickoff -- server'
 
 [doc("Run tests with nextest faster test runner (requires cargo-nextest)")]
 test:
@@ -60,27 +60,27 @@ test-cov args='':
 
 [doc("Generate a new migration based on model changes")]
 migration-generate:
-    cargo run --bin toasty -- migration generate
+    cargo run --bin axum-kickoff -- migrate migration generate
 
 [doc("Apply pending migrations to the database")]
 migration-apply:
-    cargo run --bin toasty -- migration apply
+    cargo run --bin axum-kickoff -- migrate migration apply
 
 [doc("Create a schema snapshot for future migration generation")]
 migration-snapshot:
-    cargo run --bin toasty -- migration snapshot
+    cargo run --bin axum-kickoff -- migrate migration snapshot
 
 [doc("Drop the last migration file")]
 migration-drop:
-    cargo run --bin toasty -- migration drop
+    cargo run --bin axum-kickoff -- migrate migration drop
 
 [doc("Reset the database - WARNING: This will delete all data")]
 migration-reset:
-    cargo run --bin toasty -- migration reset
+    cargo run --bin axum-kickoff -- migrate migration reset
 
 [doc("Inspect the current database schema as SQL")]
 migration-inspect:
-    cargo run --bin toasty -- migration inspect
+    cargo run --bin axum-kickoff -- migrate migration inspect
 
 # ============================================================================
 # Code Quality Commands
