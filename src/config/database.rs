@@ -11,12 +11,12 @@
 //! - `DATABASE_SSLMODE`: Override the PostgreSQL `sslmode`.
 
 use anyhow::Result;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use std::collections::HashMap;
 use url::Url;
 
 pub struct DatabaseConfig {
-    pub url: String,
+    pub url: SecretString,
 }
 
 impl DatabaseConfig {
@@ -25,7 +25,9 @@ impl DatabaseConfig {
             .or_else(|_| dotenvy::var("TEST_DATABASE_URL"))
             .unwrap_or_else(|_| "sqlite:./axum_kickoff.db".to_string());
 
-        Ok(Self { url })
+        Ok(Self {
+            url: SecretString::from(url),
+        })
     }
 
     #[cfg(test)]
@@ -33,12 +35,14 @@ impl DatabaseConfig {
         let url =
             dotenvy::var("TEST_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
 
-        Ok(Self { url })
+        Ok(Self {
+            url: SecretString::from(url),
+        })
     }
 
     /// Returns the connection URL with per-driver defaults merged into the query string.
     pub fn connect_url(&self) -> Result<SecretString> {
-        let mut url = Url::parse(&self.url)
+        let mut url = Url::parse(self.url.expose_secret())
             .map_err(|e| anyhow::anyhow!("failed to parse database URL: {e}"))?;
 
         let mut query: HashMap<String, String> = url
@@ -106,7 +110,7 @@ mod tests {
         std::env::set_var("DATABASE_URL", "postgresql://user:pass@localhost/db");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        assert_eq!(config.url, "postgresql://user:pass@localhost/db");
+        assert_eq!(config.url.expose_secret(), "postgresql://user:pass@localhost/db");
 
         // Restore original values
         if let Some(val) = original_db {
@@ -133,8 +137,8 @@ mod tests {
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
         // Only assert if we're not getting the default value (which means .env is interfering)
-        if config.url != "sqlite:./axum_kickoff.db" {
-            assert_eq!(config.url, "sqlite::memory:");
+        if config.url.expose_secret() != "sqlite:./axum_kickoff.db" {
+            assert_eq!(config.url.expose_secret(), "sqlite::memory:");
         }
 
         // Restore original values
@@ -160,7 +164,7 @@ mod tests {
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
         // DATABASE_URL takes precedence in the implementation
-        assert_eq!(config.url, "postgresql://user:pass@localhost/db");
+        assert_eq!(config.url.expose_secret(), "postgresql://user:pass@localhost/db");
 
         // Restore original values
         if let Some(val) = original_db {
@@ -185,7 +189,7 @@ mod tests {
         std::env::remove_var("TEST_DATABASE_URL");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        assert_eq!(config.url, "sqlite:./axum_kickoff.db");
+        assert_eq!(config.url.expose_secret(), "sqlite:./axum_kickoff.db");
 
         // Restore original values
         if let Some(val) = original_db {
@@ -207,7 +211,7 @@ mod tests {
         std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
 
         let config = DatabaseConfig::test_config().expect("Failed to create test Database config");
-        assert_eq!(config.url, "sqlite::memory:");
+        assert_eq!(config.url.expose_secret(), "sqlite::memory:");
 
         // Restore original value
         if let Some(val) = original {
@@ -224,7 +228,7 @@ mod tests {
         std::env::remove_var("TEST_DATABASE_URL");
 
         let config = DatabaseConfig::test_config().expect("Failed to create test Database config");
-        assert_eq!(config.url, "sqlite::memory:");
+        assert_eq!(config.url.expose_secret(), "sqlite::memory:");
 
         // Restore original value
         if let Some(val) = original {

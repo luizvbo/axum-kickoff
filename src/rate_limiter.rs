@@ -327,7 +327,7 @@ mod tests {
     async fn test_database() -> (NamedTempFile, Database) {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
-        let database = Database::from_config(&DatabaseConfig { url: db_url })
+        let database = Database::from_config(&DatabaseConfig { url: db_url.into() })
             .await
             .expect("Failed to create test database");
         database

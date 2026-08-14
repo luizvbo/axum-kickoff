@@ -92,7 +92,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: db_url.clone().into(),
         };
         let db = Database::from_config(&config)
             .await
@@ -110,7 +110,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: db_url.clone().into(),
         };
         let db = Database::from_config_with_pool(
             &config,
@@ -131,7 +131,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: db_url.clone().into(),
         };
         let db = Database::from_config(&config)
             .await
@@ -151,7 +151,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: db_url.clone().into(),
         };
         let db = Database::from_config(&config)
             .await
@@ -172,7 +172,7 @@ mod tests {
         let db_url = format!("sqlite:{}", db_file.path().display());
 
         let config = DatabaseConfig {
-            url: db_url.clone(),
+            url: db_url.clone().into(),
         };
         let db = Database::from_config_with_pool(
             &config, 2, None, // wait_timeout
