@@ -3,16 +3,19 @@
 //! Handles CRUD operations for blog posts.
 //! This serves as an example of a complete vertical slice feature.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::app::AppState;
 use crate::middleware::CurrentUserId;
+use crate::models::token::ActionScope;
 use crate::models::Post;
-use crate::util::errors::{bad_request, not_found, server_error, AppResult};
+use crate::util::auth::{AuthCheck, Authentication};
+use crate::util::errors::{bad_request, internal_error, not_found, AppResult};
+use crate::util::ApiResponse;
 
 /// Request body for creating a new post
 #[derive(Debug, Deserialize, ToSchema)]
@@ -39,12 +42,38 @@ pub struct PostResponse {
     pub updated_at: String,
 }
 
-/// List all posts for the current user
+const DEFAULT_PER_PAGE: usize = 20;
+const MAX_PER_PAGE: usize = 100;
+
+/// Query parameters for post list pagination
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct ListPostsParams {
+    /// Page number (1-based, default 1)
+    #[param(minimum = 1)]
+    pub page: Option<u32>,
+    /// Items per page (default 20, max 100)
+    #[param(minimum = 1)]
+    pub per_page: Option<u32>,
+}
+
+/// Response for paginated post list
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ListPostsResponse {
+    pub data: Vec<PostResponse>,
+    pub page: u32,
+    pub per_page: usize,
+}
+
+/// List posts for the current user with pagination
 #[utoipa::path(
     get,
     path = "/api/v1/posts",
+    params(
+        ListPostsParams
+    ),
     responses(
-        (status = 200, description = "List of posts", body = Vec<PostResponse>),
+        (status = 200, description = "Paginated list of posts", body = ListPostsResponse),
         (status = 401, description = "Unauthorized")
     ),
     tag = "Posts",
@@ -53,17 +82,27 @@ pub struct PostResponse {
     )
 )]
 pub async fn list_posts(
-    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<Vec<PostResponse>>> {
+    Query(params): Query<ListPostsParams>,
+) -> AppResult<Json<ListPostsResponse>> {
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params
+        .per_page
+        .map(|p| (p as usize).min(MAX_PER_PAGE))
+        .unwrap_or(DEFAULT_PER_PAGE);
+    let offset = ((page - 1) as usize) * per_page;
+
     let mut db = state.0.database.db_clone();
 
-    let posts = Post::filter(Post::fields().user_id().eq(user_id))
+    // Public read: list all posts, optionally paginated.
+    let posts = Post::filter(Post::fields().id().ge(0u64))
+        .limit(per_page)
+        .offset(offset)
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(internal_error)?;
 
-    let posts: Vec<PostResponse> = posts
+    let data: Vec<PostResponse> = posts
         .into_iter()
         .map(|p| PostResponse {
             id: p.id,
@@ -75,7 +114,11 @@ pub async fn list_posts(
         })
         .collect();
 
-    Ok(Json(posts))
+    Ok(Json(ListPostsResponse {
+        data,
+        page,
+        per_page,
+    }))
 }
 
 /// Show a single post
@@ -97,17 +140,15 @@ pub async fn list_posts(
 )]
 pub async fn show_post(
     Path(id): Path<u64>,
-    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
     let mut db = state.0.database.db_clone();
 
     let post = Post::filter(Post::fields().id().eq(id))
-        .filter(Post::fields().user_id().eq(user_id))
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let post_response = PostResponse {
@@ -119,7 +160,7 @@ pub async fn show_post(
         updated_at: post.updated_at.to_string(),
     };
 
-    Ok(Json(post_response))
+    Ok(Json(ApiResponse::new(post_response)))
 }
 
 /// Create a new post
@@ -138,10 +179,15 @@ pub async fn show_post(
     )
 )]
 pub async fn create_post(
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
     Json(req): Json<CreatePostRequest>,
 ) -> AppResult<impl IntoResponse> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Create)
+        .for_crate("posts")
+        .check(&auth)?;
     // Validate input
     if req.title.trim().is_empty() {
         return Err(bad_request("Title cannot be empty"));
@@ -164,7 +210,7 @@ pub async fn create_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -175,7 +221,7 @@ pub async fn create_post(
         updated_at: post.updated_at.to_string(),
     };
 
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok((StatusCode::CREATED, Json(ApiResponse::new(response))))
 }
 
 /// Update a post
@@ -199,10 +245,16 @@ pub async fn create_post(
 )]
 pub async fn update_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
     Json(req): Json<UpdatePostRequest>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Update)
+        .for_crate("posts")
+        .check(&auth)?;
+
     // Validate input
     if req.title.trim().is_empty() {
         return Err(bad_request("Title cannot be empty"));
@@ -218,7 +270,7 @@ pub async fn update_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let new_title = req.title.clone();
@@ -232,7 +284,7 @@ pub async fn update_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -243,7 +295,7 @@ pub async fn update_post(
         updated_at: new_updated_at.to_string(),
     };
 
-    Ok(Json(response))
+    Ok(Json(ApiResponse::new(response)))
 }
 
 /// Delete a post
@@ -265,9 +317,14 @@ pub async fn update_post(
 )]
 pub async fn delete_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<StatusCode> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Delete)
+        .for_crate("posts")
+        .check(&auth)?;
     let mut db = state.0.database.db_clone();
 
     let post = Post::filter(Post::fields().id().eq(id))
@@ -275,13 +332,10 @@ pub async fn delete_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
-    post.delete()
-        .exec(&mut db)
-        .await
-        .map_err(|e| server_error(e.to_string()))?;
+    post.delete().exec(&mut db).await.map_err(internal_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -305,9 +359,14 @@ pub async fn delete_post(
 )]
 pub async fn publish_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Update)
+        .for_crate("posts")
+        .check(&auth)?;
     let mut db = state.0.database.db_clone();
 
     let mut post = Post::filter(Post::fields().id().eq(id))
@@ -315,7 +374,7 @@ pub async fn publish_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let new_published = true;
@@ -327,7 +386,7 @@ pub async fn publish_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -338,7 +397,7 @@ pub async fn publish_post(
         updated_at: new_updated_at.to_string(),
     };
 
-    Ok(Json(response))
+    Ok(Json(ApiResponse::new(response)))
 }
 
 /// Unpublish a post
@@ -360,9 +419,14 @@ pub async fn publish_post(
 )]
 pub async fn unpublish_post(
     Path(id): Path<u64>,
+    auth: Authentication,
     CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-) -> AppResult<Json<PostResponse>> {
+) -> AppResult<Json<ApiResponse<PostResponse>>> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Update)
+        .for_crate("posts")
+        .check(&auth)?;
     let mut db = state.0.database.db_clone();
 
     let mut post = Post::filter(Post::fields().id().eq(id))
@@ -370,7 +434,7 @@ pub async fn unpublish_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?
+        .map_err(internal_error)?
         .ok_or_else(not_found)?;
 
     let new_published = false;
@@ -382,7 +446,7 @@ pub async fn unpublish_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(internal_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -393,5 +457,5 @@ pub async fn unpublish_post(
         updated_at: new_updated_at.to_string(),
     };
 
-    Ok(Json(response))
+    Ok(Json(ApiResponse::new(response)))
 }

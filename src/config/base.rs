@@ -24,8 +24,12 @@ impl Base {
 mod tests {
     use super::*;
 
+    // Serialize tests that mutate process environment variables.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_from_environment_development() {
+        let _guard = ENV_LOCK.lock();
         // Save and restore the original value
         let original = std::env::var("HEROKU").ok();
         std::env::remove_var("HEROKU");
@@ -41,6 +45,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_production() {
+        let _guard = ENV_LOCK.lock();
         // Save and restore the original value
         let original = std::env::var("HEROKU").ok();
         std::env::set_var("HEROKU", "true");

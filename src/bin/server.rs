@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         info!("Database connected successfully");
 
         // Create the application instance
-        let app = App::new(config, database);
+        let app = App::new(config, database)?;
         let app = Arc::new(app);
 
         // Build the axum router with middleware

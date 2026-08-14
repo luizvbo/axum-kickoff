@@ -81,16 +81,16 @@
 
 use crate::app::AppState;
 use crate::middleware::real_ip::RealIp;
-use axum::extract::{Extension, MatchedPath, Request};
+use axum::extract::{Extension, MatchedPath, Request, State};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use http::StatusCode;
 use regex::Regex;
 
 pub async fn middleware(
+    State(state): State<AppState>,
     Extension(real_ip): Extension<RealIp>,
     matched_path: Option<MatchedPath>,
-    state: AppState,
     req: Request,
     next: Next,
 ) -> Result<impl IntoResponse, Response> {
@@ -291,10 +291,8 @@ mod tests {
 
     #[test]
     fn test_block_criteria_invalid_regex() {
-        let result = BlockCriteria::try_from(r"/unclosed[");
-        // The regex might be valid in some cases, so we just check it doesn't panic
-        // and returns a result (either ok or err is acceptable)
-        let _ = result;
+        let result = BlockCriteria::try_from(r"/unclosed[/");
+        assert!(result.is_err(), "Expected invalid regex to return an error");
     }
 
     #[test]

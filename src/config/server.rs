@@ -14,18 +14,21 @@
 //! - `BLOCKED_TRAFFIC`: Comma-separated list of header=value pairs for blocking traffic (optional).
 //! - `GH_CLIENT_ID`: GitHub OAuth client ID (required for OAuth).
 //! - `GH_CLIENT_SECRET`: GitHub OAuth client secret (required for OAuth).
-//! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "http://localhost:8888/api/v1/auth/github/callback").
+//! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "https://`<domain>`:`<port>`/api/v1/auth/github/callback" in production, "http://" in development).
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 //! - `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs/CIDR ranges (defaults to "127.0.0.1,::1").
 
 use crate::middleware::block_traffic::BlockCriteria;
+use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
 use crate::storage::StorageConfig;
 use crate::Env;
 use http::HeaderValue;
-use std::collections::HashSet;
+use secrecy::SecretString;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::time::Duration;
 
 use super::base::Base;
 
@@ -43,9 +46,10 @@ pub struct Server {
     pub session_key: cookie::Key,
     pub trusted_proxies: Vec<ipnet::IpNet>,
     pub gh_client_id: String,
-    pub gh_client_secret: String,
+    pub gh_client_secret: SecretString,
     pub gh_redirect_uri: String,
     pub storage_config: StorageConfig,
+    pub rate_limiter_config: HashMap<LimitedAction, RateLimiterConfig>,
 }
 
 impl Server {
@@ -124,10 +128,16 @@ impl Server {
             tracing::error!("Required environment variable 'GH_CLIENT_SECRET' is not set");
             anyhow::anyhow!("Required environment variable 'GH_CLIENT_SECRET' is not set")
         })?;
+        let gh_client_secret = SecretString::from(gh_client_secret);
         let gh_redirect_uri = dotenvy::var("GH_REDIRECT_URI").unwrap_or_else(|_| {
+            let scheme = if base.env == Env::Production {
+                "https"
+            } else {
+                "http"
+            };
             format!(
-                "http://{}:{}/api/v1/auth/github/callback",
-                domain_name, port
+                "{}://{}:{}/api/v1/auth/github/callback",
+                scheme, domain_name, port
             )
         });
 
@@ -136,6 +146,9 @@ impl Server {
 
         // Parse trusted proxies (default to localhost for safety)
         let trusted_proxies = parse_trusted_proxies()?;
+
+        // Parse rate limiter configuration from environment
+        let rate_limiter_config = parse_rate_limiter_config()?;
 
         Ok(Server {
             base,
@@ -152,6 +165,7 @@ impl Server {
             gh_client_secret,
             gh_redirect_uri,
             storage_config,
+            rate_limiter_config,
             trusted_proxies,
         })
     }
@@ -191,6 +205,32 @@ fn parse_trusted_proxies() -> anyhow::Result<Vec<ipnet::IpNet>> {
     }
 
     Ok(result)
+}
+
+/// Parse RATE_LIMITER_* environment variables
+///
+/// Variables are of the form `RATE_LIMITER_<ACTION>_RATE_SECONDS` and
+/// `RATE_LIMITER_<ACTION>_BURST`. If not present, defaults for the action are used.
+fn parse_rate_limiter_config() -> anyhow::Result<HashMap<LimitedAction, RateLimiterConfig>> {
+    let mut config = HashMap::new();
+
+    for action in LimitedAction::VARIANTS {
+        let key = action.env_var_key();
+        let rate = dotenvy::var(format!("RATE_LIMITER_{}_RATE_SECONDS", key))
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(action.default_rate_seconds()));
+
+        let burst = dotenvy::var(format!("RATE_LIMITER_{}_BURST", key))
+            .ok()
+            .and_then(|s| s.parse::<i32>().ok())
+            .unwrap_or(action.default_burst());
+
+        config.insert(action, RateLimiterConfig { rate, burst });
+    }
+
+    Ok(config)
 }
 
 /// Parse BLOCKED_TRAFFIC environment variable
@@ -277,6 +317,9 @@ mod tests {
     use super::*;
     use http::HeaderValue;
 
+    // Serialize tests that mutate process environment variables.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_allowed_origins_from_str() {
         let origins = AllowedOrigins::parse("http://localhost:3000,https://example.com");
@@ -346,6 +389,7 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_invalid_format() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("BLOCKED_TRAFFIC", "invalid_format");
         let result = parse_blocked_traffic();
         assert!(result.is_err());
@@ -354,6 +398,7 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_missing_env_var() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("BLOCKED_TRAFFIC", "Header=MISSING_VAR");
         let result = parse_blocked_traffic();
         assert!(result.is_err());
@@ -362,6 +407,7 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_valid() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("BLOCKED_TRAFFIC", "User-Agent=BLOCKED_AGENTS");
         std::env::set_var("BLOCKED_AGENTS", "bot1,bot2");
         let result = parse_blocked_traffic();
@@ -375,6 +421,7 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_empty_values() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("BLOCKED_TRAFFIC", "Header=BLOCKED_VALUES");
         std::env::set_var("BLOCKED_VALUES", ",,");
         let result = parse_blocked_traffic();
@@ -439,6 +486,7 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_multiple_pairs() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var(
             "BLOCKED_TRAFFIC",
             "User-Agent=BLOCKED_AGENTS,Referer=BLOCKED_REFERRERS",
@@ -456,6 +504,7 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_whitespace_in_pairs() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("BLOCKED_TRAFFIC", " User-Agent = BLOCKED_AGENTS ");
         std::env::set_var("BLOCKED_AGENTS", "bot1");
         let result = parse_blocked_traffic();

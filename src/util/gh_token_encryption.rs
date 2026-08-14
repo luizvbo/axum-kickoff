@@ -2,8 +2,8 @@
 //!
 //! Provides AES-256-GCM encryption for GitHub OAuth tokens.
 
-use aes_gcm::aead::{Aead, AeadCore, OsRng};
-use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use aes_gcm::aead::{Aead, Generate, Nonce};
+use aes_gcm::{Aes256Gcm, Key, KeyInit};
 use anyhow::{Context, Result};
 
 /// A struct that encapsulates GitHub token encryption and decryption
@@ -23,7 +23,8 @@ impl GitHubTokenEncryption {
     #[cfg(any(test, debug_assertions))]
     pub fn for_testing() -> Self {
         let test_key = b"test_key_32_bytes_long_for_tests";
-        Self::new(Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(test_key)))
+        let key = Key::<Aes256Gcm>::try_from(test_key.as_slice()).expect("valid key length");
+        Self::new(Aes256Gcm::new(&key))
     }
 
     /// Creates a new [GitHubTokenEncryption] instance from the environment
@@ -41,7 +42,8 @@ impl GitHubTokenEncryption {
         let gh_token_key = hex::decode(gh_token_key.as_bytes())
             .context("GITHUB_TOKEN_ENCRYPTION_KEY must be exactly 64 hex characters")?;
 
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&gh_token_key));
+        let key = Key::<Aes256Gcm>::try_from(gh_token_key.as_slice())?;
+        let cipher = Aes256Gcm::new(&key);
 
         Ok(Self::new(cipher))
     }
@@ -51,7 +53,7 @@ impl GitHubTokenEncryption {
     /// The encrypted data format is: `[12-byte nonce][encrypted data]`
     /// The nonce is randomly generated for each encryption to ensure uniqueness.
     pub fn encrypt(&self, plaintext: &str) -> Result<Vec<u8>> {
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let nonce = Nonce::<Aes256Gcm>::generate();
         let ciphertext = self
             .cipher
             .encrypt(&nonce, plaintext.as_bytes())
@@ -71,10 +73,10 @@ impl GitHubTokenEncryption {
         }
 
         let (nonce, ciphertext) = encrypted.split_at(12);
-        let nonce = Nonce::from_slice(nonce);
+        let nonce = Nonce::<Aes256Gcm>::try_from(nonce)?;
         let plaintext = self
             .cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|e| anyhow::anyhow!("Failed to decrypt GitHub token: {}", e))?;
 
         String::from_utf8(plaintext)

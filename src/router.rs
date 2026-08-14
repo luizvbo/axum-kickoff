@@ -1,10 +1,10 @@
 use askama::Template;
-use axum::extract::Extension;
+use axum::extract::{Extension, State};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::Router;
-use chrono::Utc;
 use http::{Method, StatusCode};
+use serde::Serialize;
 use tower_http::services::ServeDir;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -18,9 +18,8 @@ use crate::controllers::post::{
     create_post, delete_post, list_posts, publish_post, show_post, unpublish_post, update_post,
 };
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
-use crate::middleware::{
-    csrf_protect, get_or_create_csrf_token, require_session_user, SessionExtension,
-};
+use crate::middleware::{csrf_protect, get_or_create_csrf_token, require_auth, SessionExtension};
+use crate::models::User;
 use crate::Env;
 
 #[derive(OpenApi)]
@@ -42,9 +41,11 @@ use crate::Env;
             crate::controllers::post::CreatePostRequest,
             crate::controllers::post::UpdatePostRequest,
             crate::controllers::post::PostResponse,
+            crate::controllers::post::ListPostsResponse,
             crate::controllers::token::CreateTokenRequest,
             crate::controllers::token::CreateTokenResponse,
             crate::controllers::token::TokenListItem,
+            crate::controllers::token::ListTokensResponse,
         )
     ),
     tags(
@@ -66,7 +67,7 @@ use crate::Env;
 struct ApiDoc;
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
-    // Public router - no authentication required
+    // Public HTML / example router - no authentication required
     let public_router = Router::new()
         .route("/", get(home))
         .route("/health", get(health_check))
@@ -81,29 +82,32 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/examples/counter/decrement", post(counter_decrement))
         .route("/examples/json", get(example_json));
 
-    // Session + CSRF protected router - requires both session auth and CSRF token
-    // All session-authenticated unsafe methods (POST, PUT, PATCH, DELETE) are CSRF-protected
-    let session_csrf_router = Router::new()
+    // Public API v1 read-only routes
+    let api_v1_public = Router::new()
+        .route("/api/v1/posts", get(list_posts))
+        .route("/api/v1/posts/{id}", get(show_post));
+
+    // Protected API v1 routes - requires authentication and CSRF for cookie sessions
+    let api_v1_protected = Router::new()
         .route("/api/v1/auth/logout", post(logout_api))
         .route("/logout", post(logout_html))
         .route("/api/v1/tokens", post(create_token))
         .route("/api/v1/tokens", get(list_tokens))
         .route("/api/v1/tokens/{token_id}", post(revoke_token))
-        // Post CRUD routes
-        .route("/api/v1/posts", get(list_posts))
+        // Post mutating routes
         .route("/api/v1/posts", post(create_post))
-        .route("/api/v1/posts/{id}", get(show_post))
         .route("/api/v1/posts/{id}", patch(update_post))
         .route("/api/v1/posts/{id}", delete(delete_post))
         .route("/api/v1/posts/{id}/publish", post(publish_post))
         .route("/api/v1/posts/{id}/unpublish", post(unpublish_post))
         .route_layer(axum::middleware::from_fn(csrf_protect))
-        .route_layer(axum::middleware::from_fn(require_session_user));
+        .route_layer(axum::middleware::from_fn(require_auth));
 
     // Combine all stateful routes
     let api_router = Router::new()
         .merge(public_router)
-        .merge(session_csrf_router)
+        .merge(api_v1_public)
+        .merge(api_v1_protected)
         .nest_service(
             "/static",
             ServeDir::new("static")
@@ -117,6 +121,9 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
     } else {
         api_router
     };
+
+    #[cfg(feature = "metrics")]
+    let api_router = api_router.route("/metrics", get(crate::metrics::metrics_handler));
 
     let api_router = api_router
         .fallback(async |method: Method| match method {
@@ -140,8 +147,30 @@ async fn home(Extension(session): Extension<SessionExtension>) -> impl IntoRespo
     HtmlTemplate(template)
 }
 
-async fn health_check() -> &'static str {
-    "OK"
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let mut db = state.0.database.db_clone();
+    let db_ok = User::filter(User::fields().id().eq(0))
+        .first()
+        .exec(&mut db)
+        .await
+        .is_ok();
+
+    let status = if db_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    let body = HealthResponse {
+        status: if db_ok { "ok" } else { "degraded" },
+        database: db_ok,
+    };
+    (status, axum::Json(body))
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    database: bool,
 }
 
 async fn debug_info() -> &'static str {
@@ -149,7 +178,9 @@ async fn debug_info() -> &'static str {
 }
 
 async fn server_time() -> impl IntoResponse {
-    let time = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let time = jiff::Timestamp::now()
+        .strftime("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
     let template = ServerTimeTemplate { time };
     HtmlTemplate(template)
 }

@@ -99,6 +99,48 @@ pub fn service_unavailable() -> Box<dyn AppError> {
     ))
 }
 
+/// Rate limit error (429 Too Many Requests) with a Retry-After header
+#[derive(Debug)]
+pub struct RateLimitAppError {
+    detail: Cow<'static, str>,
+    retry_after_secs: u64,
+}
+
+impl RateLimitAppError {
+    pub fn new(detail: impl Into<Cow<'static, str>>, retry_after: std::time::Duration) -> Self {
+        Self {
+            detail: detail.into(),
+            retry_after_secs: retry_after.as_secs().max(1),
+        }
+    }
+}
+
+impl fmt::Display for RateLimitAppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Too Many Requests: {}", self.detail)
+    }
+}
+
+impl AppError for RateLimitAppError {
+    fn response(&self) -> Response {
+        let error_response =
+            ErrorResponse::with_type(self.detail.to_string(), "rate_limit_exceeded");
+        let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(error_response)).into_response();
+        if let Ok(value) = http::HeaderValue::from_str(&self.retry_after_secs.to_string()) {
+            response.headers_mut().insert("retry-after", value);
+        }
+        response
+    }
+}
+
+/// Create a rate limit error (429) with a Retry-After header
+pub fn rate_limited(
+    detail: impl Into<Cow<'static, str>>,
+    retry_after: std::time::Duration,
+) -> Box<dyn AppError> {
+    Box::new(RateLimitAppError::new(detail, retry_after))
+}
+
 /// Generic HTTP error with a status code and detail message
 #[derive(Debug)]
 struct HttpError {
@@ -469,12 +511,21 @@ pub fn not_found_record(
     Box::new(NotFoundError::record_not_found(resource, identifier))
 }
 
+/// Log an error internally and return a generic 500 error to the client.
+///
+/// This prevents leaking internal error details (e.g. database errors) to
+/// the client while still capturing the full error in logs for debugging.
+pub fn internal_error<E: std::fmt::Display>(error: E) -> Box<dyn AppError> {
+    tracing::error!("Internal error: {}", error);
+    server_error("Internal server error")
+}
+
 /// Convert a standard error to an AppError
 ///
 /// This is useful for converting errors from external libraries (like database
 /// errors) into application-specific errors that can be returned to clients.
 pub fn convert_error<E: std::error::Error + Send + Sync + 'static>(error: E) -> Box<dyn AppError> {
-    server_error(error.to_string())
+    internal_error(error)
 }
 
 #[cfg(test)]

@@ -1,5 +1,11 @@
 #[cfg(feature = "metrics")]
-use prometheus::{HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry};
+use axum::extract::State;
+#[cfg(feature = "metrics")]
+use axum::http::{header, StatusCode};
+#[cfg(feature = "metrics")]
+use axum::response::{IntoResponse, Response};
+#[cfg(feature = "metrics")]
+use prometheus::{Encoder, HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry};
 
 #[cfg(feature = "metrics")]
 pub struct InstanceMetrics {
@@ -68,5 +74,31 @@ impl InstanceMetrics {
 impl Default for InstanceMetrics {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "metrics")]
+/// Prometheus `/metrics` endpoint handler
+pub async fn metrics_handler(State(state): State<crate::app::AppState>) -> Response {
+    let metrics = &state.0.metrics;
+    let encoder = prometheus::TextEncoder::new();
+
+    match metrics.gather() {
+        Ok(metric_families) => match encoder.encode_to_string(&metric_families) {
+            Ok(body) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, encoder.format_type())],
+                body,
+            )
+                .into_response(),
+            Err(err) => {
+                tracing::error!("Failed to encode metrics: {}", err);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
+        Err(err) => {
+            tracing::error!("Failed to gather metrics: {}", err);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }

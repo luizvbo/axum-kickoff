@@ -4,9 +4,8 @@ use crate::config;
 use crate::db::Database;
 #[cfg(feature = "metrics")]
 use crate::metrics::InstanceMetrics;
-use crate::rate_limiter::{LimitedAction, RateLimiter, RateLimiterConfig};
+use crate::rate_limiter::RateLimiter;
 use crate::storage::Storage;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,41 +22,38 @@ pub struct App {
     pub storage: Storage,
     /// Instance metrics for monitoring (available with `metrics` feature)
     #[cfg(feature = "metrics")]
-    pub metrics: InstanceMetrics,
+    pub metrics: std::sync::Arc<InstanceMetrics>,
     /// Session key for signing cookies
     pub session_key: cookie::Key,
     /// Rate limiter for API request throttling
     pub rate_limiter: RateLimiter,
+    /// Shared HTTP client for outbound requests (OAuth, GitHub API)
+    pub http_client: reqwest::Client,
 }
 
 impl App {
     /// Create a new App instance with the given configuration and database
-    pub fn new(config: config::Server, database: Database) -> Self {
+    pub fn new(config: config::Server, database: Database) -> anyhow::Result<Self> {
         let session_key = config.session_key.clone();
-        let storage = Storage::from_config(&config.storage_config);
+        let storage = Storage::from_config(&config.storage_config)?;
 
-        // Initialize rate limiter with default configuration
-        let mut rate_limit_config = HashMap::new();
-        for action in LimitedAction::VARIANTS {
-            rate_limit_config.insert(
-                action,
-                RateLimiterConfig {
-                    rate: Duration::from_secs(action.default_rate_seconds()),
-                    burst: action.default_burst(),
-                },
-            );
-        }
-        let rate_limiter = RateLimiter::new(rate_limit_config);
+        // Initialize rate limiter from server config or default configuration
+        let rate_limiter = RateLimiter::new(config.rate_limiter_config.clone(), database.clone());
 
-        Self {
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()?;
+
+        Ok(Self {
             config: Arc::new(config),
             database,
             storage,
             #[cfg(feature = "metrics")]
-            metrics: InstanceMetrics::new(),
+            metrics: std::sync::Arc::new(InstanceMetrics::new()),
             session_key,
             rate_limiter,
-        }
+            http_client,
+        })
     }
 
     /// Get the server's IP address

@@ -36,13 +36,18 @@
 //! ```
 
 pub mod auth;
+pub mod block_traffic;
 pub mod builders;
 pub mod error_responses;
+#[cfg(feature = "metrics")]
+pub mod metrics;
 pub mod middleware;
 pub mod middleware_auth;
+pub mod posts;
 pub mod request_helper;
 pub mod response;
 pub mod test_app;
+pub mod tokens;
 
 // Re-export commonly used types for convenience
 pub use request_helper::{AnonymousUser, CookieUser, RequestHelper, TokenUser};

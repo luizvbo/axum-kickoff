@@ -8,7 +8,7 @@ use crate::config::AllowedOrigins;
 use crate::config::Server;
 use crate::db::Database;
 use crate::storage::StorageConfig;
-use crate::tests::builders::{ApiTokenBuilder, UserBuilder};
+use crate::tests::builders::{ApiTokenBuilder, PostBuilder, UserBuilder};
 use axum::Router;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -30,12 +30,15 @@ pub struct TestApp {
 impl TestApp {
     /// Create a new test application with an in-memory SQLite database
     pub async fn new() -> Self {
+        let config = Self::test_config();
+        Self::with_config(config).await
+    }
+
+    /// Create a new test application with a custom configuration
+    pub async fn with_config(config: Server) -> Self {
         // Create a temporary file for the SQLite database
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
-
-        // Set up test configuration
-        let config = Self::test_config();
 
         // Create database connection
         let db_config = crate::config::DatabaseConfig {
@@ -47,7 +50,7 @@ impl TestApp {
             .expect("Failed to connect to test database");
 
         // Create app state
-        let app = App::new(config.clone(), db.clone());
+        let app = App::new(config.clone(), db.clone()).expect("Failed to create test app");
 
         // Build router with test configuration and middleware
         let app_arc = Arc::new(app);
@@ -64,10 +67,13 @@ impl TestApp {
     }
 
     /// Create test configuration with minimal required settings
-    fn test_config() -> Server {
+    pub fn test_config() -> Server {
         use crate::config::base::Base;
+        use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
         use crate::Env;
+        use std::collections::HashMap;
         use std::net::IpAddr;
+        use std::time::Duration;
 
         // Generate a random session key for tests
         let session_key = cookie::Key::generate();
@@ -85,9 +91,21 @@ impl TestApp {
             session_key,
             trusted_proxies: vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()],
             gh_client_id: "test_client_id".to_string(),
-            gh_client_secret: "test_client_secret".to_string(),
+            gh_client_secret: secrecy::SecretString::from("test_client_secret"),
             gh_redirect_uri: "http://localhost:8888/api/v1/auth/github/callback".to_string(),
             storage_config: StorageConfig::local_filesystem("./test_uploads"),
+            rate_limiter_config: LimitedAction::VARIANTS
+                .iter()
+                .map(|&a| {
+                    (
+                        a,
+                        RateLimiterConfig {
+                            rate: Duration::from_millis(1),
+                            burst: 10_000,
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>(),
         }
     }
 
@@ -98,11 +116,7 @@ impl TestApp {
 
     /// Get the app state (useful for extractors that need it)
     pub fn state(&self) -> AppState {
-        // Extract the state from the router
-        // This is a simplification - in practice you might need to store it separately
-        // For now, we'll create a new state from the existing components
-        let app = App::new(self.config.clone(), self.db.clone());
-        AppState(Arc::new(app))
+        self.state.clone()
     }
 
     /// Create a new user builder
@@ -113,6 +127,11 @@ impl TestApp {
     /// Create a new API token builder
     pub fn token_builder(&self, user_id: u64, name: &str) -> ApiTokenBuilder {
         ApiTokenBuilder::new(user_id, name)
+    }
+
+    /// Create a new post builder
+    pub fn post_builder(&self, user_id: u64, title: &str) -> PostBuilder {
+        PostBuilder::new(user_id, title)
     }
 }
 

@@ -20,6 +20,8 @@ A production-ready Rust web application starter template built on [Axum](https:/
 
 - Rust (see `rust-toolchain.toml` for pinned version)
 - SQLite (for development)
+- [just](https://github.com/casey/just) (for running setup and other commands)
+- Node.js and npm (for vendoring frontend dependencies)
 
 ### Installation
 
@@ -27,6 +29,9 @@ A production-ready Rust web application starter template built on [Axum](https:/
 # Clone the repository
 git clone https://github.com/luizvbo/axum-kickoff.git
 cd axum-kickoff
+
+# Install dependencies and vendor JS libraries (HTMX, Alpine.js)
+just setup
 
 # Copy environment variables
 cp .env.sample .env

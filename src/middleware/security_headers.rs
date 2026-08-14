@@ -94,8 +94,21 @@
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::Response;
+use base64::Engine;
 use http::header::{HeaderName, HeaderValue};
 use std::time::Duration;
+
+/// Per-request CSP nonce for allowing inline scripts/styles in templates.
+/// Inserted into request extensions by the security headers middleware.
+#[derive(Clone)]
+pub struct CspNonce(pub String);
+
+/// Generate a cryptographically secure random nonce for CSP
+fn generate_nonce() -> String {
+    use rand::RngExt;
+    let bytes: [u8; 16] = rand::rng().random();
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
 
 /// Security header configuration
 #[derive(Debug, Clone)]
@@ -309,13 +322,13 @@ impl std::str::FromStr for PermissionsPolicy {
 }
 
 /// Generate Content-Security-Policy header value
-fn generate_csp(config: &SecurityHeadersConfig) -> String {
+fn generate_csp(config: &SecurityHeadersConfig, nonce: &str) -> String {
     match &config.csp_mode {
         CspMode::Strict => {
             let mut directives = vec![
                 "default-src 'self'".to_string(),
-                "script-src 'self' https://unpkg.com".to_string(),
-                "style-src 'self'".to_string(),
+                format!("script-src 'self' https://unpkg.com 'nonce-{}'", nonce),
+                format!("style-src 'self' 'nonce-{}'", nonce),
                 "img-src 'self' data: https:".to_string(),
                 "font-src 'self' data:".to_string(),
                 "object-src 'none'".to_string(),
@@ -414,10 +427,17 @@ pub async fn security_headers_middleware(
     req: Request,
     next: Next,
 ) -> Response {
+    // Generate per-request nonce for CSP
+    let nonce = generate_nonce();
+
+    // Insert nonce into request extensions so handlers can access it
+    let mut req = req;
+    req.extensions_mut().insert(CspNonce(nonce.clone()));
+
     let mut response = next.run(req).await;
 
     // Content-Security-Policy
-    let csp = generate_csp(&config);
+    let csp = generate_csp(&config, &nonce);
     response.headers_mut().insert(
         HeaderName::from_static("content-security-policy"),
         HeaderValue::from_str(&csp)
@@ -523,9 +543,10 @@ mod tests {
             csp_mode: CspMode::Strict,
             ..Default::default()
         };
-        let csp = generate_csp(&config);
+        let csp = generate_csp(&config, "test-nonce");
         assert!(csp.contains("default-src 'self'"));
         assert!(csp.contains("script-src 'self'"));
+        assert!(csp.contains("'nonce-test-nonce'"));
         assert!(csp.contains("frame-ancestors 'none'"));
     }
 
@@ -535,7 +556,7 @@ mod tests {
             csp_mode: CspMode::Permissive,
             ..Default::default()
         };
-        let csp = generate_csp(&config);
+        let csp = generate_csp(&config, "test-nonce");
         assert!(csp.contains("unsafe-inline"));
         assert!(csp.contains("unsafe-eval"));
     }
@@ -637,7 +658,7 @@ mod tests {
             csp_mode: CspMode::Custom("default-src 'self' https://cdn.example.com".to_string()),
             ..Default::default()
         };
-        let csp = generate_csp(&config);
+        let csp = generate_csp(&config, "test-nonce");
         assert_eq!(csp, "default-src 'self' https://cdn.example.com");
     }
 
@@ -648,7 +669,7 @@ mod tests {
             frame_ancestors: Some("https://trusted.com".to_string()),
             ..Default::default()
         };
-        let csp = generate_csp(&config);
+        let csp = generate_csp(&config, "test-nonce");
         assert!(csp.contains("frame-ancestors https://trusted.com"));
     }
 
@@ -709,7 +730,7 @@ mod tests {
             frame_ancestors: Some("https://example.com https://trusted.com".to_string()),
             ..Default::default()
         };
-        let csp = generate_csp(&config);
+        let csp = generate_csp(&config, "test-nonce");
         assert!(csp.contains("unsafe-inline"));
         assert!(csp.contains("frame-ancestors https://example.com https://trusted.com"));
     }

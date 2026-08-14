@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::app::AppState;
-use crate::middleware::{get_or_create_csrf_token, SessionExtension};
+use crate::middleware::{get_or_create_csrf_token, CspNonce, SessionExtension};
 use crate::router::HtmlTemplate;
 
 // ============================================================================
@@ -44,6 +44,7 @@ struct ContactPageTemplate {
 struct ContactSuccessTemplate {
     name: String,
     email: String,
+    csp_nonce: String,
 }
 
 /// Contact form errors partial - Returned on validation failure
@@ -68,6 +69,7 @@ pub async fn contact_page(Extension(session): Extension<SessionExtension>) -> im
 /// - HTMX swaps the response into the target element
 pub async fn contact_submit(
     Extension(_session): Extension<SessionExtension>,
+    Extension(csp_nonce): Extension<CspNonce>,
     State(_state): State<AppState>,
     Form(form): Form<ContactForm>,
 ) -> Response {
@@ -115,6 +117,7 @@ pub async fn contact_submit(
     let template = ContactSuccessTemplate {
         name: form.name,
         email: form.email,
+        csp_nonce: csp_nonce.0,
     };
     match template.render() {
         Ok(html) => Html(html).into_response(),
@@ -197,7 +200,7 @@ pub async fn example_json() -> impl IntoResponse {
 
     let response = ExampleJsonResponse {
         message: "This is a JSON API response example".to_string(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
+        timestamp: jiff::Timestamp::now().to_string(),
         data,
     };
 

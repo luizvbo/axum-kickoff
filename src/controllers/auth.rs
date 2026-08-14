@@ -12,12 +12,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::AppState;
-use crate::middleware::real_ip::RealIp;
 use crate::middleware::session::SessionExtension;
 use crate::models::User;
-use crate::rate_limiter::LimitedAction;
-use crate::util::errors::{bad_request, forbidden, server_error, BoxedAppError};
+use crate::util::errors::{bad_request, forbidden, internal_error, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
+use secrecy::ExposeSecret;
 
 /// OAuth authorize query parameters
 #[derive(Debug, Deserialize)]
@@ -59,16 +58,7 @@ pub async fn github_authorize(
     Query(query): Query<AuthorizeQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
-    Extension(real_ip): Extension<RealIp>,
 ) -> Result<Redirect, BoxedAppError> {
-    // Apply rate limiting for OAuth authorize requests
-    state
-        .0
-        .rate_limiter
-        .check_by_ip(real_ip.0, LimitedAction::OAuthAuthorize)
-        .await
-        .map_err(|e| bad_request(e.to_string()))?;
-
     let config = &state.0.config;
 
     // Create OAuth2 client
@@ -80,7 +70,9 @@ pub async fn github_authorize(
         RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
-        .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
+        .set_client_secret(ClientSecret::new(
+            config.gh_client_secret.expose_secret().to_string(),
+        ))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url)
         .set_redirect_uri(redirect_url);
@@ -133,16 +125,7 @@ pub async fn github_callback(
     Query(query): Query<CallbackQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
-    Extension(real_ip): Extension<RealIp>,
 ) -> Result<Redirect, BoxedAppError> {
-    // Apply rate limiting for OAuth callback requests
-    state
-        .0
-        .rate_limiter
-        .check_by_ip(real_ip.0, LimitedAction::OAuthCallback)
-        .await
-        .map_err(|e| bad_request(e.to_string()))?;
-
     let config = &state.0.config;
 
     // Verify CSRF state
@@ -169,7 +152,9 @@ pub async fn github_callback(
         RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
 
     let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
-        .set_client_secret(ClientSecret::new(config.gh_client_secret.clone()))
+        .set_client_secret(ClientSecret::new(
+            config.gh_client_secret.expose_secret().to_string(),
+        ))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url)
         .set_redirect_uri(redirect_url);
@@ -178,13 +163,14 @@ pub async fn github_callback(
     let token = client
         .exchange_code(oauth2::AuthorizationCode::new(query.code.clone()))
         .set_pkce_verifier(pkce_verifier)
-        .request_async(&ReqwestClient(reqwest::Client::new()))
+        .request_async(&ReqwestClient(state.0.http_client.clone()))
         .await
-        .map_err(|e| bad_request(format!("Failed to exchange authorization code: {}", e)))?;
+        .map_err(|e| server_error(format!("Failed to exchange authorization code: {}", e)))?;
 
     // Fetch user profile from GitHub
-    let http_client = reqwest::Client::new();
-    let user_response = http_client
+    let user_response = state
+        .0
+        .http_client
         .get("https://api.github.com/user")
         .header(
             "Authorization",
@@ -193,16 +179,16 @@ pub async fn github_callback(
         .header("User-Agent", "axum-kickoff")
         .send()
         .await
-        .map_err(|e| bad_request(format!("Failed to fetch user profile: {}", e)))?;
+        .map_err(|e| server_error(format!("Failed to fetch user profile: {}", e)))?;
 
     if !user_response.status().is_success() {
-        return Err(bad_request("Failed to fetch user profile from GitHub"));
+        return Err(server_error("Failed to fetch user profile from GitHub"));
     }
 
     let github_user: GitHubUser = user_response
         .json()
         .await
-        .map_err(|e| bad_request(format!("Failed to parse user profile: {}", e)))?;
+        .map_err(|e| server_error(format!("Failed to parse user profile: {}", e)))?;
 
     let mut db = state.0.database.db_clone();
 
@@ -230,7 +216,7 @@ pub async fn github_callback(
                 .update()
                 .exec(&mut db)
                 .await
-                .map_err(|e| server_error(e.to_string()))?;
+                .map_err(internal_error)?;
 
             existing_user
         }
@@ -250,7 +236,7 @@ pub async fn github_callback(
             })
             .exec(&mut db)
             .await
-            .map_err(|e| server_error(e.to_string()))?
+            .map_err(internal_error)?
         }
     };
 
@@ -299,6 +285,7 @@ pub async fn logout_api(
     session.remove("github_oauth_state");
     session.remove("github_pkce_verifier");
     session.remove("redirect_to");
+    session.remove("csrf_token");
 
     Ok(Json(json!({"success": true})))
 }
@@ -320,6 +307,7 @@ pub async fn logout_html(
     session.remove("github_oauth_state");
     session.remove("github_pkce_verifier");
     session.remove("redirect_to");
+    session.remove("csrf_token");
 
     Ok(Redirect::to("/"))
 }

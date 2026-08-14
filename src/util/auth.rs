@@ -46,6 +46,23 @@ impl Authentication {
             Authentication::Token { api_token, .. } => Some(api_token),
         }
     }
+
+    /// Returns true if this is a token-based authentication
+    pub fn is_token(&self) -> bool {
+        matches!(self, Authentication::Token { .. })
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Authentication {
+    type Rejection = BoxedAppError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Authentication>()
+            .cloned()
+            .ok_or_else(|| unauthorized("You must be logged in to perform this action"))
+    }
 }
 
 /// Authorization header extractor
