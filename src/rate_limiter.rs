@@ -322,17 +322,18 @@ mod tests {
     use super::*;
     use crate::config::DatabaseConfig;
     use crate::db::Database;
-    use secrecy::SecretString;
     use tempfile::NamedTempFile;
 
     async fn test_database() -> (NamedTempFile, Database) {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
         let db_url = format!("sqlite:{}", db_file.path().display());
-        let database = Database::from_config(&DatabaseConfig {
-            url: SecretString::from(db_url),
-        })
-        .await
-        .expect("Failed to create test database");
+        let database = Database::from_config(&DatabaseConfig { url: db_url.into() })
+            .await
+            .expect("Failed to create test database");
+        database
+            .migrate()
+            .await
+            .expect("Failed to apply test database migrations");
         (db_file, database)
     }
 
@@ -342,7 +343,7 @@ mod tests {
         config.insert(
             LimitedAction::ApiRequest,
             RateLimiterConfig {
-                rate: Duration::from_millis(100),
+                rate: Duration::from_millis(1500),
                 burst: 5,
             },
         );
@@ -370,7 +371,7 @@ mod tests {
         config.insert(
             LimitedAction::ApiRequest,
             RateLimiterConfig {
-                rate: Duration::from_millis(100),
+                rate: Duration::from_millis(1500),
                 burst: 5,
             },
         );
@@ -390,7 +391,7 @@ mod tests {
             .await
             .is_err());
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(1600)).await;
 
         assert!(rate_limiter
             .check_by_ip(ip, LimitedAction::ApiRequest)

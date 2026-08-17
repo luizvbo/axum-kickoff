@@ -123,7 +123,7 @@ async fn run_migrate(args: Vec<String>) -> Result<()> {
 
     let db = toasty::Db::builder()
         .models(toasty::models!(axum_kickoff::*))
-        .connect(db_config.url.expose_secret())
+        .connect(db_config.connect_url()?.expose_secret())
         .await?;
 
     // Default `cargo run -- migrate` to `migration apply`
