@@ -343,7 +343,7 @@ mod tests {
         config.insert(
             LimitedAction::ApiRequest,
             RateLimiterConfig {
-                rate: Duration::from_millis(100),
+                rate: Duration::from_millis(1500),
                 burst: 5,
             },
         );
@@ -371,7 +371,7 @@ mod tests {
         config.insert(
             LimitedAction::ApiRequest,
             RateLimiterConfig {
-                rate: Duration::from_millis(100),
+                rate: Duration::from_millis(1500),
                 burst: 5,
             },
         );
@@ -391,7 +391,7 @@ mod tests {
             .await
             .is_err());
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(1600)).await;
 
         assert!(rate_limiter
             .check_by_ip(ip, LimitedAction::ApiRequest)
