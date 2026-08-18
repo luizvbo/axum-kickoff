@@ -4,6 +4,7 @@
 
 pub use crate::app::App;
 use std::sync::Arc;
+use tower::Layer;
 
 use crate::app::AppState;
 use crate::router::build_axum_router;
@@ -44,5 +45,8 @@ pub fn build_handler(app: Arc<App>) -> axum::Router {
     let state = AppState(app.clone());
 
     let axum_router = build_axum_router(state.clone());
-    middleware::apply_axum_middleware(state, axum_router)
+    let axum_router = middleware::apply_axum_middleware(state, axum_router);
+    axum::Router::new().fallback_service(
+        axum::middleware::from_fn(crate::middleware::normalize_path::middleware).layer(axum_router),
+    )
 }
