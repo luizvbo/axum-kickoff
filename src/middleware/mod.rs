@@ -7,7 +7,6 @@ use std::time::Duration;
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 use tracing::Instrument;
 
@@ -21,6 +20,7 @@ pub mod csrf;
 pub mod error_handler;
 #[cfg(feature = "metrics")]
 pub mod metrics;
+pub mod normalize_path;
 pub mod real_ip;
 pub mod request_id;
 pub mod require_user_agent;
@@ -64,7 +64,6 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .allow_headers(Any);
 
     let router = router
-        .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(cors)
         .layer(from_fn_with_state(
             config.allowed_origins.clone(),
