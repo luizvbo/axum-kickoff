@@ -33,7 +33,7 @@
 //! Prevents MIME type sniffing, ensuring browsers respect the declared content type.
 //!
 //! ## X-XSS-Protection
-//! Enables browser's built-in XSS filter (legacy, mostly superseded by CSP).
+//! Disables the legacy browser XSS filter (superseded by CSP).
 //!
 //! ## Strict-Transport-Security (HSTS)
 //! Forces browsers to use HTTPS for all future requests to the domain (HTTPS only).
@@ -85,7 +85,7 @@
 //! Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'
 //! X-Frame-Options: DENY
 //! X-Content-Type-Options: nosniff
-//! X-XSS-Protection: 1; mode=block
+//! X-XSS-Protection: 0
 //! Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 //! Referrer-Policy: strict-origin-when-cross-origin
 //! Permissions-Policy: geolocation=(), camera=(), microphone=()
@@ -110,6 +110,22 @@ fn generate_nonce() -> String {
     use rand::RngExt;
     let bytes: [u8; 16] = rand::rng().random();
     base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+// Per-request CSP nonce task-local.
+//
+// The security headers middleware sets this for the duration of each request
+// so that `HtmlTemplate` can access the same nonce used in the CSP header.
+tokio::task_local! {
+    pub(crate) static CSP_NONCE: CspNonce;
+}
+
+/// Return the CSP nonce for the current request, or generate a fresh one.
+pub(crate) fn current_csp_nonce() -> String {
+    CSP_NONCE
+        .try_with(|nonce| nonce.0.clone())
+        .ok()
+        .unwrap_or_else(generate_nonce)
 }
 
 /// Security header configuration
@@ -330,7 +346,7 @@ fn generate_csp(config: &SecurityHeadersConfig, nonce: &str) -> String {
         CspMode::Strict => {
             let mut directives = vec![
                 "default-src 'self'".to_string(),
-                format!("script-src 'self' https://unpkg.com 'nonce-{}'", nonce),
+                format!("script-src 'self' 'nonce-{}'", nonce),
                 format!("style-src 'self' 'nonce-{}'", nonce),
                 "img-src 'self' data: https:".to_string(),
                 "font-src 'self' data:".to_string(),
@@ -418,6 +434,85 @@ fn generate_permissions_policy(config: &SecurityHeadersConfig) -> String {
     }
 }
 
+/// Apply all configured security headers to a response.
+fn apply_security_headers(
+    response: &mut Response,
+    config: &SecurityHeadersConfig,
+    nonce: &str,
+    path: &str,
+) {
+    // Content-Security-Policy
+    let csp = generate_csp(config, nonce);
+    response.headers_mut().insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_str(&csp)
+            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
+    );
+
+    // X-Frame-Options
+    let frame_options = generate_frame_options(config);
+    response.headers_mut().insert(
+        HeaderName::from_static("x-frame-options"),
+        HeaderValue::from_str(&frame_options).unwrap_or_else(|_| HeaderValue::from_static("DENY")),
+    );
+
+    // X-Content-Type-Options
+    response.headers_mut().insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+
+    // X-XSS-Protection
+    response.headers_mut().insert(
+        HeaderName::from_static("x-xss-protection"),
+        HeaderValue::from_static("0"),
+    );
+
+    // Strict-Transport-Security (only if enabled)
+    if config.hsts_enabled {
+        let hsts = generate_hsts(config);
+        response.headers_mut().insert(
+            HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_str(&hsts).unwrap_or_else(|_| {
+                HeaderValue::from_static("max-age=31536000; includeSubDomains")
+            }),
+        );
+    }
+
+    // Referrer-Policy
+    let referrer_policy = generate_referrer_policy(config);
+    response.headers_mut().insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_str(&referrer_policy)
+            .unwrap_or_else(|_| HeaderValue::from_static("strict-origin-when-cross-origin")),
+    );
+
+    // Permissions-Policy
+    let permissions_policy = generate_permissions_policy(config);
+    response.headers_mut().insert(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_str(&permissions_policy).unwrap_or_else(|_| {
+            HeaderValue::from_static("geolocation=(), camera=(), microphone=()")
+        }),
+    );
+
+    // Cache-Control for dynamic HTML responses; do not override /static/ responses
+    let is_html = response
+        .headers()
+        .get(HeaderName::from_static("content-type"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|ct| ct.split(';').next())
+        .map(|ct| ct.trim() == "text/html")
+        .unwrap_or(false);
+
+    if is_html && !path.starts_with("/static/") {
+        response.headers_mut().insert(
+            HeaderName::from_static("cache-control"),
+            HeaderValue::from_static("no-store, private"),
+        );
+    }
+}
+
 /// Middleware to add security headers to all responses
 pub async fn middleware(
     State(config): State<SecurityHeadersConfig>,
@@ -435,75 +530,31 @@ pub async fn security_headers_middleware(
 ) -> Response {
     // Generate per-request nonce for CSP
     let nonce = generate_nonce();
+    let csp_nonce = CspNonce(nonce.clone());
+
+    // Remember the request path before consuming the request
+    let path = req.uri().path().to_string();
 
     // Insert nonce into request extensions so handlers can access it
     let mut req = req;
-    req.extensions_mut().insert(CspNonce(nonce.clone()));
+    req.extensions_mut().insert(csp_nonce.clone());
 
-    let mut response = next.run(req).await;
+    // Run the rest of the stack with the nonce in a task-local so HtmlTemplate
+    // can access it during `IntoResponse` without needing the request.
+    let mut response = CSP_NONCE.scope(csp_nonce, next.run(req)).await;
 
-    // Content-Security-Policy
-    let csp = generate_csp(&config, &nonce);
-    response.headers_mut().insert(
-        HeaderName::from_static("content-security-policy"),
-        HeaderValue::from_str(&csp)
-            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
-    );
-
-    // X-Frame-Options
-    let frame_options = generate_frame_options(&config);
-    response.headers_mut().insert(
-        HeaderName::from_static("x-frame-options"),
-        HeaderValue::from_str(&frame_options).unwrap_or_else(|_| HeaderValue::from_static("DENY")),
-    );
-
-    // X-Content-Type-Options
-    response.headers_mut().insert(
-        HeaderName::from_static("x-content-type-options"),
-        HeaderValue::from_static("nosniff"),
-    );
-
-    // X-XSS-Protection
-    response.headers_mut().insert(
-        HeaderName::from_static("x-xss-protection"),
-        HeaderValue::from_static("1; mode=block"),
-    );
-
-    // Strict-Transport-Security (only if enabled)
-    if config.hsts_enabled {
-        let hsts = generate_hsts(&config);
-        response.headers_mut().insert(
-            HeaderName::from_static("strict-transport-security"),
-            HeaderValue::from_str(&hsts).unwrap_or_else(|_| {
-                HeaderValue::from_static("max-age=31536000; includeSubDomains")
-            }),
-        );
-    }
-
-    // Referrer-Policy
-    let referrer_policy = generate_referrer_policy(&config);
-    response.headers_mut().insert(
-        HeaderName::from_static("referrer-policy"),
-        HeaderValue::from_str(&referrer_policy)
-            .unwrap_or_else(|_| HeaderValue::from_static("strict-origin-when-cross-origin")),
-    );
-
-    // Permissions-Policy
-    let permissions_policy = generate_permissions_policy(&config);
-    response.headers_mut().insert(
-        HeaderName::from_static("permissions-policy"),
-        HeaderValue::from_str(&permissions_policy).unwrap_or_else(|_| {
-            HeaderValue::from_static("geolocation=(), camera=(), microphone=()")
-        }),
-    );
-
+    apply_security_headers(&mut response, &config, &nonce, &path);
     response
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
     use std::str::FromStr;
+
+    // Serialize tests that mutate process environment variables.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn test_csp_mode_from_str() {
@@ -554,6 +605,7 @@ mod tests {
         assert!(csp.contains("script-src 'self'"));
         assert!(csp.contains("'nonce-test-nonce'"));
         assert!(csp.contains("frame-ancestors 'none'"));
+        assert!(!csp.contains("unpkg.com"));
     }
 
     #[test]
@@ -739,5 +791,123 @@ mod tests {
         let csp = generate_csp(&config, "test-nonce");
         assert!(csp.contains("unsafe-inline"));
         assert!(csp.contains("frame-ancestors https://example.com https://trusted.com"));
+    }
+
+    #[test]
+    fn test_hsts_enabled_by_default_in_production() {
+        let _guard = ENV_LOCK.lock();
+        std::env::remove_var("SECURITY_HSTS_ENABLED");
+
+        let config = SecurityHeadersConfig::for_env(Env::Production);
+        assert!(config.hsts_enabled);
+    }
+
+    #[test]
+    fn test_hsts_disabled_by_default_in_development() {
+        let _guard = ENV_LOCK.lock();
+        std::env::remove_var("SECURITY_HSTS_ENABLED");
+
+        let config = SecurityHeadersConfig::for_env(Env::Development);
+        assert!(!config.hsts_enabled);
+    }
+
+    #[test]
+    fn test_hsts_env_override_can_disable_in_production() {
+        let _guard = ENV_LOCK.lock();
+        std::env::set_var("SECURITY_HSTS_ENABLED", "false");
+
+        let config = SecurityHeadersConfig::for_env(Env::Production);
+        assert!(!config.hsts_enabled);
+
+        std::env::remove_var("SECURITY_HSTS_ENABLED");
+    }
+
+    fn response_with_content_type(content_type: &str) -> Response {
+        let mut response = Response::new(Body::empty());
+        response.headers_mut().insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_str(content_type).unwrap(),
+        );
+        response
+    }
+
+    #[test]
+    fn test_x_xss_protection_is_zero() {
+        let config = SecurityHeadersConfig::default();
+        let mut response = response_with_content_type("text/html; charset=utf-8");
+        apply_security_headers(&mut response, &config, "test-nonce", "/");
+        assert_eq!(response.headers().get("x-xss-protection").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_cache_control_for_dynamic_html() {
+        let config = SecurityHeadersConfig::default();
+        let mut response = response_with_content_type("text/html; charset=utf-8");
+        apply_security_headers(&mut response, &config, "test-nonce", "/");
+        assert_eq!(
+            response.headers().get("cache-control").unwrap(),
+            "no-store, private"
+        );
+    }
+
+    #[test]
+    fn test_cache_control_not_set_for_static() {
+        let config = SecurityHeadersConfig::default();
+        let mut response = response_with_content_type("text/html; charset=utf-8");
+        apply_security_headers(&mut response, &config, "test-nonce", "/static/index.html");
+        assert!(response.headers().get("cache-control").is_none());
+    }
+
+    #[test]
+    fn test_cache_control_not_set_for_non_html() {
+        let config = SecurityHeadersConfig::default();
+        let mut response = response_with_content_type("application/json");
+        apply_security_headers(&mut response, &config, "test-nonce", "/health");
+        assert!(response.headers().get("cache-control").is_none());
+    }
+
+    #[test]
+    fn test_csp_includes_nonce_and_excludes_unpkg() {
+        let config = SecurityHeadersConfig::default();
+        let mut response = Response::new(Body::empty());
+        apply_security_headers(&mut response, &config, "test-nonce", "/");
+        let csp = response
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(csp.contains("'nonce-test-nonce'"));
+        assert!(!csp.contains("unpkg.com"));
+    }
+
+    #[test]
+    fn test_hsts_header_only_when_enabled() {
+        let enabled_config = SecurityHeadersConfig {
+            hsts_enabled: true,
+            ..Default::default()
+        };
+        let disabled_config = SecurityHeadersConfig::default();
+
+        let mut enabled_response = Response::new(Body::empty());
+        apply_security_headers(&mut enabled_response, &enabled_config, "test-nonce", "/");
+        assert!(enabled_response
+            .headers()
+            .get("strict-transport-security")
+            .is_some());
+
+        let mut disabled_response = Response::new(Body::empty());
+        apply_security_headers(&mut disabled_response, &disabled_config, "test-nonce", "/");
+        assert!(disabled_response
+            .headers()
+            .get("strict-transport-security")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_current_csp_nonce_from_task_local() {
+        let nonce = CspNonce("test-nonce".to_string());
+        let result = CSP_NONCE.scope(nonce, async { current_csp_nonce() }).await;
+        assert_eq!(result, "test-nonce");
     }
 }
