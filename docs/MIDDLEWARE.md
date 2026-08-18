@@ -8,35 +8,41 @@ The middleware stack provides cross-cutting concerns for HTTP requests, includin
 
 ## Middleware Stack
 
-Middleware is applied in `src/middleware/mod.rs` in this order:
+Path normalization is applied as a top-level service around the router in `src/lib.rs::build_handler` before the remaining middleware stack. The rest of the stack is applied in `src/middleware/mod.rs` in this order:
 
-1. **Path Normalization** - Normalize request paths
-2. **Real IP Extraction** - Extract client IP from proxy headers
-3. **Request Logging** - Structured logging with tracing
-4. **Error Handler** - Centralized error handling
-5. **Session Management** - Cookie-based session middleware
-6. **Panic Catcher** - Catch panics and convert to 500 responses
-7. **User Agent Validation** - Block requests without User-Agent
-8. **Security Headers** - CSP, HSTS, X-Frame-Options, etc.
-9. **Timeout** - Request timeout (30s default)
-10. **Request Body Timeout** - Request body timeout (30s default)
-11. **Compression** - Gzip compression
-12. **Metrics** - Prometheus metrics (feature-gated)
-13. **Debug Requests** - Development debug logging (conditional)
+1. **Real IP Extraction** - Extract client IP from proxy headers
+2. **Request Logging** - Structured logging with tracing
+3. **Error Handler** - Centralized error handling
+4. **Session Management** - Cookie-based session middleware
+5. **Panic Catcher** - Catch panics and convert to 500 responses
+6. **User Agent Validation** - Block requests without User-Agent
+7. **Security Headers** - CSP, HSTS, X-Frame-Options, etc.
+8. **Timeout** - Request timeout (30s default)
+9. **Request Body Timeout** - Request body timeout (30s default)
+10. **Compression** - Gzip compression
+11. **Metrics** - Prometheus metrics (feature-gated)
+12. **Debug Requests** - Development debug logging (conditional)
 
 ## Individual Middleware
 
 ### Path Normalization
 
-**Purpose:** Normalize request paths by trimming trailing slashes.
+**Purpose:** Normalize request paths before routing.
 
-**Implementation:** `tower_http::normalize_path::NormalizePathLayer`
+**Implementation:** `src/middleware/normalize_path.rs`
 
-**Configuration:** Applied automatically to all routes.
+**Configuration:** Applied as a top-level service around the router in `src/lib.rs::build_handler`.
+
+**Behavior:**
+- Collapses multiple consecutive slashes (`//` → `/`).
+- Removes `.` segments.
+- Resolves `..` segments and rejects paths that escape the root with `400 Bad Request`.
+- Trims trailing slashes (except for the root path `/`).
 
 **Example:**
 ```
-/api/posts/  →  /api/posts
+/api//posts/  →  /api/posts
+/foo/../bar  →  /bar
 ```
 
 ### Real IP Extraction
