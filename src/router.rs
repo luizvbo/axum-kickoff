@@ -18,6 +18,7 @@ use crate::controllers::post::{
     create_post, delete_post, list_posts, publish_post, show_post, unpublish_post, update_post,
 };
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
+use crate::middleware::security_headers::current_csp_nonce;
 use crate::middleware::{csrf_protect, get_or_create_csrf_token, require_auth, SessionExtension};
 use crate::models::User;
 use crate::Env;
@@ -205,7 +206,13 @@ where
     T: Template,
 {
     fn into_response(self) -> Response {
-        match self.0.render() {
+        // The CSP nonce is set as a task-local by the security headers middleware.
+        // Making it available as a runtime value lets every template use `csp_nonce`
+        // without requiring a dedicated struct field.
+        let csp_nonce = current_csp_nonce();
+        let values = [("csp_nonce", &csp_nonce as &dyn std::any::Any)];
+
+        match self.0.render_with_values(&values) {
             Ok(html) => Html(html).into_response(),
             Err(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -217,4 +224,15 @@ where
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_html_template_renders_with_csp_nonce() {
+        let template = ServerTimeTemplate {
+            time: "now".to_string(),
+        };
+        let response = HtmlTemplate(template).into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+}
