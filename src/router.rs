@@ -1,5 +1,6 @@
 use askama::Template;
-use axum::extract::{Extension, State};
+use axum::extract::{FromRequestParts, State};
+use axum::http::request::Parts;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::Router;
@@ -19,8 +20,11 @@ use crate::controllers::post::{
 };
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
 use crate::middleware::security_headers::current_csp_nonce;
-use crate::middleware::{csrf_protect, get_or_create_csrf_token, require_auth, SessionExtension};
+use crate::middleware::{
+    csrf_protect, get_or_create_csrf_token, require_auth, CspNonce, SessionExtension,
+};
 use crate::models::User;
+use crate::util::errors::BoxedAppError;
 use crate::Env;
 
 #[derive(OpenApi)]
@@ -66,6 +70,38 @@ use crate::Env;
     )
 )]
 struct ApiDoc;
+
+/// Common context passed to every full-page and partial HTML template.
+#[derive(Clone, Debug)]
+pub struct PageContext {
+    /// CSRF token for the current session.
+    pub csrf_token: String,
+    /// CSP nonce for the current request.
+    pub csp_nonce: String,
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for PageContext {
+    type Rejection = BoxedAppError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let csp_nonce = parts
+            .extensions
+            .get::<CspNonce>()
+            .map(|n| n.0.clone())
+            .unwrap_or_else(current_csp_nonce);
+
+        let csrf_token = parts
+            .extensions
+            .get::<SessionExtension>()
+            .map(get_or_create_csrf_token)
+            .unwrap_or_default();
+
+        Ok(PageContext {
+            csrf_token,
+            csp_nonce,
+        })
+    }
+}
 
 pub fn build_axum_router(state: AppState) -> Router<()> {
     // Public HTML / example router - no authentication required
@@ -144,9 +180,8 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .merge(api_router)
 }
 
-async fn home(Extension(session): Extension<SessionExtension>) -> impl IntoResponse {
-    let csrf_token = get_or_create_csrf_token(&session);
-    let template = IndexTemplate { csrf_token };
+async fn home(ctx: PageContext) -> impl IntoResponse {
+    let template = IndexTemplate { ctx };
     HtmlTemplate(template)
 }
 
@@ -180,24 +215,25 @@ async fn debug_info() -> &'static str {
     "Debug mode enabled"
 }
 
-async fn server_time() -> impl IntoResponse {
+async fn server_time(ctx: PageContext) -> impl IntoResponse {
     let time = jiff::Timestamp::now()
         .strftime("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    let template = ServerTimeTemplate { time };
+    let template = ServerTimeTemplate { ctx, time };
     HtmlTemplate(template)
 }
 
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
-    #[allow(dead_code)]
-    csrf_token: String,
+    ctx: PageContext,
 }
 
 #[derive(Template)]
 #[template(path = "server_time.html")]
+#[allow(dead_code)]
 struct ServerTimeTemplate {
+    ctx: PageContext,
     time: String,
 }
 
@@ -208,13 +244,7 @@ where
     T: Template,
 {
     fn into_response(self) -> Response {
-        // The CSP nonce is set as a task-local by the security headers middleware.
-        // Making it available as a runtime value lets every template use `csp_nonce`
-        // without requiring a dedicated struct field.
-        let csp_nonce = current_csp_nonce();
-        let values = [("csp_nonce", &csp_nonce as &dyn std::any::Any)];
-
-        match self.0.render_with_values(&values) {
+        match self.0.render() {
             Ok(html) => Html(html).into_response(),
             Err(err) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -230,8 +260,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_html_template_renders_with_csp_nonce() {
+    fn test_html_template_renders_with_page_context() {
         let template = ServerTimeTemplate {
+            ctx: PageContext {
+                csrf_token: "test-csrf".into(),
+                csp_nonce: "test-nonce".into(),
+            },
             time: "now".to_string(),
         };
         let response = HtmlTemplate(template).into_response();

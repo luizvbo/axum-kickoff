@@ -4,6 +4,7 @@
 //! the GitHub OAuth flow works correctly.
 
 use crate::tests::{AnonymousUser, CookieUser, RequestHelper, TestApp};
+use crate::Env;
 use http::StatusCode;
 
 #[tokio::test]
@@ -208,7 +209,8 @@ async fn forged_unsigned_session_cookie_is_rejected() {
     let cookie = cookie::Cookie::build(("axum_kickoff_session", encoded))
         .path("/")
         .http_only(true)
-        .same_site(cookie::SameSite::Lax)
+        .same_site(cookie::SameSite::Strict)
+        .max_age(cookie::time::Duration::days(90))
         .build();
 
     // Update the anonymous user with the forged unsigned cookie
@@ -221,4 +223,70 @@ async fn forged_unsigned_session_cookie_is_rejected() {
 
     // Should return 401 because the unsigned cookie is rejected
     response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn session_cookie_has_required_security_flags_in_production() {
+    let mut config = TestApp::test_config();
+    config.base.env = Env::Production;
+    let app = TestApp::with_config(config).await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    response.assert_status(StatusCode::SEE_OTHER);
+
+    let set_cookie = response
+        .headers()
+        .get("set-cookie")
+        .and_then(|h| h.to_str().ok())
+        .expect("No Set-Cookie header");
+    assert!(
+        set_cookie.contains("HttpOnly"),
+        "Expected HttpOnly: {set_cookie}"
+    );
+    assert!(
+        set_cookie.contains("Secure"),
+        "Expected Secure: {set_cookie}"
+    );
+    assert!(
+        set_cookie.contains("SameSite=Strict"),
+        "Expected SameSite=Strict: {set_cookie}"
+    );
+    assert!(
+        set_cookie.contains("Max-Age=7776000"),
+        "Expected Max-Age=7776000: {set_cookie}"
+    );
+}
+
+#[tokio::test]
+async fn session_cookie_omits_secure_in_development() {
+    let mut config = TestApp::test_config();
+    config.base.env = Env::Development;
+    let app = TestApp::with_config(config).await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    response.assert_status(StatusCode::SEE_OTHER);
+
+    let set_cookie = response
+        .headers()
+        .get("set-cookie")
+        .and_then(|h| h.to_str().ok())
+        .expect("No Set-Cookie header");
+    assert!(
+        set_cookie.contains("HttpOnly"),
+        "Expected HttpOnly: {set_cookie}"
+    );
+    assert!(
+        !set_cookie.contains("Secure"),
+        "Should not contain Secure in development: {set_cookie}"
+    );
+    assert!(
+        set_cookie.contains("SameSite=Strict"),
+        "Expected SameSite=Strict: {set_cookie}"
+    );
+    assert!(
+        set_cookie.contains("Max-Age=7776000"),
+        "Expected Max-Age=7776000: {set_cookie}"
+    );
 }

@@ -8,12 +8,22 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::cookie::SignedCookieJar;
 use base64::{engine::general_purpose, Engine};
+use cookie::time::Duration as CookieDuration;
 use cookie::{Cookie, Key};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub static COOKIE_NAME: &str = "axum_kickoff_session";
+
+/// State passed to the session middleware.
+#[derive(Clone)]
+pub struct SessionState {
+    /// Key used to sign and verify session cookies.
+    pub key: Key,
+    /// Whether to set the `Secure` flag on session cookies.
+    pub secure: bool,
+}
 
 #[derive(Clone)]
 pub struct SessionExtension(Arc<RwLock<Session>>);
@@ -101,9 +111,9 @@ pub fn encode(h: &HashMap<String, String>) -> String {
 /// Extracts the session cookie from the request, verifies its signature,
 /// decodes it, and provides a SessionExtension to handlers. After the handler
 /// runs, if the session was modified, it encodes it back to a signed cookie.
-pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next) -> Response {
+pub async fn middleware(State(state): State<SessionState>, req: Request, next: Next) -> Response {
     // Create SignedCookieJar from request headers for automatic signature verification
-    let jar = SignedCookieJar::from_headers(req.headers(), session_key.clone());
+    let jar = SignedCookieJar::from_headers(req.headers(), state.key.clone());
 
     // Decode session cookie - signature is automatically verified by SignedCookieJar
     // If signature is invalid, get() returns None
@@ -127,15 +137,21 @@ pub async fn middleware(State(session_key): State<Key>, req: Request, next: Next
         // Encode the session data
         let encoded = encode(&session.data);
 
-        // Create signed cookie with encoded value
-        let cookie = Cookie::build((COOKIE_NAME, encoded))
+        // Build the hardened session cookie.
+        // `Secure` is enabled in production or when SESSION_COOKIE_SECURE is set,
+        // and disabled in development by default.
+        let mut cookie = Cookie::build((COOKIE_NAME, encoded))
             .path("/")
             .http_only(true)
-            .same_site(cookie::SameSite::Lax)
-            .build();
+            .same_site(cookie::SameSite::Strict)
+            .max_age(CookieDuration::days(90));
+
+        if state.secure {
+            cookie = cookie.secure(true);
+        }
 
         // Return updated jar with response - SignedCookieJar implements IntoResponse
-        (jar.add(cookie), response).into_response()
+        (jar.add(cookie.build()), response).into_response()
     } else {
         response
     }

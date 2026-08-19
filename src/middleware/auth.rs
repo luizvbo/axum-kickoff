@@ -13,9 +13,9 @@ use axum::response::{IntoResponse, Redirect, Response};
 use crate::app::AppState;
 use crate::middleware::api_token::ApiTokenAuth;
 use crate::middleware::SessionExtension;
-use crate::models::ApiToken;
+use crate::models::{ApiToken, User};
 use crate::util::auth::Authentication;
-use crate::util::errors::{unauthorized, BoxedAppError};
+use crate::util::errors::{forbidden, unauthorized, BoxedAppError};
 use crate::util::HashedToken;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
@@ -134,12 +134,30 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
         return next.run(req).await;
     }
 
-    // Try session first so we have the auth context available for route extractors
-    if let Some(session) = req.extensions().get::<SessionExtension>() {
-        if let Some(user_id) = session.get("user_id").and_then(|s| s.parse::<u64>().ok()) {
-            req.extensions_mut().insert(CurrentUserId(user_id));
-            req.extensions_mut()
-                .insert(Authentication::Cookie { user_id });
+    // Try session first so we have the auth context available for route extractors.
+    // Load the user and reject the request if the account is currently locked.
+    if let Some(user_id) = req
+        .extensions()
+        .get::<SessionExtension>()
+        .and_then(|s| s.get("user_id"))
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        let mut db = state.0.database.db_clone();
+        match User::get_by_id(&mut db, user_id).await {
+            Ok(user) if user.is_locked() => {
+                let reason = user
+                    .account_lock_reason
+                    .unwrap_or_else(|| "Account is locked".into());
+                return forbidden(reason).into_response();
+            }
+            Ok(_) => {
+                req.extensions_mut().insert(CurrentUserId(user_id));
+                req.extensions_mut()
+                    .insert(Authentication::Cookie { user_id });
+            }
+            Err(_) => {
+                // Invalid or stale session user; treat as not authenticated.
+            }
         }
     }
 
@@ -194,6 +212,14 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
 
     if api_token.revoked || !api_token.is_valid() {
         return Err(StatusCode::UNAUTHORIZED.into_response());
+    }
+
+    // Verify the owning user is not locked before treating the token as valid.
+    let user = User::get_by_id(&mut db, api_token.user_id)
+        .await
+        .map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
+    if user.is_locked() {
+        return Err(StatusCode::FORBIDDEN.into_response());
     }
 
     // Update last_used_at timestamp
