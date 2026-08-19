@@ -7,7 +7,6 @@ use std::sync::Arc;
 use toasty_cli::{Config as ToastyConfig, ToastyCli};
 use tokio::net::TcpListener;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const CORE_THREADS: usize = 4;
 
@@ -39,20 +38,22 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
     let cli = Cli::parse();
 
     match cli.command {
         Command::Server => {
             let config = axum_kickoff::config::Server::from_environment()?;
+
+            // Initialize Sentry before the middleware stack so panics are
+            // captured. The returned guard must be kept alive.
+            #[cfg(feature = "sentry")]
+            let _sentry_guard = axum_kickoff::tracing::init_sentry(config.sentry_dsn.as_ref());
+
+            // Set up the global tracing subscriber (pretty in dev/test, JSON
+            // in production). When Sentry is enabled, this also attaches the
+            // Sentry tracing layer. The LOG_FORMAT env var can override the
+            // default for the environment.
+            axum_kickoff::tracing::init_tracing_with_format(config.env(), config.log_format);
 
             let mut builder = tokio::runtime::Builder::new_multi_thread();
             builder.enable_all();

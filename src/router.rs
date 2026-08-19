@@ -124,7 +124,9 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
     };
 
     #[cfg(feature = "metrics")]
-    let api_router = api_router.route("/metrics", get(crate::metrics::metrics_handler));
+    let api_router = api_router
+        .route("/metrics", get(crate::metrics::metrics_handler))
+        .route("/api/private/metrics", get(crate::metrics::metrics_handler));
 
     let api_router = api_router
         .fallback(async |method: Method| match method {
