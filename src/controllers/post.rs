@@ -14,7 +14,7 @@ use crate::middleware::CurrentUserId;
 use crate::models::token::ActionScope;
 use crate::models::Post;
 use crate::util::auth::{AuthCheck, Authentication};
-use crate::util::errors::{bad_request, internal_error, not_found, AppResult};
+use crate::util::errors::{bad_request, db_error, not_found, AppResult};
 use crate::util::ApiResponse;
 
 /// Request body for creating a new post
@@ -100,7 +100,7 @@ pub async fn list_posts(
         .offset(offset)
         .exec(&mut db)
         .await
-        .map_err(internal_error)?;
+        .map_err(db_error)?;
 
     let data: Vec<PostResponse> = posts
         .into_iter()
@@ -148,7 +148,7 @@ pub async fn show_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(internal_error)?
+        .map_err(db_error)?
         .ok_or_else(not_found)?;
 
     let post_response = PostResponse {
@@ -210,7 +210,7 @@ pub async fn create_post(
     })
     .exec(&mut db)
     .await
-    .map_err(internal_error)?;
+    .map_err(db_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -270,7 +270,7 @@ pub async fn update_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(internal_error)?
+        .map_err(db_error)?
         .ok_or_else(not_found)?;
 
     let new_title = req.title.clone();
@@ -284,7 +284,7 @@ pub async fn update_post(
     })
     .exec(&mut db)
     .await
-    .map_err(internal_error)?;
+    .map_err(db_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -332,10 +332,10 @@ pub async fn delete_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(internal_error)?
+        .map_err(db_error)?
         .ok_or_else(not_found)?;
 
-    post.delete().exec(&mut db).await.map_err(internal_error)?;
+    post.delete().exec(&mut db).await.map_err(db_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -374,7 +374,7 @@ pub async fn publish_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(internal_error)?
+        .map_err(db_error)?
         .ok_or_else(not_found)?;
 
     let new_published = true;
@@ -386,7 +386,7 @@ pub async fn publish_post(
     })
     .exec(&mut db)
     .await
-    .map_err(internal_error)?;
+    .map_err(db_error)?;
 
     let response = PostResponse {
         id: post.id,
@@ -434,7 +434,7 @@ pub async fn unpublish_post(
         .first()
         .exec(&mut db)
         .await
-        .map_err(internal_error)?
+        .map_err(db_error)?
         .ok_or_else(not_found)?;
 
     let new_published = false;
@@ -446,7 +446,7 @@ pub async fn unpublish_post(
     })
     .exec(&mut db)
     .await
-    .map_err(internal_error)?;
+    .map_err(db_error)?;
 
     let response = PostResponse {
         id: post.id,

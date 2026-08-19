@@ -15,7 +15,7 @@ use crate::middleware::CurrentUserId;
 use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
 use crate::util::auth::{AuthCheck, Authentication};
-use crate::util::errors::{bad_request, internal_error, AppResult};
+use crate::util::errors::{bad_request, db_error, AppResult};
 use crate::util::ApiResponse;
 use crate::util::PlainToken;
 
@@ -204,7 +204,7 @@ pub async fn create_token(
     })
     .exec(&mut db)
     .await
-    .map_err(internal_error)?;
+    .map_err(db_error)?;
 
     // Convert scopes back to strings for response
     let resource_scopes_response = validated.resource_scopes.map(|scopes| {
@@ -300,7 +300,7 @@ pub async fn list_tokens(
         .offset(offset)
         .exec(&mut db)
         .await
-        .map_err(internal_error)?;
+        .map_err(db_error)?;
 
     let data: Vec<TokenListItem> = tokens
         .into_iter()
@@ -373,7 +373,7 @@ pub async fn revoke_token(
         .first()
         .exec(&mut db)
         .await
-        .map_err(internal_error)?
+        .map_err(db_error)?
         .ok_or_else(crate::util::errors::not_found)?;
 
     // Mark the token as revoked using toasty::update!
@@ -381,7 +381,7 @@ pub async fn revoke_token(
     toasty::update!(token { revoked: true })
         .exec(&mut db)
         .await
-        .map_err(internal_error)?;
+        .map_err(db_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }

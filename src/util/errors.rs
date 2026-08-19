@@ -11,13 +11,18 @@
 //! - Use domain-specific error types (AuthError, ValidationError, NotFoundError) for structured errors
 //! - Use `util::Error` (from thiserror) for non-HTTP errors
 
-use axum::response::{IntoResponse, Response};
+use askama::Template;
+use axum::response::{Html, IntoResponse, Response};
 use axum::Json;
-use http::StatusCode;
+use http::{header, HeaderMap, HeaderValue, StatusCode};
 use serde::Serialize;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::fmt;
+use tokio::task_local;
+
+use crate::middleware::security_headers::current_csp_nonce;
+use crate::router::PageContext;
 
 /// Type alias for boxed app errors
 pub type BoxedAppError = Box<dyn AppError>;
@@ -25,10 +30,66 @@ pub type BoxedAppError = Box<dyn AppError>;
 /// Type alias for results that can be converted to HTTP responses
 pub type AppResult<T> = Result<T, BoxedAppError>;
 
+/// Describes how the client would like error and HTML responses to be formatted.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RequestFormat {
+    /// Whether the request was made by HTMX (`HX-Request: true`).
+    pub is_hx: bool,
+    /// Whether the client accepts HTML (`Accept` contains `text/html`).
+    pub accept_html: bool,
+}
+
+impl RequestFormat {
+    /// Derive the preferred response format from the request headers.
+    pub fn from_headers(headers: &HeaderMap) -> Self {
+        let is_hx = headers
+            .get("HX-Request")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v == "true");
+
+        let accept_html = headers
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| {
+                v.split(',').any(|part| {
+                    let mut parts = part.split(';');
+                    let mime = parts.next().unwrap_or("").trim();
+                    mime == "text/html"
+                })
+            });
+
+        Self { is_hx, accept_html }
+    }
+}
+
+task_local! {
+    /// The preferred response format for the current request.
+    pub(crate) static REQUEST_FORMAT: RequestFormat;
+}
+
+/// Run a future with the given request format set as a task-local so that
+/// `AppError::response` and `HtmlTemplate` can access request headers.
+pub(crate) async fn with_request_format<F>(format: RequestFormat, f: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    REQUEST_FORMAT.scope(format, f).await
+}
+
+/// Return the preferred response format for the current request.
+pub(crate) fn request_format() -> RequestFormat {
+    REQUEST_FORMAT.try_with(|f| *f).ok().unwrap_or_default()
+}
+
+/// Return `true` if the current request was made by HTMX.
+pub(crate) fn is_hx_request() -> bool {
+    request_format().is_hx
+}
+
 /// Trait for errors that can be converted to HTTP responses
 ///
 /// This trait should be implemented for domain-specific errors that need
-/// to be returned to the client as JSON responses.
+/// to be returned to the client as JSON, HTML, or HTMX fragment responses.
 pub trait AppError: Send + fmt::Display + fmt::Debug + 'static {
     /// Generate an HTTP response for the error
     ///
@@ -66,12 +127,79 @@ impl ErrorResponse {
     }
 }
 
-/// Return an error with status 400 and the provided description as JSON
+/// HTML error page template.
+#[derive(Template)]
+#[template(path = "error.html")]
+struct HtmlError {
+    ctx: PageContext,
+    status: u16,
+    message: String,
+}
+
+/// Build a response for an error, choosing between HTMX fragments, full HTML
+/// pages, and JSON based on the request headers.
+fn build_error_response(
+    status: StatusCode,
+    detail: impl Into<String>,
+    error_type: Option<&str>,
+) -> Response {
+    let format = request_format();
+    let detail = detail.into();
+
+    if format.is_hx {
+        let escaped = escape_html(&detail);
+        let body = format!(r#"<div class="error">{}</div>"#, escaped);
+        let mut response = (status, Html(body)).into_response();
+        response
+            .headers_mut()
+            .insert("HX-Reswap", HeaderValue::from_static("none"));
+        return response;
+    }
+
+    if format.accept_html {
+        let ctx = PageContext {
+            csrf_token: String::new(),
+            csp_nonce: current_csp_nonce(),
+        };
+        let html = HtmlError {
+            ctx,
+            status: status.as_u16(),
+            message: detail.to_string(),
+        }
+        .render()
+        .unwrap_or_else(|_| detail.to_string());
+
+        let mut response = (status, Html(html)).into_response();
+        response.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        return response;
+    }
+
+    let error_response = match error_type {
+        Some(t) => ErrorResponse::with_type(detail, t),
+        None => ErrorResponse::new(detail),
+    };
+    (status, Json(error_response)).into_response()
+}
+
+/// Minimal HTML escaping for inline error fragments.
+fn escape_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
+/// Return an error with status 400 and the provided description
 pub fn bad_request(detail: impl Into<Cow<'static, str>>) -> Box<dyn AppError> {
     Box::new(HttpError::new(StatusCode::BAD_REQUEST, detail))
 }
 
-/// Return an error with status 403 and the provided description as JSON
+/// Return an error with status 403 and the provided description
 pub fn forbidden(detail: impl Into<Cow<'static, str>>) -> Box<dyn AppError> {
     Box::new(HttpError::new(StatusCode::FORBIDDEN, detail))
 }
@@ -86,7 +214,7 @@ pub fn unauthorized(detail: impl Into<Cow<'static, str>>) -> Box<dyn AppError> {
     Box::new(HttpError::new(StatusCode::UNAUTHORIZED, detail))
 }
 
-/// Return an error with status 500 and the provided description as JSON
+/// Return an error with status 500 and the provided description
 pub fn server_error(detail: impl Into<Cow<'static, str>>) -> Box<dyn AppError> {
     Box::new(HttpError::new(StatusCode::INTERNAL_SERVER_ERROR, detail))
 }
@@ -123,10 +251,12 @@ impl fmt::Display for RateLimitAppError {
 
 impl AppError for RateLimitAppError {
     fn response(&self) -> Response {
-        let error_response =
-            ErrorResponse::with_type(self.detail.to_string(), "rate_limit_exceeded");
-        let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(error_response)).into_response();
-        if let Ok(value) = http::HeaderValue::from_str(&self.retry_after_secs.to_string()) {
+        let mut response = build_error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            self.detail.to_string(),
+            Some("rate_limit_exceeded"),
+        );
+        if let Ok(value) = HeaderValue::from_str(&self.retry_after_secs.to_string()) {
             response.headers_mut().insert("retry-after", value);
         }
         response
@@ -165,8 +295,7 @@ impl fmt::Display for HttpError {
 
 impl AppError for HttpError {
     fn response(&self) -> Response {
-        let error_response = ErrorResponse::new(self.detail.to_string());
-        (self.status, Json(error_response)).into_response()
+        build_error_response(self.status, self.detail.clone(), None)
     }
 }
 
@@ -188,9 +317,11 @@ impl IntoResponse for BoxedAppError {
 
 impl<E: std::error::Error + Send + 'static> AppError for E {
     fn response(&self) -> Response {
-        // Return a generic server error in JSON format to avoid exposing internal error details
-        let error_response = ErrorResponse::new("Internal server error");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+        build_error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error",
+            None,
+        )
     }
 }
 
@@ -272,8 +403,11 @@ impl fmt::Display for AuthError {
 
 impl AppError for AuthError {
     fn response(&self) -> Response {
-        let error_response = ErrorResponse::with_type(self.detail(), self.error_type());
-        (self.status(), Json(error_response)).into_response()
+        build_error_response(
+            self.status(),
+            self.detail().to_string(),
+            Some(self.error_type()),
+        )
     }
 }
 
@@ -362,8 +496,11 @@ impl fmt::Display for ValidationError {
 
 impl AppError for ValidationError {
     fn response(&self) -> Response {
-        let error_response = ErrorResponse::with_type(self.detail(), self.error_type());
-        (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        build_error_response(
+            StatusCode::BAD_REQUEST,
+            self.detail(),
+            Some(self.error_type()),
+        )
     }
 }
 
@@ -438,8 +575,11 @@ impl fmt::Display for NotFoundError {
 
 impl AppError for NotFoundError {
     fn response(&self) -> Response {
-        let error_response = ErrorResponse::with_type(self.detail(), self.error_type());
-        (StatusCode::NOT_FOUND, Json(error_response)).into_response()
+        build_error_response(
+            StatusCode::NOT_FOUND,
+            self.detail(),
+            Some(self.error_type()),
+        )
     }
 }
 
@@ -511,6 +651,24 @@ pub fn not_found_record(
     Box::new(NotFoundError::record_not_found(resource, identifier))
 }
 
+/// Map a Toasty database error to an appropriate HTTP error.
+///
+/// - Record-not-found / row-missing -> 404
+/// - Pool timeout / acquire error -> 503
+/// - Other DB errors -> 500 (and Sentry if enabled, via `tracing::error`)
+pub fn db_error(error: toasty::Error) -> Box<dyn AppError> {
+    if error.is_record_not_found() || error.is_invalid_record_count() {
+        return not_found();
+    }
+
+    if error.is_connection_pool() || error.is_connection_lost() {
+        return service_unavailable();
+    }
+
+    tracing::error!("Database error: {}", error);
+    server_error("Internal server error")
+}
+
 /// Log an error internally and return a generic 500 error to the client.
 ///
 /// This prevents leaking internal error details (e.g. database errors) to
@@ -522,9 +680,11 @@ pub fn internal_error<E: std::fmt::Display>(error: E) -> Box<dyn AppError> {
 
 /// Convert a standard error to an AppError
 ///
-/// This is useful for converting errors from external libraries (like database
-/// errors) into application-specific errors that can be returned to clients.
+/// This is useful for converting errors from external libraries into
+/// application-specific errors that can be returned to clients.
 pub fn convert_error<E: std::error::Error + Send + Sync + 'static>(error: E) -> Box<dyn AppError> {
+    // Note: Toasty database errors should be mapped with `db_error` so that
+    // record-not-found and pool errors are converted to the correct status.
     internal_error(error)
 }
 
@@ -719,5 +879,29 @@ mod tests {
         let error = not_found_user("user123");
         let response = error.response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_toasty_error_mapping() {
+        let record_not_found = toasty::Error::record_not_found("table=users key={id: 123}");
+        assert_eq!(
+            db_error(record_not_found).response().status(),
+            StatusCode::NOT_FOUND
+        );
+
+        let pool_error = toasty::Error::connection_pool(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "pool exhausted",
+        ));
+        assert_eq!(
+            db_error(pool_error).response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let other = toasty::Error::invalid_schema("unknown column");
+        assert_eq!(
+            db_error(other).response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }
