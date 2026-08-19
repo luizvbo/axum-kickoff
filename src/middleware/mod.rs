@@ -2,13 +2,14 @@ use axum::extract::State;
 use axum::middleware::from_fn;
 use axum::middleware::from_fn_with_state;
 use axum::Router;
-use http::StatusCode;
-use std::time::Duration;
+use http::{header, StatusCode};
+use sha2::{Digest, Sha256};
+use std::time::{Duration, Instant};
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
-use tracing::Instrument;
+use tracing::{info, info_span, Instrument};
 
 use crate::app::AppState;
 use crate::Env;
@@ -70,14 +71,15 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
             self::csrf::verify_origin,
         ))
         // Core auth + rate limiting stack (innermost first):
-        // rate_limit -> authenticate -> block_traffic -> real_ip -> ensure_token -> session
+        // rate_limit -> authenticate -> block_traffic -> ensure_token -> session -> log_request
+        // real_ip and request_id run outside this group so they are available to middleware below.
         .layer(from_fn_with_state(state.clone(), self::rate_limit))
         .layer(from_fn_with_state(state.clone(), self::authenticate))
         .layer(from_fn_with_state(state.clone(), self::block_traffic))
-        .layer(from_fn(self::real_ip::middleware))
         .layer(from_fn(self::csrf::ensure_token))
         .layer(from_fn_with_state(session_key, self::session_middleware))
         .layer(from_fn(log_request))
+        .layer(from_fn_with_state(state.clone(), self::real_ip::middleware))
         .layer(from_fn(self::error_handler::middleware))
         .layer(from_fn(self::request_id::middleware))
         .layer(CatchPanicLayer::new())
@@ -168,27 +170,64 @@ async fn log_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let method = req.method().clone();
-    let uri = req.uri().clone();
+    let uri = req.uri().path().to_string();
     let user_agent = req
         .headers()
-        .get("user-agent")
+        .get(header::USER_AGENT)
         .and_then(|h| h.to_str().ok())
-        .unwrap_or("<unknown>");
+        .unwrap_or("<unknown>")
+        .to_string();
 
-    // Create a tracing span for structured logging
-    let span = tracing::info_span!(
-        "http_request",
-        method = %method,
-        uri = %uri,
-        user_agent = %user_agent,
-    );
+    let request_id = req
+        .extensions()
+        .get::<self::request_id::RequestId>()
+        .map(|r| r.0.clone())
+        .unwrap_or_else(|| "<unknown>".to_string());
+
+    let client_ip = req
+        .extensions()
+        .get::<self::real_ip::RealIp>()
+        .map(|r| r.0.to_string())
+        .unwrap_or_else(|| "<unknown>".to_string());
+
+    let hashed_authorization = hash_header(req.headers(), header::AUTHORIZATION);
+    let hashed_cookie = hash_header(req.headers(), header::COOKIE);
+
+    let span = info_span!("http_request");
 
     async move {
-        tracing::info!("{} {}", method, uri);
-        next.run(req).await
+        let start = Instant::now();
+        let response = next.run(req).await;
+        let duration = start.elapsed();
+        let status = response.status();
+
+        info!(
+            target: "http",
+            {
+                http.method = %method,
+                http.url = %uri,
+                http.status_code = status.as_u16(),
+                duration_ms = duration.as_millis() as u64,
+                http.request.id = %request_id,
+                network.client.ip = %client_ip,
+                http.user_agent = %user_agent,
+                http.request.headers.hashed_authorization = %hashed_authorization,
+                http.request.headers.hashed_cookie = %hashed_cookie,
+            },
+            "{method} {uri} -> {status} ({duration:?})",
+        );
+
+        response
     }
     .instrument(span)
     .await
+}
+
+fn hash_header(headers: &http::HeaderMap, name: http::header::HeaderName) -> String {
+    headers
+        .get(name)
+        .map(|h| hex::encode(Sha256::digest(h.as_bytes())))
+        .unwrap_or_default()
 }
 
 async fn debug_requests(
