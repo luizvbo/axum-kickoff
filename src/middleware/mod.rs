@@ -43,12 +43,25 @@ pub use real_ip::RealIp;
 pub use request_id::{middleware as request_id, RequestId};
 pub use require_user_agent::require_user_agent;
 pub use security_headers::{middleware as security_headers, CspNonce};
-pub use session::{middleware as session_middleware, SessionExtension};
+pub use session::{middleware as session_middleware, SessionExtension, SessionState};
 
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
     let session_key = state.0.session_key.clone();
+
+    // Determine whether session cookies should have the Secure flag.
+    // Enabled by default in production, and can be toggled via SESSION_COOKIE_SECURE.
+    let session_cookie_secure = match dotenvy::var("SESSION_COOKIE_SECURE").ok().as_deref() {
+        Some(v) if v.trim().eq_ignore_ascii_case("true") || v.trim() == "1" => true,
+        Some(v) if v.trim().eq_ignore_ascii_case("false") || v.trim() == "0" => false,
+        _ => env == Env::Production,
+    };
+    let session_state = self::session::SessionState {
+        key: session_key,
+        secure: session_cookie_secure,
+    };
+
     let security_headers_config = self::security_headers::SecurityHeadersConfig::for_env(env);
 
     // Build CORS layer from allowed origins
@@ -77,7 +90,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .layer(from_fn_with_state(state.clone(), self::authenticate))
         .layer(from_fn_with_state(state.clone(), self::block_traffic))
         .layer(from_fn(self::csrf::ensure_token))
-        .layer(from_fn_with_state(session_key, self::session_middleware))
+        .layer(from_fn_with_state(session_state, self::session_middleware))
         .layer(from_fn(log_request))
         .layer(from_fn_with_state(state.clone(), self::real_ip::middleware))
         .layer(from_fn(self::error_handler::middleware))

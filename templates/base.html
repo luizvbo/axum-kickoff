@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ ctx.csrf_token }}">
+  <title>{% block title %}{% endblock %}</title>
+  <link nonce="{{ ctx.csp_nonce }}" rel="stylesheet" href="/static/css/style.css">
+  <script nonce="{{ ctx.csp_nonce }}" src="/static/vendor/htmx.min.js"></script>
+  <script nonce="{{ ctx.csp_nonce }}" defer src="/static/vendor/alpine.js"></script>
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{ ctx.csrf_token | safe }}"}'>
+  {% block content %}{% endblock %}
+</body>
+</html>
