@@ -361,9 +361,7 @@ mod tests {
 
         fn advance(&self, duration: Duration) {
             let mut current = self.current.lock().unwrap();
-            *current = current
-                .checked_add(duration)
-                .expect("valid duration");
+            *current = current.checked_add(duration).expect("valid duration");
         }
     }
 
@@ -372,10 +370,14 @@ mod tests {
         database: Database,
         clock: &TestClock,
     ) -> RateLimiter {
-        RateLimiter::with_clock(config, database, Arc::new({
-            let clock = clock.clone();
-            move || clock.now()
-        }))
+        RateLimiter::with_clock(
+            config,
+            database,
+            Arc::new({
+                let clock = clock.clone();
+                move || clock.now()
+            }),
+        )
     }
 
     async fn test_database() -> (NamedTempFile, Database) {
