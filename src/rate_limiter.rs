@@ -41,6 +41,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::Database;
@@ -168,11 +169,28 @@ pub struct RateLimiterConfig {
 pub struct RateLimiter {
     config: HashMap<LimitedAction, RateLimiterConfig>,
     database: Database,
+    clock: Arc<dyn Fn() -> jiff::Timestamp + Send + Sync>,
 }
 
 impl RateLimiter {
     pub fn new(config: HashMap<LimitedAction, RateLimiterConfig>, database: Database) -> Self {
-        Self { config, database }
+        Self::with_clock(
+            config,
+            database,
+            Arc::new(jiff::Timestamp::now) as Arc<dyn Fn() -> jiff::Timestamp + Send + Sync>,
+        )
+    }
+
+    fn with_clock(
+        config: HashMap<LimitedAction, RateLimiterConfig>,
+        database: Database,
+        clock: Arc<dyn Fn() -> jiff::Timestamp + Send + Sync>,
+    ) -> Self {
+        Self {
+            config,
+            database,
+            clock,
+        }
     }
 
     /// Check if an action is allowed for a given key (e.g. IP address or user ID)
@@ -201,7 +219,7 @@ impl RateLimiter {
             source: Some(e),
         })?;
 
-        let now = jiff::Timestamp::now();
+        let now = (self.clock)();
 
         if let Some(mut bucket) = existing {
             let elapsed = now.as_nanosecond() - bucket.last_refill.as_nanosecond();
@@ -322,7 +340,45 @@ mod tests {
     use super::*;
     use crate::config::DatabaseConfig;
     use crate::db::Database;
+    use std::sync::{Arc, Mutex};
     use tempfile::NamedTempFile;
+
+    #[derive(Clone)]
+    struct TestClock {
+        current: Arc<Mutex<jiff::Timestamp>>,
+    }
+
+    impl TestClock {
+        fn new() -> Self {
+            Self {
+                current: Arc::new(Mutex::new(jiff::Timestamp::now())),
+            }
+        }
+
+        fn now(&self) -> jiff::Timestamp {
+            *self.current.lock().unwrap()
+        }
+
+        fn advance(&self, duration: Duration) {
+            let mut current = self.current.lock().unwrap();
+            *current = current.checked_add(duration).expect("valid duration");
+        }
+    }
+
+    fn rate_limiter_with_clock(
+        config: HashMap<LimitedAction, RateLimiterConfig>,
+        database: Database,
+        clock: &TestClock,
+    ) -> RateLimiter {
+        RateLimiter::with_clock(
+            config,
+            database,
+            Arc::new({
+                let clock = clock.clone();
+                move || clock.now()
+            }),
+        )
+    }
 
     async fn test_database() -> (NamedTempFile, Database) {
         let db_file = NamedTempFile::new().expect("Failed to create temp database file");
@@ -349,7 +405,8 @@ mod tests {
         );
 
         let (_db_file, database) = test_database().await;
-        let rate_limiter = RateLimiter::new(config, database);
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(config, database, &clock);
         let ip = "127.0.0.1".parse().unwrap();
 
         for _ in 0..5 {
@@ -377,7 +434,8 @@ mod tests {
         );
 
         let (_db_file, database) = test_database().await;
-        let rate_limiter = RateLimiter::new(config, database);
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(config, database, &clock);
         let ip = "127.0.0.1".parse().unwrap();
 
         for _ in 0..5 {
@@ -391,7 +449,7 @@ mod tests {
             .await
             .is_err());
 
-        tokio::time::sleep(Duration::from_millis(1600)).await;
+        clock.advance(Duration::from_millis(1600));
 
         assert!(rate_limiter
             .check_by_ip(ip, LimitedAction::ApiRequest)
@@ -411,7 +469,8 @@ mod tests {
         );
 
         let (_db_file, database) = test_database().await;
-        let rate_limiter = RateLimiter::new(config, database);
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(config, database, &clock);
         let ip1 = "127.0.0.1".parse().unwrap();
         let ip2 = "127.0.0.2".parse().unwrap();
 
@@ -455,7 +514,8 @@ mod tests {
         );
 
         let (_db_file, database) = test_database().await;
-        let rate_limiter = RateLimiter::new(config, database);
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(config, database, &clock);
         let ip = "127.0.0.1".parse().unwrap();
 
         for _ in 0..2 {
@@ -493,7 +553,8 @@ mod tests {
         );
 
         let (_db_file, database) = test_database().await;
-        let rate_limiter = RateLimiter::new(config, database);
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(config, database, &clock);
         let ip = "127.0.0.1".parse().unwrap();
 
         for _ in 0..2 {
@@ -523,7 +584,8 @@ mod tests {
     #[tokio::test]
     async fn test_default_config() {
         let (_db_file, database) = test_database().await;
-        let rate_limiter = RateLimiter::new(HashMap::new(), database);
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(HashMap::new(), database, &clock);
         let ip = "127.0.0.1".parse().unwrap();
 
         for _ in 0..10 {
