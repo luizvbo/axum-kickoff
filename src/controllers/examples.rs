@@ -9,15 +9,13 @@
 //! - JSON API endpoints
 
 use askama::Template;
-use axum::extract::{Extension, Form, State};
-use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Json, Redirect, Response};
+use axum::extract::{Form, State};
+use axum::response::{IntoResponse, Json, Redirect, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::app::AppState;
-use crate::middleware::{get_or_create_csrf_token, CspNonce, SessionExtension};
-use crate::router::HtmlTemplate;
+use crate::router::{HtmlTemplate, PageContext};
 
 // ============================================================================
 // Contact Form Example - HTMX Form with Validation
@@ -35,29 +33,30 @@ pub struct ContactForm {
 #[derive(Template)]
 #[template(path = "examples/contact.html")]
 struct ContactPageTemplate {
-    csrf_token: String,
+    ctx: PageContext,
 }
 
 /// Contact form success partial - Returned on successful submission
 #[derive(Template)]
 #[template(path = "examples/contact_success.html")]
 struct ContactSuccessTemplate {
+    ctx: PageContext,
     name: String,
     email: String,
-    csp_nonce: String,
 }
 
 /// Contact form errors partial - Returned on validation failure
 #[derive(Template)]
 #[template(path = "examples/contact_errors.html")]
+#[allow(dead_code)]
 struct ContactErrorsTemplate {
+    ctx: PageContext,
     errors: Vec<String>,
 }
 
 /// Render the contact form page (full-page template)
-pub async fn contact_page(Extension(session): Extension<SessionExtension>) -> impl IntoResponse {
-    let csrf_token = get_or_create_csrf_token(&session);
-    let template = ContactPageTemplate { csrf_token };
+pub async fn contact_page(ctx: PageContext) -> impl IntoResponse {
+    let template = ContactPageTemplate { ctx };
     HtmlTemplate(template)
 }
 
@@ -68,8 +67,7 @@ pub async fn contact_page(Extension(session): Extension<SessionExtension>) -> im
 /// - On error: Return HTML partial with validation errors
 /// - HTMX swaps the response into the target element
 pub async fn contact_submit(
-    Extension(_session): Extension<SessionExtension>,
-    Extension(csp_nonce): Extension<CspNonce>,
+    ctx: PageContext,
     State(_state): State<AppState>,
     Form(form): Form<ContactForm>,
 ) -> Response {
@@ -96,17 +94,8 @@ pub async fn contact_submit(
 
     // Return errors partial if validation fails
     if !errors.is_empty() {
-        let template = ContactErrorsTemplate { errors };
-        match template.render() {
-            Ok(html) => return Html(html).into_response(),
-            Err(err) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to render template: {}", err),
-                )
-                    .into_response()
-            }
-        }
+        let template = ContactErrorsTemplate { ctx, errors };
+        return HtmlTemplate(template).into_response();
     }
 
     // In a real app, you would save to database here
@@ -115,18 +104,11 @@ pub async fn contact_submit(
 
     // Return success partial
     let template = ContactSuccessTemplate {
+        ctx,
         name: form.name,
         email: form.email,
-        csp_nonce: csp_nonce.0,
     };
-    match template.render() {
-        Ok(html) => Html(html).into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to render template: {}", err),
-        )
-            .into_response(),
-    }
+    HtmlTemplate(template).into_response()
 }
 
 // ============================================================================
@@ -137,42 +119,55 @@ pub async fn contact_submit(
 #[derive(Template)]
 #[template(path = "examples/counter.html")]
 struct CounterPageTemplate {
-    csrf_token: String,
+    ctx: PageContext,
 }
 
 /// Counter partial template - Returned on increment/decrement
 #[derive(Template)]
 #[template(path = "examples/counter_partial.html")]
+#[allow(dead_code)]
 struct CounterPartialTemplate {
+    ctx: PageContext,
     count: i32,
 }
 
 /// Render the counter page
-pub async fn counter_page(Extension(session): Extension<SessionExtension>) -> impl IntoResponse {
-    let csrf_token = get_or_create_csrf_token(&session);
-    let template = CounterPageTemplate { csrf_token };
+pub async fn counter_page(ctx: PageContext) -> impl IntoResponse {
+    let template = CounterPageTemplate { ctx };
     HtmlTemplate(template)
 }
 
 /// Increment counter (HTMX endpoint)
-pub async fn counter_increment(Form(params): Form<HashMap<String, String>>) -> impl IntoResponse {
+pub async fn counter_increment(
+    ctx: PageContext,
+    Form(params): Form<HashMap<String, String>>,
+) -> impl IntoResponse {
     let count: i32 = params
         .get("count")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    let template = CounterPartialTemplate { count: count + 1 };
+    let template = CounterPartialTemplate {
+        ctx,
+        count: count + 1,
+    };
     HtmlTemplate(template)
 }
 
 /// Decrement counter (HTMX endpoint)
-pub async fn counter_decrement(Form(params): Form<HashMap<String, String>>) -> impl IntoResponse {
+pub async fn counter_decrement(
+    ctx: PageContext,
+    Form(params): Form<HashMap<String, String>>,
+) -> impl IntoResponse {
     let count: i32 = params
         .get("count")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    let template = CounterPartialTemplate { count: count - 1 };
+    let template = CounterPartialTemplate {
+        ctx,
+        count: count - 1,
+    };
     HtmlTemplate(template)
 }
 

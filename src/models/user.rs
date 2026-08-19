@@ -86,6 +86,13 @@ impl User {
         self.gh_avatar = gh_avatar;
         self.touch();
     }
+
+    /// Returns true if the account is currently locked.
+    pub fn is_locked(&self) -> bool {
+        self.account_lock_until
+            .as_ref()
+            .is_some_and(|lock_until| *lock_until > jiff::Timestamp::now())
+    }
 }
 
 #[cfg(test)]
@@ -161,6 +168,32 @@ mod tests {
             Some("https://example.com/new-avatar.png".to_string())
         );
         assert!(user.updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn test_is_locked() {
+        let now = jiff::Timestamp::now();
+        let future = now
+            .checked_add(jiff::SignedDuration::from_hours(1))
+            .unwrap();
+        let past = now
+            .checked_add(jiff::SignedDuration::from_hours(-1))
+            .unwrap();
+
+        let locked_user = User::new_from_github(12345, "locked".to_string(), None, None, None);
+        let mut locked_user = locked_user;
+        locked_user.account_lock_until = Some(future);
+        locked_user.account_lock_reason = Some("Banned".to_string());
+        assert!(locked_user.is_locked());
+
+        let mut expired_lock_user =
+            User::new_from_github(12345, "expired".to_string(), None, None, None);
+        expired_lock_user.account_lock_until = Some(past);
+        expired_lock_user.account_lock_reason = Some("Old ban".to_string());
+        assert!(!expired_lock_user.is_locked());
+
+        let unlocked_user = User::new_from_github(12345, "unlocked".to_string(), None, None, None);
+        assert!(!unlocked_user.is_locked());
     }
 
     #[test]

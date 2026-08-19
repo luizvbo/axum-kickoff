@@ -195,14 +195,12 @@ pub async fn github_callback(
     let user = match User::get_by_gh_id(&mut db, &github_user.id).await {
         Ok(mut existing_user) => {
             // Check if locked
-            if let Some(lock_until) = &existing_user.account_lock_until {
-                if lock_until > &jiff::Timestamp::now() {
-                    let reason = existing_user
-                        .account_lock_reason
-                        .clone()
-                        .unwrap_or_else(|| "Account is locked".into());
-                    return Err(forbidden(reason));
-                }
+            if existing_user.is_locked() {
+                let reason = existing_user
+                    .account_lock_reason
+                    .clone()
+                    .unwrap_or_else(|| "Account is locked".into());
+                return Err(forbidden(reason));
             }
 
             // Update existing user

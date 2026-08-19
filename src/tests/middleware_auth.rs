@@ -4,6 +4,7 @@
 
 use crate::tests::{AnonymousUser, CookieUser, RequestHelper, TestApp};
 use http::StatusCode;
+use jiff::SignedDuration;
 
 #[tokio::test]
 async fn rate_limit_blocks_excessive_anonymous_requests() {
@@ -178,4 +179,31 @@ async fn malformed_json_returns_error() {
 
     // Should return a client error (400 or 422)
     assert!(response.status().is_client_error());
+}
+
+#[tokio::test]
+async fn locked_user_with_valid_session_is_forbidden() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("locked_session_user")
+        .locked(
+            "Account is locked",
+            Some(
+                jiff::Timestamp::now()
+                    .checked_add(SignedDuration::from_hours(1))
+                    .unwrap(),
+            ),
+        )
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let session_key = app.state.session_key.clone();
+    let cookie_user = CookieUser::new(app, user.id, session_key);
+
+    let response = cookie_user.get::<serde_json::Value>("/api/v1/tokens").await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
 }

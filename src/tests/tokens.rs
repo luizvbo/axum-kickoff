@@ -5,6 +5,7 @@
 use crate::models::ActionScope;
 use crate::tests::{CookieUser, RequestHelper, TestApp, TokenUser};
 use http::StatusCode;
+use jiff::SignedDuration;
 use serde_json::{json, Value};
 
 /// Helper to set up an authenticated user with CSRF token.
@@ -342,6 +343,39 @@ async fn token_auth_without_required_scope_is_forbidden() {
     let (_api_token, plain_token) = app
         .token_builder(user.id, "create-token")
         .action_scopes(vec![ActionScope::Create])
+        .build(&mut db)
+        .await
+        .expect("Failed to create token");
+
+    let token_user = TokenUser::new(app, plain_token);
+
+    let response = token_user.get::<Value>("/api/v1/tokens").await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn token_auth_for_locked_user_is_forbidden() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("locked_token_user")
+        .locked(
+            "Account is locked",
+            Some(
+                jiff::Timestamp::now()
+                    .checked_add(SignedDuration::from_hours(1))
+                    .unwrap(),
+            ),
+        )
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let (_api_token, plain_token) = app
+        .token_builder(user.id, "locked-user-token")
+        .action_scopes(vec![ActionScope::Read])
         .build(&mut db)
         .await
         .expect("Failed to create token");

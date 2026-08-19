@@ -396,20 +396,23 @@ pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String 
     // Use the same encoding as the session middleware
     let encoded = crate::middleware::session::encode(&map);
 
-    // Create a signed cookie
+    // Create a signed cookie matching the hardened production defaults
+    // (attributes are not included in the Cookie request header).
     let cookie = cookie::Cookie::build((cookie_name, encoded))
         .path("/")
         .http_only(true)
-        .same_site(cookie::SameSite::Lax)
+        .same_site(cookie::SameSite::Strict)
+        .max_age(cookie::time::Duration::days(90))
         .build();
 
     // Sign the cookie using the session key
     let mut jar = cookie::CookieJar::new();
     jar.signed_mut(session_key).add(cookie);
 
-    // Get the signed cookie value
+    // Return only the name/value pair for the Cookie header.
     jar.get(cookie_name)
         .expect("Failed to sign cookie")
+        .stripped()
         .to_string()
 }
 

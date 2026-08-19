@@ -1,14 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Axum Kickoff - Rust Web Application Starter</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script src="/static/vendor/htmx.min.js"></script>
-    <meta name="htmx-config" content='{"csrfToken": "{{ csrf_token }}"}'>
-</head>
-<body>
+{% extends "base.html" %}
+
+{% block title %}Axum Kickoff - Rust Web Application Starter{% endblock %}
+
+{% block content %}
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <nav class="navbar" aria-label="Main navigation">
         <div class="nav-container">
@@ -260,5 +254,4 @@
             <p>Inspired by <a href="https://crates.io">crates.io</a></p>
         </div>
     </footer>
-</body>
-</html>
+{% endblock %}
