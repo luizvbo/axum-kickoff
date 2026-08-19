@@ -127,6 +127,13 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
         return next.run(req).await;
     }
 
+    // Metrics endpoints authenticate with their own bearer token and should
+    // not be validated against API tokens.
+    let path = req.uri().path().trim_end_matches('/');
+    if path == "/metrics" || path == "/api/private/metrics" {
+        return next.run(req).await;
+    }
+
     // Try session first so we have the auth context available for route extractors
     if let Some(session) = req.extensions().get::<SessionExtension>() {
         if let Some(user_id) = session.get("user_id").and_then(|s| s.parse::<u64>().ok()) {

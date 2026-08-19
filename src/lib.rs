@@ -24,6 +24,7 @@ pub mod models;
 pub mod rate_limiter;
 mod router;
 pub mod storage;
+pub mod tracing;
 pub mod util;
 
 #[cfg(test)]
