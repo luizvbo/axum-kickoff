@@ -12,14 +12,8 @@
 //!
 //! # Error Response Format
 //!
-//! Errors return JSON responses with the following structure:
-//!
-//! ```json
-//! {
-//!   "detail": "Error message",
-//!   "error_type": "error_type_name"  // Optional, for domain-specific errors
-//! }
-//! ```
+//! Errors return JSON, HTML, or HTMX fragment responses depending on the request
+//! headers (`Accept` and `HX-Request`).
 //!
 //! # Example
 //!
@@ -34,6 +28,8 @@ use axum::middleware::Next;
 use axum::response::Response;
 use tracing::{error, warn};
 
+use crate::util::errors::{with_request_format, RequestFormat};
+
 /// Error handling middleware
 ///
 /// This middleware ensures that errors implementing `AppError` are properly
@@ -41,29 +37,35 @@ use tracing::{error, warn};
 /// `response()` method on `AppError` implementations automatically.
 ///
 /// This middleware primarily serves as a logging layer for errors that
-/// weren't handled by the application's error handling logic.
+/// weren’t handled by the application's error handling logic.
 pub async fn middleware(req: Request, next: Next) -> Response {
     let method = req.method().clone();
     let uri = req.uri().clone();
 
-    let response = next.run(req).await;
+    let format = RequestFormat::from_headers(req.headers());
+    let response = with_request_format(format, async {
+        let response = next.run(req).await;
 
-    // Log error responses for monitoring
-    if response.status().is_server_error() {
-        error!(
-            "Server error response: {} {} - Status: {}",
-            method,
-            uri,
-            response.status()
-        );
-    } else if response.status().is_client_error() {
-        warn!(
-            "Client error response: {} {} - Status: {}",
-            method,
-            uri,
-            response.status()
-        );
-    }
+        // Log error responses for monitoring
+        if response.status().is_server_error() {
+            error!(
+                "Server error response: {} {} - Status: {}",
+                method,
+                uri,
+                response.status()
+            );
+        } else if response.status().is_client_error() {
+            warn!(
+                "Client error response: {} {} - Status: {}",
+                method,
+                uri,
+                response.status()
+            );
+        }
+
+        response
+    })
+    .await;
 
     response
 }

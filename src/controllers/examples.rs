@@ -57,7 +57,7 @@ struct ContactErrorsTemplate {
 /// Render the contact form page (full-page template)
 pub async fn contact_page(ctx: PageContext) -> impl IntoResponse {
     let template = ContactPageTemplate { ctx };
-    HtmlTemplate(template)
+    HtmlTemplate::new(template)
 }
 
 /// Handle contact form submission (HTMX endpoint)
@@ -95,7 +95,7 @@ pub async fn contact_submit(
     // Return errors partial if validation fails
     if !errors.is_empty() {
         let template = ContactErrorsTemplate { ctx, errors };
-        return HtmlTemplate(template).into_response();
+        return HtmlTemplate::new(template).into_response();
     }
 
     // In a real app, you would save to database here
@@ -108,7 +108,7 @@ pub async fn contact_submit(
         name: form.name,
         email: form.email,
     };
-    HtmlTemplate(template).into_response()
+    HtmlTemplate::new(template).into_response()
 }
 
 // ============================================================================
@@ -134,7 +134,7 @@ struct CounterPartialTemplate {
 /// Render the counter page
 pub async fn counter_page(ctx: PageContext) -> impl IntoResponse {
     let template = CounterPageTemplate { ctx };
-    HtmlTemplate(template)
+    HtmlTemplate::new(template)
 }
 
 /// Increment counter (HTMX endpoint)
@@ -151,7 +151,7 @@ pub async fn counter_increment(
         ctx,
         count: count + 1,
     };
-    HtmlTemplate(template)
+    HtmlTemplate::new(template)
 }
 
 /// Decrement counter (HTMX endpoint)
@@ -168,7 +168,7 @@ pub async fn counter_decrement(
         ctx,
         count: count - 1,
     };
-    HtmlTemplate(template)
+    HtmlTemplate::new(template)
 }
 
 // ============================================================================
