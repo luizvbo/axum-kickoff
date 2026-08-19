@@ -1,8 +1,18 @@
-<div class="time-response">
-    <div class="time-icon">⏰</div>
-    <div class="time-content">
-        <h4>Server Time</h4>
-        <p class="time-value">{{ time }}</p>
-        <p class="time-message">This content was rendered by Askama and loaded via HTMX!</p>
-    </div>
-</div>
+{% extends "base.html" %}
+
+{% block title %}Server Time{% endblock %}
+
+{% block content %}
+<main class="container" id="main-content">
+    <section class="section">
+        <h1 class="section-title">Server Time</h1>
+        <p class="section-text">The current server time is loaded below via HTMX.</p>
+        <div class="server-response">
+            {% include "server_time_partial.html" %}
+        </div>
+        <p class="section-text section-text-mt">
+            <a href="/" class="btn btn-secondary">Back to Home</a>
+        </p>
+    </section>
+</main>
+{% endblock %}

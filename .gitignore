@@ -24,3 +24,4 @@ target
 /static/vendor
 /tmp
 /.env
+/docs/local

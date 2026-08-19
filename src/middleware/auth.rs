@@ -37,7 +37,7 @@ use subtle::ConstantTimeEq;
 ///         .first()
 ///         .exec(&mut state.0.database.db_clone())
 ///         .await?;
-///     Ok(HtmlTemplate(DashboardTemplate { user }))
+///     Ok(HtmlTemplate::new(DashboardTemplate { user }))
 /// }
 /// ```
 #[derive(Debug, Clone, Copy)]
@@ -84,8 +84,8 @@ impl<S: Send + Sync> FromRequestParts<S> for CurrentUserId {
 ///     OptionalCurrentUserId(user_id): OptionalCurrentUserId,
 /// ) -> HtmlTemplate<PublicTemplate> {
 ///     match user_id {
-///         Some(id) => HtmlTemplate(PublicTemplate { user_id: Some(id) }),
-///         None => HtmlTemplate(PublicTemplate { user_id: None }),
+///         Some(id) => HtmlTemplate::new(PublicTemplate { user_id: Some(id) }),
+///         None => HtmlTemplate::new(PublicTemplate { user_id: None }),
 ///     }
 /// }
 /// ```

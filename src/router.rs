@@ -4,7 +4,7 @@ use axum::http::request::Parts;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::Router;
-use http::{Method, StatusCode};
+use http::{HeaderValue, Method, StatusCode};
 use serde::Serialize;
 use tower_http::services::ServeDir;
 use utoipa::OpenApi;
@@ -182,7 +182,7 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
 
 async fn home(ctx: PageContext) -> impl IntoResponse {
     let template = IndexTemplate { ctx };
-    HtmlTemplate(template)
+    HtmlTemplate::new(template)
 }
 
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
@@ -219,8 +219,12 @@ async fn server_time(ctx: PageContext) -> impl IntoResponse {
     let time = jiff::Timestamp::now()
         .strftime("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    let template = ServerTimeTemplate { ctx, time };
-    HtmlTemplate(template)
+    let full = ServerTimeTemplate {
+        ctx: ctx.clone(),
+        time: time.clone(),
+    };
+    let partial = ServerTimePartialTemplate { ctx, time };
+    HtmlTemplate::new(full).with_partial(partial)
 }
 
 #[derive(Template)]
@@ -237,22 +241,69 @@ struct ServerTimeTemplate {
     time: String,
 }
 
-pub struct HtmlTemplate<T>(pub T);
+#[derive(Template)]
+#[template(path = "server_time_partial.html")]
+#[allow(dead_code)]
+struct ServerTimePartialTemplate {
+    ctx: PageContext,
+    time: String,
+}
 
-impl<T> IntoResponse for HtmlTemplate<T>
-where
-    T: Template,
-{
-    fn into_response(self) -> Response {
-        match self.0.render() {
-            Ok(html) => Html(html).into_response(),
-            Err(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to render template: {}", err),
-            )
-                .into_response(),
+/// Response wrapper that renders an Askama template, optionally swapping to a
+/// partial template when the request was made by HTMX (`HX-Request: true`).
+pub struct HtmlTemplate<T> {
+    full: T,
+    partial: Option<Box<dyn Fn() -> askama::Result<String> + Send>>,
+}
+
+impl<T: Template> HtmlTemplate<T> {
+    /// Render the full template for both HTMX and non-HTMX requests.
+    pub fn new(full: T) -> Self {
+        Self {
+            full,
+            partial: None,
         }
     }
+
+    /// Provide a partial template to render for HTMX requests.
+    pub fn with_partial<P: Template + Send + 'static>(mut self, partial: P) -> Self {
+        self.partial = Some(Box::new(move || partial.render()));
+        self
+    }
+}
+
+impl<T: Template> IntoResponse for HtmlTemplate<T> {
+    fn into_response(self) -> Response {
+        if crate::util::errors::is_hx_request() {
+            if let Some(render) = self.partial {
+                return match render() {
+                    Ok(html) => Html(html).into_response(),
+                    Err(err) => template_render_error("partial template", err),
+                };
+            }
+        }
+
+        match self.full.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(err) => template_render_error("full template", err),
+        }
+    }
+}
+
+fn template_render_error(description: &str, err: askama::Error) -> Response {
+    let mut response = (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Failed to render {}: {}", description, err),
+    )
+        .into_response();
+
+    if crate::util::errors::is_hx_request() {
+        response
+            .headers_mut()
+            .insert("HX-Reswap", HeaderValue::from_static("none"));
+    }
+
+    response
 }
 
 #[cfg(test)]
@@ -268,7 +319,29 @@ mod tests {
             },
             time: "now".to_string(),
         };
-        let response = HtmlTemplate(template).into_response();
+        let response = HtmlTemplate::new(template).into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_html_template_with_partial_renders_full_by_default() {
+        let full = ServerTimeTemplate {
+            ctx: PageContext {
+                csrf_token: "test-csrf".into(),
+                csp_nonce: "test-nonce".into(),
+            },
+            time: "now".to_string(),
+        };
+        let partial = ServerTimePartialTemplate {
+            ctx: PageContext {
+                csrf_token: "test-csrf".into(),
+                csp_nonce: "test-nonce".into(),
+            },
+            time: "now".to_string(),
+        };
+        let response = HtmlTemplate::new(full)
+            .with_partial(partial)
+            .into_response();
         assert_eq!(response.status(), StatusCode::OK);
     }
 }

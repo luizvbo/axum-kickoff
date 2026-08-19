@@ -14,7 +14,7 @@ use serde_json::json;
 use crate::app::AppState;
 use crate::middleware::session::SessionExtension;
 use crate::models::User;
-use crate::util::errors::{bad_request, forbidden, internal_error, server_error, BoxedAppError};
+use crate::util::errors::{bad_request, db_error, forbidden, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 use secrecy::ExposeSecret;
 
@@ -214,7 +214,7 @@ pub async fn github_callback(
                 .update()
                 .exec(&mut db)
                 .await
-                .map_err(internal_error)?;
+                .map_err(db_error)?;
 
             existing_user
         }
@@ -234,7 +234,7 @@ pub async fn github_callback(
             })
             .exec(&mut db)
             .await
-            .map_err(internal_error)?
+            .map_err(db_error)?
         }
     };
 
