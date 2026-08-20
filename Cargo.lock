@@ -479,6 +479,7 @@ dependencies = [
  "tikv-jemallocator",
  "toasty",
  "toasty-cli",
+ "toasty-core",
  "tokio",
  "tower",
  "tower-http 0.7.0",

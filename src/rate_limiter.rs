@@ -8,10 +8,9 @@
 //! # Important
 //!
 //! This is a single-database token bucket implementation. It is persistent across
-//! restarts and shared by all instances connecting to the same database. Under very
-//! high concurrency with SQLite, the database may lock; for highly concurrent or
-//! multi-instance production deployments, consider a dedicated rate-limiting service
-//! (e.g. Redis-backed) on top of this schema.
+//! restarts and shared by all instances connecting to the same database. The token
+//! take is performed as a single atomic SQL statement (upsert for SQLite and
+//! PostgreSQL) so concurrent requests for the same bucket cannot overspend.
 //!
 //! # Example Usage
 //!
@@ -43,6 +42,10 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
+
+use toasty::db::{Capability, SqlPlaceholder};
+use toasty::sql;
+use toasty::stmt::Value;
 
 use crate::db::Database;
 use crate::models::RateLimitBucket;
@@ -202,75 +205,43 @@ impl RateLimiter {
         let config = self.config_for_action(action);
         let bucket_key = format!("{}:{}", action.as_str(), bucket_id);
 
-        let mut db = self.database.db_clone();
+        let now = (self.clock)();
+        let initial_tokens = config.burst.saturating_sub(1);
+        let rate = config.rate.as_secs_f64();
 
-        // Try to find an existing bucket
-        let existing = RateLimitBucket::filter(
-            RateLimitBucket::fields()
-                .bucket_key()
-                .eq(bucket_key.clone()),
-        )
-        .first()
-        .exec(&mut db)
-        .await
-        .map_err(|e| RateLimitError {
+        let mut db = self.database.db_clone();
+        let capability = db.capability();
+
+        let sql = build_take_sql(capability);
+
+        let query = sql::query(sql)
+            .bind(&bucket_key)
+            .bind(action.as_str())
+            .bind(bucket_id)
+            .bind(initial_tokens)
+            .bind(timestamp_value(capability.sql_placeholder, now))
+            .bind(rate)
+            .bind(config.burst);
+
+        let rows = query.exec(&mut db).await.map_err(|e| RateLimitError {
             action,
             retry_after: config.rate,
             source: Some(e),
         })?;
 
-        let now = (self.clock)();
+        let tokens = parse_returned_tokens(rows).ok_or_else(|| RateLimitError {
+            action,
+            retry_after: config.rate,
+            source: None,
+        })?;
 
-        if let Some(mut bucket) = existing {
-            let elapsed = now.as_nanosecond() - bucket.last_refill.as_nanosecond();
-            let tokens_to_add =
-                (elapsed as f64 / (config.rate.as_secs_f64() * 1_000_000_000.0)).floor() as i32;
-            let new_tokens = (bucket.tokens + tokens_to_add).min(config.burst);
-            let new_last_refill = if tokens_to_add > 0 {
-                now
-            } else {
-                bucket.last_refill
-            };
-
-            if new_tokens > 0 {
-                let new_tokens = new_tokens - 1;
-
-                bucket.tokens = new_tokens;
-                bucket.last_refill = new_last_refill;
-
-                toasty::update!(bucket {
-                    tokens: new_tokens,
-                    last_refill: new_last_refill,
-                })
-                .exec(&mut db)
-                .await
-                .map_err(|e| RateLimitError {
-                    action,
-                    retry_after: config.rate,
-                    source: Some(e),
-                })?;
-
-                Ok(())
-            } else {
-                Err(RateLimitError {
-                    action,
-                    retry_after: config.rate,
-                    source: None,
-                })
-            }
-        } else {
-            // New bucket: create it with one token already consumed.
-            let tokens = config.burst.saturating_sub(1);
-            let _ = toasty::create!(RateLimitBucket {
-                bucket_key,
-                action: action.as_str().to_string(),
-                bucket_id: bucket_id.to_string(),
-                tokens,
-                last_refill: now,
+        if tokens < 0 {
+            Err(RateLimitError {
+                action,
+                retry_after: config.rate,
+                source: None,
             })
-            .exec(&mut db)
-            .await;
-
+        } else {
             Ok(())
         }
     }
@@ -314,6 +285,75 @@ impl RateLimiter {
                 burst: action.default_burst(),
             })
     }
+}
+
+fn build_take_sql(capability: &Capability) -> &'static str {
+    match capability.sql_placeholder {
+        Some(SqlPlaceholder::DollarNumber) => POSTGRES_TAKE_SQL,
+        Some(SqlPlaceholder::NumberedQuestionMark) | Some(SqlPlaceholder::QuestionMark) => {
+            SQLITE_TAKE_SQL
+        }
+        None => panic!("raw SQL rate limiting requires a SQL backend"),
+    }
+}
+
+pub(crate) fn timestamp_value(placeholder: Option<SqlPlaceholder>, ts: jiff::Timestamp) -> Value {
+    match placeholder {
+        Some(SqlPlaceholder::NumberedQuestionMark) | Some(SqlPlaceholder::QuestionMark) => {
+            Value::String(timestamp_storage_text(ts))
+        }
+        _ => Value::Timestamp(ts),
+    }
+}
+
+pub(crate) fn timestamp_storage_text(ts: jiff::Timestamp) -> String {
+    let rounded = ts
+        .round(
+            jiff::TimestampRound::new()
+                .smallest(jiff::Unit::Microsecond)
+                .mode(jiff::RoundMode::Trunc),
+        )
+        .unwrap_or(ts);
+    format!("{:.6}", rounded)
+}
+
+const POSTGRES_TAKE_SQL: &str = r#"
+    INSERT INTO rate_limit_buckets AS b (bucket_key, action, bucket_id, tokens, last_refill)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (bucket_key) DO UPDATE
+    SET tokens = CASE
+        WHEN GREATEST(0, b.tokens) + FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer >= 1
+        THEN LEAST(GREATEST(0, b.tokens) + FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer, $7) - 1
+        ELSE -1
+    END,
+    last_refill = CASE
+        WHEN GREATEST(0, b.tokens) + FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer >= 1
+        THEN EXCLUDED.last_refill
+        ELSE b.last_refill
+    END
+    RETURNING tokens
+"#;
+
+const SQLITE_TAKE_SQL: &str = r#"
+    INSERT INTO rate_limit_buckets AS b (bucket_key, action, bucket_id, tokens, last_refill)
+    VALUES (?1, ?2, ?3, ?4, ?5)
+    ON CONFLICT (bucket_key) DO UPDATE
+    SET tokens = CASE
+        WHEN MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400) / ?6) AS INTEGER) >= 1
+        THEN MIN(MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400) / ?6) AS INTEGER), ?7) - 1
+        ELSE -1
+    END,
+    last_refill = CASE
+        WHEN MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400) / ?6) AS INTEGER) >= 1
+        THEN EXCLUDED.last_refill
+        ELSE b.last_refill
+    END
+    RETURNING tokens
+"#;
+
+fn parse_returned_tokens(rows: Vec<Value>) -> Option<i32> {
+    let record = rows.into_iter().next()?.as_record()?.clone();
+    record.fields.into_iter().next()?.to_i32()
 }
 
 #[derive(Debug)]
@@ -579,6 +619,43 @@ mod tests {
                 .await
                 .is_ok());
         }
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_rate_limiting_is_atomic() {
+        let mut config = HashMap::new();
+        config.insert(
+            LimitedAction::ApiRequest,
+            RateLimiterConfig {
+                rate: Duration::from_secs(1),
+                burst: 10,
+            },
+        );
+
+        let (_db_file, database) = test_database().await;
+        let clock = TestClock::new();
+        let rate_limiter = Arc::new(rate_limiter_with_clock(config, database, &clock));
+        let ip = "127.0.0.1".parse().unwrap();
+
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let rl = rate_limiter.clone();
+            handles.push(tokio::spawn(async move {
+                rl.check_by_ip(ip, LimitedAction::ApiRequest).await.is_ok()
+            }));
+        }
+
+        let mut allowed = 0;
+        for handle in handles {
+            if handle.await.unwrap() {
+                allowed += 1;
+            }
+        }
+
+        assert!(
+            allowed <= 10,
+            "concurrent calls allowed {allowed}, but burst is 10"
+        );
     }
 
     #[tokio::test]
