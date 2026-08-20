@@ -26,6 +26,7 @@ mod router;
 pub mod storage;
 pub mod tracing;
 pub mod util;
+pub mod worker;
 
 #[cfg(test)]
 pub mod tests;

@@ -4,11 +4,13 @@
 //! annotated with #[derive(toasty::Model)] which generates query builders,
 //! CRUD operations, and relationship accessors at compile time.
 
+pub mod background_job;
 pub mod post;
 pub mod rate_limit_bucket;
 pub mod token;
 pub mod user;
 
+pub use background_job::BackgroundJob;
 pub use post::Post;
 pub use rate_limit_bucket::RateLimitBucket;
 pub use token::{ActionScope, ApiToken, ResourceScope};

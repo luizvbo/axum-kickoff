@@ -4,8 +4,10 @@ use crate::config;
 use crate::db::Database;
 #[cfg(feature = "metrics")]
 use crate::metrics::InstanceMetrics;
+use crate::models::BackgroundJob;
 use crate::rate_limiter::RateLimiter;
 use crate::storage::Storage;
+use crate::worker::Job;
 use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
@@ -85,6 +87,35 @@ impl App {
     /// Get a database handle for write operations.
     pub fn db_write(&self) -> Database {
         self.database.clone()
+    }
+
+    /// Enqueue a background job in the default queue.
+    pub async fn enqueue_job<J: Job + serde::Serialize>(&self, job: J) -> anyhow::Result<()> {
+        self.enqueue_job_with_priority(job, 0).await
+    }
+
+    /// Enqueue a background job with an explicit priority.
+    pub async fn enqueue_job_with_priority<J: Job + serde::Serialize>(
+        &self,
+        job: J,
+        priority: i16,
+    ) -> anyhow::Result<()> {
+        let data = serde_json::to_string(&job)?;
+        let mut db = self.database.db_clone();
+
+        toasty::create!(BackgroundJob {
+            queue: "default".to_string(),
+            job_type: J::NAME.to_string(),
+            data,
+            retries: 0,
+            priority,
+            run_at: jiff::Timestamp::now(),
+            created_at: jiff::Timestamp::now(),
+        })
+        .exec(&mut db)
+        .await?;
+
+        Ok(())
     }
 
     /// Get the storage backend
