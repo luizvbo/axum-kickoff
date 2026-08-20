@@ -66,7 +66,11 @@ fn main() -> Result<()> {
             rt.block_on(run_server(config))?;
         }
         Command::BackgroundWorker => {
-            println!("background-worker placeholder");
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(CORE_THREADS)
+                .build()?;
+            rt.block_on(run_worker())?;
         }
         Command::Migrate { args } => {
             let rt = tokio::runtime::Runtime::new()?;
@@ -75,6 +79,23 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn run_worker() -> Result<()> {
+    let config = axum_kickoff::config::Server::from_environment()?;
+
+    axum_kickoff::tracing::init_tracing_with_format(config.env(), config.log_format);
+
+    let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
+    let database = axum_kickoff::db::Database::from_config(&db_config).await?;
+
+    let app = Arc::new(App::new(config, database)?);
+
+    axum_kickoff::worker::Runner::new(app)
+        .register_default_jobs()
+        .run()
+        .await
+        .map_err(|e| anyhow::anyhow!("Worker error: {}", e))
 }
 
 async fn run_server(config: axum_kickoff::config::Server) -> Result<()> {
