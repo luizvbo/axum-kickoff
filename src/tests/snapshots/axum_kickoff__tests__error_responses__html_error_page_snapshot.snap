@@ -1,0 +1,27 @@
+---
+source: src/tests/error_responses.rs
+expression: body
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="">
+  <title>404 - Error</title>
+  <link nonce="[CSP_NONCE]" rel="stylesheet" href="/static/css/style.css">
+  <script nonce="[CSP_NONCE]" src="/static/vendor/htmx.min.js"></script>
+  <script nonce="[CSP_NONCE]" defer src="/static/vendor/alpine.js"></script>
+</head>
+<body hx-headers='{"X-CSRF-Token": ""}'>
+
+<main class="container error-page" id="main-content">
+    <h1 class="error-status">404</h1>
+    <p class="error-message">Not Found</p>
+    <p class="error-back">
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+    </p>
+</main>
+
+</body>
+</html>

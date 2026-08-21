@@ -1,0 +1,35 @@
+---
+source: src/tests/metrics.rs
+expression: body
+---
+# HELP db_pool_connections_idle Number of idle connections in the database pool
+# TYPE db_pool_connections_idle gauge
+db_pool_connections_idle [VALUE]
+# HELP db_pool_connections_total Total number of connections in the database pool
+# TYPE db_pool_connections_total gauge
+db_pool_connections_total [VALUE]
+# HELP db_pool_timeouts_total Total number of database connection pool timeouts
+# TYPE db_pool_timeouts_total counter
+db_pool_timeouts_total [VALUE]
+# HELP db_pool_wait_time_seconds Time spent waiting for a database connection from the pool
+# TYPE db_pool_wait_time_seconds histogram
+db_pool_wait_time_seconds_bucket{le="0.005"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="0.01"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="0.025"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="0.05"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="0.1"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="0.25"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="0.5"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="1"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="2.5"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="5"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="10"} [VALUE]
+db_pool_wait_time_seconds_bucket{le="+Inf"} [VALUE]
+db_pool_wait_time_seconds_sum [VALUE]
+db_pool_wait_time_seconds_count [VALUE]
+# HELP requests_in_flight Number of requests currently being processed
+# TYPE requests_in_flight gauge
+requests_in_flight [VALUE]
+# HELP requests_total Total number of requests processed
+# TYPE requests_total counter
+requests_total [VALUE]

@@ -1,0 +1,7 @@
+---
+source: src/tests/error_responses.rs
+expression: json
+---
+{
+  "detail": "Not Found"
+}
