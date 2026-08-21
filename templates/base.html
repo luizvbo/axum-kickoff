@@ -10,6 +10,6 @@
   <script nonce="{{ ctx.csp_nonce }}" defer src="/static/vendor/alpine.js"></script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ ctx.csrf_token | safe }}"}'>
-  {% block content %}{% endblock %}
+{% block content %}{% endblock %}
 </body>
 </html>

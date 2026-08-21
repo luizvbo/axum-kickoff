@@ -47,6 +47,7 @@ pub mod posts;
 pub mod request_helper;
 pub mod response;
 pub mod test_app;
+pub mod test_db;
 pub mod tokens;
 
 // Re-export commonly used types for convenience

@@ -88,6 +88,9 @@ impl GitHubTokenEncryption {
 mod tests {
     use super::*;
 
+    // Serialize tests that mutate process environment variables.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_for_testing() {
         let _encryption = GitHubTokenEncryption::for_testing();
@@ -142,6 +145,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_missing_key() {
+        let _guard = ENV_LOCK.lock();
         // Ensure the env var is not set
         std::env::remove_var("GITHUB_TOKEN_ENCRYPTION_KEY");
 
@@ -151,6 +155,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_invalid_length() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("GITHUB_TOKEN_ENCRYPTION_KEY", "short_key");
 
         let result = GitHubTokenEncryption::from_environment();
@@ -161,6 +166,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_invalid_hex() {
+        let _guard = ENV_LOCK.lock();
         std::env::set_var("GITHUB_TOKEN_ENCRYPTION_KEY", "g".repeat(64)); // Invalid hex chars
 
         let result = GitHubTokenEncryption::from_environment();
@@ -171,6 +177,7 @@ mod tests {
 
     #[test]
     fn test_from_environment_valid() {
+        let _guard = ENV_LOCK.lock();
         let valid_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         std::env::set_var("GITHUB_TOKEN_ENCRYPTION_KEY", valid_key);
 

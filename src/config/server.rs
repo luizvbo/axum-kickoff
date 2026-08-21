@@ -138,7 +138,7 @@ impl Server {
             .unwrap_or_default();
 
         // Parse blocked traffic (header=value pairs)
-        let blocked_traffic = parse_blocked_traffic()?;
+        let blocked_traffic = parse_blocked_traffic_from_env()?;
 
         // Load session key for signing cookies
         let session_key = SecretString::from(env::required_var("SESSION_KEY")?);
@@ -267,12 +267,31 @@ fn parse_rate_limiter_config() -> anyhow::Result<HashMap<LimitedAction, RateLimi
     Ok(config)
 }
 
-/// Parse BLOCKED_TRAFFIC environment variable
+/// Parse the `BLOCKED_TRAFFIC` value from the environment.
 ///
 /// Format: "Header1=ENV_VAR1,Header2=ENV_VAR2"
-/// Each ENV_VAR should contain comma-separated values to block
-fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> {
-    let blocked_traffic_str = match env::var("BLOCKED_TRAFFIC")? {
+/// Each ENV_VAR should contain comma-separated values to block.
+fn parse_blocked_traffic_from_env() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> {
+    let blocked_traffic_str = env::var("BLOCKED_TRAFFIC")?;
+    parse_blocked_traffic(blocked_traffic_str.as_deref(), env::var)
+}
+
+/// Parse a `BLOCKED_TRAFFIC` value and resolve referenced value variables
+/// using the provided `getenv` callback.
+///
+/// `getenv` is called for each environment variable named on the right-hand
+/// side of a `Header=ENV_VAR` pair. In production it reads the process
+/// environment; in tests it can be replaced with a stub so that no global
+/// state is mutated.
+fn parse_blocked_traffic<F>(
+    blocked_traffic_str: Option<&str>,
+    getenv: F,
+) -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>>
+where
+    F: Fn(&str) -> anyhow::Result<Option<String>>,
+{
+    let blocked_traffic_str = match blocked_traffic_str {
+        Some(s) if s.trim().is_empty() => return Ok(Vec::new()),
         Some(s) => s,
         None => return Ok(Vec::new()),
     };
@@ -290,7 +309,7 @@ fn parse_blocked_traffic() -> anyhow::Result<Vec<(String, Vec<BlockCriteria>)>> 
         let header_name = parts[0].trim().to_string();
         let env_var_name = parts[1].trim();
 
-        let env_value = env::var(env_var_name)?
+        let env_value = getenv(env_var_name)?
             .with_context(|| format!("Environment variable {env_var_name} not found"))?;
 
         let blocked_values: Vec<BlockCriteria> = env_value
@@ -348,9 +367,13 @@ impl FromStr for AllowedOrigins {
 mod tests {
     use super::*;
     use http::HeaderValue;
+    use std::collections::HashMap;
 
-    // Serialize tests that mutate process environment variables.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn getenv_stub<'a>(
+        values: &'a HashMap<&str, &str>,
+    ) -> impl Fn(&str) -> anyhow::Result<Option<String>> + 'a {
+        move |name| Ok(values.get(name).map(|s| s.to_string()))
+    }
 
     #[test]
     fn test_allowed_origins_from_str() {
@@ -414,58 +437,47 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_empty() {
-        let _guard = ENV_LOCK.lock();
-        std::env::remove_var("BLOCKED_TRAFFIC");
-
-        let result = parse_blocked_traffic();
+        let values = HashMap::new();
+        let result = parse_blocked_traffic(None, getenv_stub(&values));
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
 
     #[test]
     fn test_parse_blocked_traffic_invalid_format() {
-        let _guard = ENV_LOCK.lock();
-        std::env::set_var("BLOCKED_TRAFFIC", "invalid_format");
-        let result = parse_blocked_traffic();
+        let values = HashMap::new();
+        let result = parse_blocked_traffic(Some("invalid_format"), getenv_stub(&values));
         assert!(result.is_err());
-        std::env::remove_var("BLOCKED_TRAFFIC");
     }
 
     #[test]
     fn test_parse_blocked_traffic_missing_env_var() {
-        let _guard = ENV_LOCK.lock();
-        std::env::set_var("BLOCKED_TRAFFIC", "Header=MISSING_VAR");
-        let result = parse_blocked_traffic();
+        let values = HashMap::new();
+        let result = parse_blocked_traffic(Some("Header=MISSING_VAR"), getenv_stub(&values));
         assert!(result.is_err());
-        std::env::remove_var("BLOCKED_TRAFFIC");
     }
 
     #[test]
     fn test_parse_blocked_traffic_valid() {
-        let _guard = ENV_LOCK.lock();
-        std::env::set_var("BLOCKED_TRAFFIC", "User-Agent=BLOCKED_AGENTS");
-        std::env::set_var("BLOCKED_AGENTS", "bot1,bot2");
-        let result = parse_blocked_traffic();
+        let mut values = HashMap::new();
+        values.insert("BLOCKED_AGENTS", "bot1,bot2");
+        let result = parse_blocked_traffic(Some("User-Agent=BLOCKED_AGENTS"), getenv_stub(&values));
         assert!(result.is_ok());
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].0, "User-Agent");
-        std::env::remove_var("BLOCKED_TRAFFIC");
-        std::env::remove_var("BLOCKED_AGENTS");
+        assert_eq!(parsed[0].1.len(), 2);
     }
 
     #[test]
     fn test_parse_blocked_traffic_empty_values() {
-        let _guard = ENV_LOCK.lock();
-        std::env::set_var("BLOCKED_TRAFFIC", "Header=BLOCKED_VALUES");
-        std::env::set_var("BLOCKED_VALUES", ",,");
-        let result = parse_blocked_traffic();
+        let mut values = HashMap::new();
+        values.insert("BLOCKED_VALUES", ",,");
+        let result = parse_blocked_traffic(Some("Header=BLOCKED_VALUES"), getenv_stub(&values));
         assert!(result.is_ok());
         let parsed = result.unwrap();
         // Empty values should be filtered out
-        assert!(parsed.is_empty() || parsed[0].1.is_empty());
-        std::env::remove_var("BLOCKED_TRAFFIC");
-        std::env::remove_var("BLOCKED_VALUES");
+        assert!(parsed.is_empty());
     }
 
     #[test]
@@ -521,33 +533,27 @@ mod tests {
 
     #[test]
     fn test_parse_blocked_traffic_multiple_pairs() {
-        let _guard = ENV_LOCK.lock();
-        std::env::set_var(
-            "BLOCKED_TRAFFIC",
-            "User-Agent=BLOCKED_AGENTS,Referer=BLOCKED_REFERRERS",
+        let mut values = HashMap::new();
+        values.insert("BLOCKED_AGENTS", "bot1,bot2");
+        values.insert("BLOCKED_REFERRERS", "spam1,spam2");
+        let result = parse_blocked_traffic(
+            Some("User-Agent=BLOCKED_AGENTS,Referer=BLOCKED_REFERRERS"),
+            getenv_stub(&values),
         );
-        std::env::set_var("BLOCKED_AGENTS", "bot1,bot2");
-        std::env::set_var("BLOCKED_REFERRERS", "spam1,spam2");
-        let result = parse_blocked_traffic();
         assert!(result.is_ok());
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 2);
-        std::env::remove_var("BLOCKED_TRAFFIC");
-        std::env::remove_var("BLOCKED_AGENTS");
-        std::env::remove_var("BLOCKED_REFERRERS");
     }
 
     #[test]
     fn test_parse_blocked_traffic_whitespace_in_pairs() {
-        let _guard = ENV_LOCK.lock();
-        std::env::set_var("BLOCKED_TRAFFIC", " User-Agent = BLOCKED_AGENTS ");
-        std::env::set_var("BLOCKED_AGENTS", "bot1");
-        let result = parse_blocked_traffic();
+        let mut values = HashMap::new();
+        values.insert("BLOCKED_AGENTS", "bot1");
+        let result =
+            parse_blocked_traffic(Some(" User-Agent = BLOCKED_AGENTS "), getenv_stub(&values));
         assert!(result.is_ok());
         let parsed = result.unwrap();
         assert_eq!(parsed[0].0, "User-Agent");
-        std::env::remove_var("BLOCKED_TRAFFIC");
-        std::env::remove_var("BLOCKED_AGENTS");
     }
 
     #[test]
