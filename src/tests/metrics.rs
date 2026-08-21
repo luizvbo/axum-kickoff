@@ -4,15 +4,21 @@
 
 use crate::tests::{AnonymousUser, RequestHelper, TestApp, TokenUser};
 use http::StatusCode;
+use regex::Regex;
 use secrecy::SecretString;
+
+fn sanitize_metrics(output: &str) -> String {
+    // Replace any trailing numeric value on a metric line so the snapshot
+    // stays stable across runs with different counts, response times, and
+    // pool states.
+    let value = Regex::new(r"(?m)^([a-zA-Z_:]+(?:\{[^}]*\})?\s+)[\d.eE+-]+$").unwrap();
+    value.replace_all(output, "${1}[VALUE]").into_owned()
+}
 
 #[tokio::test]
 async fn metrics_endpoint_returns_prometheus_text() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
-
-    // Make at least one request so the counter has a sample
-    let _ = anon.get::<()>("/health").await;
 
     let response = anon.get::<String>("/api/private/metrics").await;
     response.assert_status(StatusCode::OK);
@@ -49,6 +55,18 @@ async fn metrics_endpoint_returns_prometheus_text() {
         body.contains("db_pool_timeouts_total"),
         "metrics output should include db_pool_timeouts_total"
     );
+}
+
+#[tokio::test]
+async fn metrics_snapshot() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<String>("/api/private/metrics").await;
+    response.assert_status(StatusCode::OK);
+
+    let body = sanitize_metrics(&response.into_string().await);
+    insta::assert_snapshot!(body);
 }
 
 #[tokio::test]

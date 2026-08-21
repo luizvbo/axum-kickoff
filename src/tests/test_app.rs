@@ -10,10 +10,10 @@ use crate::config::Server;
 use crate::db::Database;
 use crate::storage::StorageConfig;
 use crate::tests::builders::{ApiTokenBuilder, PostBuilder, UserBuilder};
+use crate::tests::test_db::TestDatabase;
 use axum::Router;
 use secrecy::SecretString;
 use std::sync::Arc;
-use tempfile::NamedTempFile;
 
 /// Test application with isolated database
 pub struct TestApp {
@@ -23,8 +23,8 @@ pub struct TestApp {
     pub state: AppState,
     /// The database connection
     pub db: Database,
-    /// The temp file holding the SQLite database (kept alive for test duration)
-    _db_file: NamedTempFile,
+    /// Test database handle (keeps any temp file alive for the test duration)
+    pub test_db: TestDatabase,
     /// The application configuration
     pub config: Server,
 }
@@ -38,22 +38,10 @@ impl TestApp {
 
     /// Create a new test application with a custom configuration
     pub async fn with_config(config: Server) -> Self {
-        // Create a temporary file for the SQLite database
-        let db_file = NamedTempFile::new().expect("Failed to create temp database file");
-        let db_url = format!("sqlite:{}", db_file.path().display());
-
-        // Create database connection
-        let db_config = crate::config::DatabaseConfig {
-            url: SecretString::from(db_url),
-        };
-
-        let db = Database::from_config(&db_config)
-            .await
-            .expect("Failed to connect to test database");
-
-        db.migrate()
-            .await
-            .expect("Failed to apply test database migrations");
+        // Create the test database (SQLite by default, PostgreSQL when
+        // `TEST_DATABASE_URL` is set and the `postgresql` feature is enabled).
+        let test_db = TestDatabase::new();
+        let db = test_db.connect_and_migrate().await;
 
         // Create app state
         let app = App::new(config.clone(), db.clone()).expect("Failed to create test app");
@@ -67,7 +55,7 @@ impl TestApp {
             router,
             state,
             db,
-            _db_file: db_file,
+            test_db,
             config,
         }
     }
@@ -150,11 +138,37 @@ impl TestApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::{AnonymousUser, RequestHelper};
+    use regex::Regex;
+
+    fn sanitize_home_page(html: &str) -> String {
+        let csrf = Regex::new(r#"content="[A-Za-z0-9]{32}""#).unwrap();
+        let csrf_json = Regex::new(r#""X-CSRF-Token": "[A-Za-z0-9]{32}""#).unwrap();
+        let nonce = Regex::new(r#"nonce="[A-Za-z0-9+/=]{20,26}""#).unwrap();
+
+        let html = csrf.replace_all(html, r#"content="[CSRF_TOKEN]""#);
+        let html = csrf_json.replace_all(&html, r#""X-CSRF-Token": "[CSRF_TOKEN]""#);
+        nonce
+            .replace_all(&html, r#"nonce="[CSP_NONCE]""#)
+            .into_owned()
+    }
 
     #[tokio::test]
     async fn test_app_creation() {
         let app = TestApp::new().await;
         assert_eq!(app.config.port, 8888);
         assert_eq!(app.config.domain_name, "localhost");
+    }
+
+    #[tokio::test]
+    async fn home_page_snapshot() {
+        let app = TestApp::new().await;
+        let anon = AnonymousUser::new(app);
+
+        let response = anon.get::<()>("/").await;
+        response.assert_success();
+
+        let body = sanitize_home_page(&response.into_string().await);
+        insta::assert_snapshot!(body);
     }
 }

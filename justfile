@@ -45,6 +45,14 @@ test-nextest-review:
     # before accepting. You'll be prompted to accept or reject each change.
     cargo nextest run --review
 
+[doc("Run insta snapshot tests")]
+snapshot:
+    cargo insta test
+
+[doc("Run insta snapshot tests and accept pending snapshots")]
+snapshot-accept:
+    cargo insta test --accept
+
 [doc("Run tests with output")]
 test-verbose:
     cargo test -- --nocapture
@@ -175,3 +183,10 @@ bloat:
 [doc("Run cargo audit to check for security vulnerabilities (requires cargo-audit)")]
 audit:
     cargo audit
+
+[doc("Run zizmor to audit GitHub workflow files (requires zizmor)")]
+zizmor:
+    zizmor .github/workflows
+
+[doc("Run all security checks")]
+security: audit zizmor
