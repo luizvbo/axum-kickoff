@@ -8,20 +8,27 @@ The middleware stack provides cross-cutting concerns for HTTP requests, includin
 
 ## Middleware Stack
 
-Path normalization is applied as a top-level service around the router in `src/lib.rs::build_handler` before the remaining middleware stack. The rest of the stack is applied in `src/middleware/mod.rs` in this order:
+Path normalization is applied as a top-level service around the router in `src/lib.rs::build_handler` before the remaining middleware stack. The rest of the stack is applied in `src/middleware/mod.rs` from outermost to innermost in this order:
 
-1. **Real IP Extraction** - Extract client IP from proxy headers
-2. **Request Logging** - Structured logging with tracing
-3. **Error Handler** - Centralized error handling
-4. **Session Management** - Cookie-based session middleware
-5. **Panic Catcher** - Catch panics and convert to 500 responses
-6. **User Agent Validation** - Block requests without User-Agent
-7. **Security Headers** - CSP, HSTS, X-Frame-Options, etc.
-8. **Timeout** - Request timeout (30s default)
-9. **Request Body Timeout** - Request body timeout (30s default)
-10. **Compression** - Gzip compression
-11. **Metrics** - Prometheus metrics (feature-gated)
-12. **Debug Requests** - Development debug logging (conditional)
+1. **Debug Requests** - Full request logging (development only)
+2. **Metrics** - Prometheus request metrics (`metrics` feature)
+3. **Compression** - Gzip/Brotli response compression
+4. **Request Body Timeout** - 30s timeout for reading the request body
+5. **Timeout** - 30s timeout for the whole request
+6. **Security Headers** - CSP (with nonces), HSTS, X-Frame-Options, etc.
+7. **User Agent Validation** - Require a `User-Agent` header
+8. **Panic Catcher** - Convert panics into 500 responses
+9. **Request ID** - Generate and propagate `X-Request-ID`
+10. **Error Handler** - Log 4xx/5xx responses
+11. **Real IP Extraction** - Resolve client IP from proxy headers
+12. **Request Logging** - Structured access log with request ID, real IP, and hashed `Authorization`/`Cookie` headers
+13. **Session Management** - Cookie-based session middleware
+14. **CSRF Token Ensure** - Create a CSRF token for the session
+15. **Traffic Blocking** - Block IPs, matched routes, or header patterns
+16. **Authentication** - Resolve session/API-token user and scopes
+17. **Rate Limiting** - DB-backed token-bucket throttling
+18. **CSRF Origin Verification** - Check origin on state-changing requests
+19. **CORS** - Cross-origin resource sharing
 
 ## Individual Middleware
 
@@ -73,15 +80,21 @@ let ip = RealIp::from_request(req, &state).await?;
 **Configuration:** Uses tracing for structured logging.
 
 **Log Fields:**
-- Method
-- URI
-- User-Agent
-- Response status
-- Request duration
+- `http.method`
+- `http.url`
+- `http.status_code`
+- `duration_ms`
+- `http.request.id`
+- `network.client.ip`
+- `http.user_agent`
+- `http.request.headers.hashed_authorization`
+- `http.request.headers.hashed_cookie`
+
+Sensitive headers are SHA-256 hashed before logging. The raw `Authorization` and `Cookie` values never appear in logs.
 
 **Example Log:**
 ```
-INFO http_request: GET /api/posts user_agent=Mozilla/5.0
+INFO http: GET /api/posts -> 200 (1.234ms) http.method=GET http.url=/api/posts http.status_code=200 duration_ms=1 http.request.id=... network.client.ip=127.0.0.1 http.user_agent=... http.request.headers.hashed_authorization=... http.request.headers.hashed_cookie=...
 ```
 
 ### Error Handler
@@ -214,8 +227,10 @@ X-Content-Type-Options: nosniff
 
 **Header:**
 ```
-X-XSS-Protection: 1; mode=block
+X-XSS-Protection: 0
 ```
+
+> The `X-XSS-Protection` header is intentionally set to `0` to avoid inconsistent browser behavior. CSP provides the actual XSS mitigation.
 
 #### Referrer Policy
 
@@ -303,13 +318,16 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 
 **Enable:**
 ```bash
-cargo run --bin server --features metrics
+cargo run --features metrics --bin axum-kickoff -- server
 ```
 
 **Access:**
 ```
 GET /metrics
+GET /api/private/metrics
 ```
+
+When `METRICS_TOKEN` is set, requests must include `Authorization: Bearer <METRICS_TOKEN>`.
 
 ### Debug Requests
 
@@ -399,18 +417,25 @@ Response: Handler → C → B → A
 
 **Current Order (outer to inner):**
 1. Path Normalization
-2. Real IP Extraction
-3. Request Logging
-4. Error Handler
-5. Session Management
-6. Panic Catcher
-7. User Agent Validation
-8. Security Headers
-9. Timeout
-10. Request Body Timeout
-11. Compression
-12. Metrics
-13. Debug Requests (development only)
+2. Debug Requests (development only)
+3. Metrics (`metrics` feature)
+4. Compression
+5. Request Body Timeout
+6. Timeout
+7. Security Headers
+8. User Agent Validation
+9. Panic Catcher
+10. Request ID
+11. Error Handler
+12. Real IP Extraction
+13. Request Logging
+14. Session Management
+15. CSRF Token Ensure
+16. Traffic Blocking
+17. Authentication
+18. Rate Limiting
+19. CSRF Origin Verification
+20. CORS
 
 ## Configuration
 
@@ -423,7 +448,7 @@ See [Configuration Documentation](CONFIGURATION.md#security-configuration) for s
 - `metrics`: Enable Prometheus metrics
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --features metrics --bin axum-kickoff -- server
 ```
 
 ## Testing

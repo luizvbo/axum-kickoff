@@ -57,15 +57,15 @@ use crate::util::auth::AuthCheck;
 
 // Restrict token to only access posts
 let check = AuthCheck::default()
-    .for_resource("posts");
+    .for_crate("posts");
 
 // Restrict token to posts and related resources
 let check = AuthCheck::default()
-    .for_resource("posts*");
+    .for_crate("posts*");
 
 // Allow token to access any resource (when combined with endpoint scope)
 let check = AuthCheck::default()
-    .allow_any_resource_scope();
+    .allow_any_crate_scope();
 ```
 
 ## Combining Scopes
@@ -76,12 +76,12 @@ You can combine endpoint and resource scopes for fine-grained control:
 // Token can read posts but not modify them
 let check = AuthCheck::default()
     .with_action_scope(ActionScope::Read)
-    .for_resource("posts");
+    .for_crate("posts");
 
 // Token can create and update posts but not delete them
 let check = AuthCheck::default()
     .with_action_scope(ActionScope::Create)
-    .for_resource("posts*");
+    .for_crate("posts*");
 ```
 
 ## Creating Scoped Tokens

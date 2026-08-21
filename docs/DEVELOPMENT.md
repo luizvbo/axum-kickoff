@@ -32,7 +32,7 @@ This guide covers development workflow, coding standards, and contribution guide
 
 4. Run the server:
    ```bash
-   cargo run --bin server
+   cargo run --bin axum-kickoff -- server
    ```
 
 ## Project Structure
@@ -41,7 +41,7 @@ This guide covers development workflow, coding standards, and contribution guide
 axum-kickoff/
 ├── src/
 │   ├── bin/              # Binary entry points
-│   │   └── server.rs     # Main server binary
+│   │   └── main.rs       # CLI entry point (server / migrate / background-worker)
 │   ├── controllers/      # HTTP request handlers
 │   │   ├── auth.rs      # Authentication endpoints
 │   │   └── token.rs     # API token management
@@ -234,13 +234,16 @@ See [Testing Documentation](TESTING.md) for detailed testing guidelines.
 
 ### Toasty Schema
 
-Database models are defined in `src/models/` using Toasty macros. The schema is managed automatically by Toasty.
+Database models are defined in `src/models/` using Toasty macros. Migrations are applied explicitly with the `migrate` subcommand.
 
-### Generating Models
+### Generating Migrations
 
 ```bash
-# Generate models from schema
-cargo run --bin toasty
+# Generate a migration after changing models
+cargo run --bin axum-kickoff -- migrate migration generate
+
+# Apply pending migrations
+cargo run --bin axum-kickoff -- migrate migration apply
 ```
 
 ### Manual Database Changes
@@ -332,7 +335,7 @@ Use profiling tools to identify bottlenecks:
 cargo install flamegraph
 
 # Generate flamegraph
-cargo flamegraph --bin server
+cargo flamegraph --bin axum-kickoff -- server
 ```
 
 ### Database Optimization
@@ -407,7 +410,7 @@ pub async fn my_handler(State(app): State<AppState>) -> AppResult<()> {
 cargo build
 
 # Run with debug logging
-RUST_LOG=debug cargo run --bin server
+RUST_LOG=debug cargo run --bin axum-kickoff -- server
 ```
 
 ### Common Issues

@@ -86,20 +86,28 @@ The `App` struct in `src/app.rs` holds all application-wide components:
 
 ### Middleware Stack
 
-Middleware is applied in `src/middleware/mod.rs` in this order:
+Middleware is applied by `src/middleware/mod.rs` and wrapped with path normalization in `src/lib.rs::build_handler`. From outermost to innermost the layers are:
 
-1. **Real IP Extraction**: Extract client IP from proxy headers
-2. **Request Logging**: Structured logging with tracing spans
-3. **Security Headers**: CSP, HSTS, X-Frame-Options, etc.
-4. **CORS**: Cross-origin resource sharing
-5. **Rate Limiting**: Request throttling per action type
-6. **Session Management**: Cookie-based session middleware
-7. **API Token Auth**: Bearer token authentication
-8. **User Agent Validation**: Block requests without User-Agent
-9. **Traffic Blocking**: Advanced traffic filtering
-10. **Error Handling**: Centralized error handling
-11. **Compression**: Gzip compression
-12. **Timeout**: Request timeout (30s default)
+1. **Path Normalization**: Collapse slashes, resolve `..`, trim trailing `/`
+2. **Debug Requests**: Full request logging (development only)
+3. **Metrics**: Prometheus request metrics (`metrics` feature)
+4. **Compression**: Gzip/Brotli response compression
+5. **Request Body Timeout**: 30s timeout for reading the body
+6. **Timeout**: 30s timeout for the whole request
+7. **Security Headers**: CSP (with nonces), HSTS, X-Frame-Options, etc.
+8. **User Agent Validation**: Require a `User-Agent` header
+9. **Panic Catcher**: Convert panics into 500 responses
+10. **Request ID**: Generate and propagate `X-Request-ID`
+11. **Error Handler**: Log 4xx/5xx responses
+12. **Real IP Extraction**: Resolve client IP from proxy headers
+13. **Request Logging**: Structured access log with hashed sensitive headers
+14. **Session Management**: Cookie-based session middleware
+15. **CSRF Token Ensure**: Create a CSRF token for the session
+16. **Traffic Blocking**: Block IPs, matched routes, or header patterns
+17. **Authentication**: Resolve session/API-token user and scopes
+18. **Rate Limiting**: DB-backed token-bucket throttling
+19. **CSRF Origin Verification**: Check origin on state-changing requests
+20. **CORS**: Cross-origin resource sharing
 
 See [Middleware Documentation](MIDDLEWARE.md) for details.
 
@@ -122,7 +130,7 @@ Controllers follow these patterns:
 The database layer uses Toasty ORM:
 
 - **Models**: Defined in `src/models/` with Toasty macros
-- **Migrations**: Automatic schema management via Toasty CLI
+- **Migrations**: Explicit `migrate migration apply` subcommand (not automatic on server start)
 - **Connection Pooling**: Built-in connection pooling
 - **Query Builder**: Type-safe query construction
 
@@ -134,9 +142,9 @@ Supported databases:
 
 The storage layer in `src/storage.rs` provides a pluggable abstraction:
 
-- **Local Filesystem**: Default for development
-- **S3 Compatible**: AWS S3, MinIO, DigitalOcean Spaces
-- **In-Memory**: For testing
+- **Local Filesystem**: Implemented; default for development and testing
+- **S3 Compatible**: Planned (AWS S3, MinIO, DigitalOcean Spaces)
+- **In-Memory**: Planned for tests
 
 See [Storage Documentation](STORAGE.md) for details.
 
@@ -152,11 +160,10 @@ See [Authentication Documentation](AUTHENTICATION.md) for details.
 
 ### Rate Limiting
 
-Rate limiting uses a token bucket algorithm:
+Rate limiting uses a database-backed token bucket algorithm:
 
-- **In-Memory**: Default for single-instance deployments
-- **Database-Backed**: Optional for distributed systems
-- **Redis**: Optional for high-throughput scenarios
+- **Database-Backed**: The default implementation persists bucket state in the configured database (SQLite or PostgreSQL) using the `rate_limit_buckets` table.
+- **Redis**: Optional for high-throughput distributed systems (not implemented by default).
 
 See [Rate Limiting Documentation](RATE_LIMITING.md) for details.
 
@@ -333,7 +340,7 @@ See [QuickWit Integration](quickwit-integration.md) for details.
 
 Default configuration supports single-instance deployments:
 
-- **In-Memory Rate Limiting**: Fast, no external dependencies
+- **DB-Backed Rate Limiting**: Token bucket state lives in the database
 - **SQLite Database**: Zero-setup, sufficient for moderate load
 - **Local Storage**: Simple file uploads
 

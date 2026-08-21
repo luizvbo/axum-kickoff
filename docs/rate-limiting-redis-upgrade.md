@@ -104,7 +104,7 @@ impl RedisRateLimiter {
 
 ### 3. Update Configuration
 
-Add Redis configuration to `src/config/server.rs`:
+Add Redis configuration to `src/config/mod.rs`:
 
 ```rust
 #[derive(Debug, Clone)]

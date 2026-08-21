@@ -22,7 +22,7 @@ This approach has several benefits:
 
 ### 1. Configure JSON Logging
 
-Update your `src/bin/server.rs` to output JSON logs:
+Update `src/bin/main.rs` (or `src/tracing.rs`) to output JSON logs in production:
 
 ```rust
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt};
@@ -182,7 +182,7 @@ opentelemetry = { version = "0.27", features = ["trace"] }
 opentelemetry-jaeger = { version = "0.27", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.27"
 
-// In src/bin/server.rs
+// In src/bin/main.rs
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_jaeger::new_pipeline;
 use tracing_opentelemetry::OpenTelemetryLayer;

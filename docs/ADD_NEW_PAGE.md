@@ -134,7 +134,7 @@ pub struct AboutTemplate {
 Start the server and visit your new page:
 
 ```bash
-cargo run --bin server
+cargo run --bin axum-kickoff -- server
 ```
 
 Navigate to `http://localhost:8888/about` in your browser.

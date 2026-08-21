@@ -39,8 +39,9 @@ cp .env.sample .env
 # Edit .env with your configuration
 # Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY, WEB_ALLOWED_ORIGINS
 
-# Run the server
-cargo run --bin server
+# Apply the database schema, then run the server
+cargo run --bin axum-kickoff -- migrate migration apply
+cargo run --bin axum-kickoff -- server
 ```
 
 The server will start on `http://localhost:8888` by default.
@@ -76,6 +77,7 @@ See [Configuration Documentation](docs/CONFIGURATION.md) for all available optio
 
 ## Documentation
 
+- **[Documentation Index](docs/INDEX.md)** — Curated reading order and feature map
 - **[Getting Started Guide](docs/GETTING_STARTED.md)** - Detailed setup and first steps
 - **[Database Guide](docs/DATABASE.md)** - Toasty ORM usage, migrations, and querying
 - **[HTMX + Askama Patterns](docs/HTMX_ASKAMA_PATTERNS.md)** - Frontend patterns with live examples
@@ -145,28 +147,30 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 | Component                      | Description                                                          | Status                                                                                |
 | ------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | GitHub OAuth                   | Authenticate users via GitHub OAuth                                  | Implemented                                                                           |
-| Session Management             | Secure cookie-based sessions for user authentication                 | Implemented                                                                           |
-| Security Headers               | HTTP security headers (CSP, HSTS, X-Frame-Options, etc.)             | Implemented                                                                           |
-| Request Logging                | Structured logging of all HTTP requests                              | Implemented                                                                           |
-| Error Handling                 | Centralized error handling and response formatting                   | Implemented                                                                           |
-| Real IP Extraction             | Extract client IP from headers (X-Forwarded-For, etc.)               | Implemented                                                                           |
-| User Agent Validation          | Validate User-Agent header to block malicious bots                   | Implemented                                                                           |
-| API Token Creation/List/Revoke | Manage scoped API tokens for programmatic access                     | Implemented                                                                           |
-| API Token Auth Middleware      | Authenticate requests via Bearer tokens with scope validation        | Implemented (with CurrentUser/CurrentAuth extractors)                                 |
-| Rate Limiting                  | Limit request rate to prevent abuse and DoS attacks                  | Core implemented / not applied globally                                               |
-| Traffic Blocking               | Block requests from malicious IPs or patterns                        | Infrastructure exists / not wired globally                                            |
-| CSRF Protection                | Prevent Cross-Site Request Forgery attacks on forms                  | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
-| CORS                           | Cross-Origin Resource Sharing for frontend-backend communication     | Implemented                                                                           |
-| Metrics Endpoint               | Prometheus metrics for monitoring and observability                  | Feature-gated / partial                                                               |
-| S3 Storage                     | Object storage backend for file uploads (AWS S3, MinIO, etc.)        | Planned                                                                               |
-| Redis Rate Limiting            | Distributed rate limiting using Redis for multi-instance deployments | Planned                                                                               |
-| Database-backed Rate Limiting  | Persistent rate limiting using SQLite/PostgreSQL                     | Planned                                                                               |
-| QuickWit Integration           | Self-hosted error tracking and log aggregation                       | Planned                                                                               |
-| OpenAPI                        | Auto-generated API documentation (Swagger/OpenAPI)                   | Planned                                                                               |
-| Background Worker              | Async job processing for tasks like email, webhooks                  | Planned                                                                               |
-| Email System                   | Transactional email sending (SMTP, SendGrid, etc.)                   | Planned                                                                               |
+| Session Management             | Secure cookie-based sessions with signed, `HttpOnly` cookies         | Implemented                                                                           |
+| Security Headers               | CSP (with nonces), HSTS, X-Frame-Options, etc.                       | Implemented                                                                           |
+| Request Logging                | Structured logging with request ID, real IP, and hashed headers      | Implemented                                                                           |
+| Error Handling                 | Centralized `AppError` / `AppResult` handling                        | Implemented                                                                           |
+| Real IP Extraction             | Extract client IP from `X-Forwarded-For` / `Forwarded`               | Implemented                                                                           |
+| User Agent Validation          | Require a `User-Agent` header                                        | Implemented                                                                           |
+| API Token Management           | Create, list, and revoke scoped API tokens                           | Implemented                                                                           |
+| API Token Auth                 | Bearer token authentication with scope checks                        | Implemented (`CurrentUserId` / `AuthCheck`)                                           |
+| Rate Limiting                  | DB-backed token bucket, per-action limits                            | Implemented                                                                           |
+| Traffic Blocking               | Block IPs, matched routes, and header patterns                       | Implemented                                                                           |
+| CSRF Protection                | Per-session tokens and origin verification                           | Implemented                                                                           |
+| CORS                           | Cross-Origin Resource Sharing for configured origins                 | Implemented                                                                           |
+| Request ID Middleware          | Unique request IDs in tracing spans and `X-Request-ID`               | Implemented                                                                           |
+| Metrics Endpoint               | Prometheus metrics, token-protected in production                    | Implemented (`metrics` feature)                                                       |
+| Path Normalization             | Collapse slashes, resolve `..`, trim trailing `/`                    | Implemented                                                                           |
+| OpenAPI / Swagger UI           | Auto-generated API docs at `/swagger-ui`                             | Implemented                                                                           |
+| Background Worker              | Polling job runner with exponential backoff                          | Implemented (built-in `CleanupJob`)                                                   |
+| Local Storage                  | Filesystem file uploads                                              | Implemented                                                                           |
+| S3 Storage                     | Object storage backend                                               | Planned                                                                               |
+| Redis Rate Limiting            | Distributed rate limiting using Redis                                | Planned                                                                               |
+| Quickwit Integration           | Self-hosted log analytics                                            | Documented / optional                                                                 |
+| Email System                   | Transactional email sending                                          | Planned                                                                               |
 | Webhooks                       | Webhook delivery for event notifications                             | Planned                                                                               |
-| Read Replicas                  | Database read replicas for scaling read-heavy workloads              | Planned                                                                               |
+| Read Replicas                  | Database read replicas                                               | Planned                                                                               |
 
 See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 
@@ -185,11 +189,14 @@ cargo test --test '*'
 cargo insta accept
 ```
 
-### Code Generation
+### Database Migrations
 
 ```bash
-# Generate database models from Toasty schema
-cargo run --bin toasty
+# Generate a migration after changing models
+cargo run --bin axum-kickoff -- migrate migration generate
+
+# Apply pending migrations
+cargo run --bin axum-kickoff -- migrate migration apply
 ```
 
 ### Feature Flags
@@ -198,7 +205,7 @@ cargo run --bin toasty
 
 ```bash
 # Run with metrics
-cargo run --bin server --features metrics
+cargo run --features metrics --bin axum-kickoff -- server
 ```
 
 ## Deployment
@@ -209,12 +216,12 @@ cargo run --bin server --features metrics
 FROM rust:1.70 as builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --bin axum-kickoff
 
 FROM debian:bookworm-slim
-COPY --from=builder /app/target/release/server /usr/local/bin/
-EXPOSE 3000
-CMD ["server"]
+COPY --from=builder /app/target/release/axum-kickoff /usr/local/bin/
+EXPOSE 8888
+CMD ["axum-kickoff", "server"]
 ```
 
 ### Environment Variables
@@ -245,7 +252,7 @@ This project adapts crates.io's production-grade patterns while simplifying for 
 - **Single-crate application** vs 25+ crate workspace
 - **Toasty/SQLite** vs Diesel/PostgreSQL (with migration path)
 - **HTMX/Alpine.js** vs SvelteKit SPA
-- **In-memory rate limiting** vs database-backed (with upgrade path)
+- **DB-backed rate limiting** vs Redis (with upgrade path)
 - **QuickWit** vs Sentry for error tracking (self-hosted alternative)
 
 See [Roadmap](docs/ROADMAP.md) for detailed comparison and implementation plans.

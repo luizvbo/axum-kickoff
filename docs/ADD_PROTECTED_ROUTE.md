@@ -1,237 +1,108 @@
 # Add a Protected Route
 
-This guide shows you how to add a route that requires user authentication.
+This guide shows how to add a route that requires an authenticated user.
 
 ## Overview
 
-Protected routes require users to be logged in. For browser requests, anonymous users should be redirected to the GitHub login page. For API requests, return a `401 Unauthorized` response.
+The template already provides the authentication extractors and middleware:
 
-## Step 1: Create a CurrentUser Extractor
+- `CurrentUserId` — returns the authenticated user's ID, or `401` if not logged in.
+- `OptionalCurrentUserId` — returns `Some(user_id)` or `None`.
+- `Authentication` — returns an `Authentication::Cookie { user_id }` or `Authentication::Token { ... }`.
+- `require_auth` middleware — returns `401 Unauthorized` for unauthenticated requests.
+- `require_login` middleware — redirects browser requests to the GitHub OAuth login.
 
-First, create a reusable extractor for authenticated users in `src/middleware/auth.rs`:
+## Step 1: Add the route and protect it
+
+In `src/router.rs`, add the route and a `route_layer` that requires authentication:
 
 ```rust
-use axum::{
-    async_trait,
-    extract::{FromRequestParts, TypedHeader},
-    headers::{authorization::Bearer, Authorization},
-    http::request::FromRef,
-    RequestPartsExt,
-};
-use crate::app::AppState;
-use crate::middleware::SessionExtension;
-use crate::models::User;
-use crate::util::errors::{unauthorized, AppResult};
+use axum::routing::{get, post};
+use crate::controllers::dashboard;
+use crate::middleware::{require_auth, require_login};
 
-/// Extractor for authenticated users
-///
-/// Returns 401 if user is not logged in
-pub struct CurrentUser(pub User);
+// API route that returns 401 when not authenticated
+router
+    .route("/api/v1/dashboard", get(dashboard::api_dashboard))
+    .route_layer(axum::middleware::from_fn(require_auth));
 
-#[async_trait]
-impl<S> FromRequestParts<S> for CurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = AppResult<axum::http::StatusCode>;
-
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let state = AppState::from_ref(state);
-
-        // Try session auth first
-        if let Some(session) = parts.extract::<SessionExtension>().await.ok() {
-            if let Some(user_id_str) = session.get("user_id") {
-                if let Ok(user_id) = user_id_str.parse::<u64>() {
-                    let mut db = state.0.database.db_clone();
-                    if let Ok(user) = User::get_by_id(&mut db, user_id).await {
-                        return Ok(CurrentUser(user));
-                    }
-                }
-            }
-        }
-
-        // Try API token auth
-        if let Ok(TypedHeader(auth)) = TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state).await {
-            let token = auth.token();
-            // Validate token and fetch user
-            // (Implement token validation logic)
-        }
-
-        Err(unauthorized("Authentication required"))
-    }
-}
-
-/// Optional extractor for authenticated users
-///
-/// Returns None if user is not logged in
-pub struct OptionalCurrentUser(pub Option<User>);
-
-#[async_trait]
-impl<S> FromRequestParts<S> for OptionalCurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        match CurrentUser::from_request_parts(parts, state).await {
-            Ok(user) => Ok(OptionalCurrentUser(Some(user.0))),
-            Err(_) => Ok(OptionalCurrentUser(None)),
-        }
-    }
-}
+// Browser route that redirects to login when not authenticated
+router
+    .route("/dashboard", get(dashboard::dashboard_page))
+    .route_layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        require_login,
+    ));
 ```
 
-## Step 2: Use the Extractor in Your Handler
+## Step 2: Use the extractor in the handler
 
-Use the `CurrentUser` extractor in your protected route handler:
+`CurrentUserId` gives you the user's ID; load the `User` and any related data in the handler.
 
 ```rust
 use axum::extract::State;
-use crate::middleware::auth::CurrentUser;
 use crate::app::AppState;
-use crate::util::errors::AppResult;
+use crate::middleware::CurrentUserId;
+use crate::models::{Post, User};
 use crate::templates::HtmlTemplate;
-
-pub async fn dashboard(
-    CurrentUser(user): CurrentUser,
-    State(state): State<AppState>,
-) -> AppResult<HtmlTemplate<DashboardTemplate>> {
-    // User is authenticated, proceed with the handler
-    let mut db = state.0.database.db_clone();
-
-    // Fetch user-specific data
-    let posts = Post::filter(Post::fields().user_id().eq(user.id))
-        .exec(&mut db)
-        .await
-        .map_err(|e| server_error(e.to_string()))?;
-
-    Ok(HtmlTemplate(DashboardTemplate {
-        user,
-        posts,
-    }))
-}
-```
-
-## Step 3: Add the Route
-
-Add the protected route to your router:
-
-```rust
-use axum::routing::get;
-use crate::controllers::your_controller;
-
-// In your router function
-.route("/dashboard", get(controllers::your_controller::dashboard))
-```
-
-## Step 4: Handle Redirects for Browser Requests
-
-For browser requests, you may want to redirect anonymous users to the login page instead of returning 401. Create a middleware or modify your extractor:
-
-```rust
-pub async fn require_auth_or_redirect(
-    session: SessionExtension,
-) -> Result<CurrentUser, Redirect> {
-    if let Some(user_id_str) = session.get("user_id") {
-        if let Ok(user_id) = user_id_str.parse::<u64>() {
-            // Fetch user from database
-            // Return CurrentUser
-        }
-    }
-
-    // Redirect to login with return URL
-    Err(Redirect::to("/api/v1/auth/github/authorize?redirect_to=/dashboard"))
-}
-```
-
-## Complete Example
-
-Here's a complete example for a protected dashboard page:
-
-### Extractor (`src/middleware/auth.rs`)
-
-```rust
-use axum::{
-    async_trait,
-    extract::FromRequestParts,
-    http::request::FromRef,
-};
-use crate::app::AppState;
-use crate::middleware::SessionExtension;
-use crate::models::User;
-use crate::util::errors::{unauthorized, AppResult};
-
-pub struct CurrentUser(pub User);
-
-#[async_trait]
-impl<S> FromRequestParts<S> for CurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = AppResult<axum::http::StatusCode>;
-
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let state = AppState::from_ref(state);
-
-        if let Some(session) = parts.extract::<SessionExtension>().await.ok() {
-            if let Some(user_id_str) = session.get("user_id") {
-                if let Ok(user_id) = user_id_str.parse::<u64>() {
-                    let mut db = state.0.database.db_clone();
-                    if let Ok(user) = User::get_by_id(&mut db, user_id).await {
-                        return Ok(CurrentUser(user));
-                    }
-                }
-            }
-        }
-
-        Err(unauthorized("Authentication required"))
-    }
-}
-```
-
-### Controller (`src/controllers/dashboard.rs`)
-
-```rust
-use axum::extract::State;
-use crate::middleware::auth::CurrentUser;
-use crate::app::AppState;
-use crate::models::Post;
 use crate::util::errors::{server_error, AppResult};
-use crate::templates::HtmlTemplate;
 
-pub async fn dashboard(
-    CurrentUser(user): CurrentUser,
+pub async fn dashboard_page(
+    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<HtmlTemplate<DashboardTemplate>> {
     let mut db = state.0.database.db_clone();
 
-    let posts = Post::filter(Post::fields().user_id().eq(user.id))
+    let user = User::get_by_id(&mut db, user_id)
+        .await
+        .map_err(|e| server_error(e.to_string()))?;
+
+    let posts = Post::filter(Post::fields().user_id().eq(user_id))
         .exec(&mut db)
         .await
         .map_err(|e| server_error(e.to_string()))?;
 
-    Ok(HtmlTemplate(DashboardTemplate {
-        user: user.clone(),
-        username: user.gh_login,
-        post_count: posts.len(),
-    }))
+    Ok(HtmlTemplate::new(DashboardTemplate { user, posts }))
 }
 ```
 
-### Template (`templates/dashboard.html`)
+If you need to know whether the request came from a session or an API token, use `Authentication`:
+
+```rust
+use crate::util::auth::Authentication;
+
+pub async fn api_dashboard(
+    auth: Authentication,
+    State(state): State<AppState>,
+) -> AppResult<Json<DashboardData>> {
+    let mut db = state.0.database.db_clone();
+    let user = User::get_by_id(&mut db, auth.user_id())
+        .await
+        .map_err(|e| server_error(e.to_string()))?;
+
+    // auth.is_token() tells you if this is an API-token request
+    Ok(Json(DashboardData { user }))
+}
+```
+
+## Step 3: Optional authentication
+
+For routes that work with or without a logged-in user, use `OptionalCurrentUserId`:
+
+```rust
+use crate::middleware::OptionalCurrentUserId;
+
+pub async fn public_page(
+    OptionalCurrentUserId(maybe_user): OptionalCurrentUserId,
+) -> AppResult<HtmlTemplate<PublicTemplate>> {
+    let username = maybe_user.map(|id| id.to_string());
+    Ok(HtmlTemplate::new(PublicTemplate { username }))
+}
+```
+
+## Step 4: Create the template
+
+Create `templates/dashboard.html`:
 
 ```html
 {% extends "base.html" %}
@@ -240,73 +111,54 @@ pub async fn dashboard(
 
 {% block content %}
 <div class="container mx-auto p-4">
-    <h1 class="text-3xl font-bold mb-4">Welcome, {{ username }}!</h1>
-
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-xl font-semibold mb-2">Your Posts</h2>
-        <p class="text-gray-600">You have {{ post_count }} posts.</p>
-    </div>
+    <h1 class="text-3xl font-bold mb-4">Welcome, {{ user.gh_login }}!</h1>
+    <p>You have {{ posts.len() }} posts.</p>
 </div>
 {% endblock %}
 ```
 
-### Router (`src/router.rs`)
+Add the template struct in `src/templates/mod.rs` or wherever you keep template structs:
 
 ```rust
-.route("/dashboard", get(controllers::dashboard::dashboard))
-```
+use askama::Template;
+use crate::models::{Post, User};
 
-## API-Only Protected Routes
-
-For API endpoints that should always return 401 (not redirect):
-
-```rust
-pub async fn api_create_post(
-    CurrentUser(user): CurrentUser,
-    State(state): State<AppState>,
-    Json(req): Json<CreatePostRequest>,
-) -> AppResult<impl IntoResponse> {
-    // Handler logic
-    Ok(Json(created_post))
+#[derive(Template)]
+#[template(path = "dashboard.html")]
+pub struct DashboardTemplate {
+    pub user: User,
+    pub posts: Vec<Post>,
 }
 ```
 
-## Optional Authentication
+## Testing
 
-For routes that work with or without authentication:
-
-```rust
-use crate::middleware::auth::OptionalCurrentUser;
-
-pub async fn public_page(
-    OptionalCurrentUser(maybe_user): OptionalCurrentUser,
-) -> AppResult<HtmlTemplate<PublicTemplate>> {
-    let username = maybe_user.map(|u| u.gh_login);
-
-    Ok(HtmlTemplate(PublicTemplate {
-        username,
-    }))
-}
-```
-
-## Testing Protected Routes
-
-Test that protected routes reject unauthenticated requests:
+Test that an unauthenticated request is rejected and an authenticated request succeeds:
 
 ```rust
+use axum_kickoff::tests::{TestApp, CookieUser, AnonymousUser};
+use http::StatusCode;
+
 #[tokio::test]
 async fn test_dashboard_requires_auth() {
-    let app = create_test_app().await;
+    let app = TestApp::new().await;
 
-    let response = app
-        .oneshot(Request::builder()
-            .uri("/dashboard")
-            .body(Body::empty())
-            .unwrap())
+    // Anonymous users get 401
+    let anon = AnonymousUser::new(app);
+    let response = anon.get::<()>("/api/v1/dashboard").await;
+    response.assert_status(StatusCode::UNAUTHORIZED);
+
+    // Authenticated users succeed
+    let mut db = app.db.db_clone();
+    let user = app
+        .user_builder("test_user")
+        .build(&mut db)
         .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        .expect("failed to create user");
+    let session_key = app.state.session_key.clone();
+    let user = CookieUser::new(app, user.id, session_key);
+    let response = user.get::<()>("/api/v1/dashboard").await;
+    response.assert_success();
 }
 ```
 

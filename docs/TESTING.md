@@ -24,7 +24,7 @@ use axum_kickoff::tests::TestApp;
 
 #[tokio::test]
 async fn test_example() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     // Use app for testing
 }
 ```
@@ -44,7 +44,7 @@ use axum_kickoff::tests::{TestApp, AnonymousUser};
 
 #[tokio::test]
 async fn test_get_endpoint() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/endpoint").await;
@@ -170,7 +170,7 @@ use http::StatusCode;
 
 #[tokio::test]
 async fn test_health_check() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/health").await;
@@ -187,8 +187,14 @@ use axum_kickoff::tests::{TestApp, CookieUser};
 
 #[tokio::test]
 async fn test_protected_endpoint() {
-    let app = TestApp::new();
-    let user = CookieUser::new(app, "test_user").await;
+    let app = TestApp::new().await;
+    let mut db = app.db.db_clone();
+    let user = app
+        .user_builder("test_user")
+        .build(&mut db)
+        .await
+        .expect("failed to create user");
+    let user = CookieUser::new(app, user.id, app.state.session_key.clone());
 
     let response = user.get::<()>("/api/protected").await;
     response.assert_success();
@@ -205,7 +211,7 @@ use insta::assert_json_snapshot;
 
 #[tokio::test]
 async fn test_api_response() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<serde_json::Value>("/api/data").await;
@@ -234,8 +240,14 @@ async fn test_api_response() {
 #[tokio::test]
 async fn test_endpoint_name() {
     // Arrange
-    let app = TestApp::new();
-    let user = CookieUser::new(app, "user").await;
+    let app = TestApp::new().await;
+    let mut db = app.db.db_clone();
+    let user = app
+        .user_builder("user")
+        .build(&mut db)
+        .await
+        .expect("failed to create user");
+    let user = CookieUser::new(app, user.id, app.state.session_key.clone());
 
     // Act
     let response = user.get::<()>("/api/endpoint").await;
@@ -280,8 +292,14 @@ let user = UserBuilder::new()
 ```rust
 #[tokio::test]
 async fn test_create_post() {
-    let app = TestApp::new();
-    let user = CookieUser::new(app, "user").await;
+    let app = TestApp::new().await;
+    let mut db = app.db.db_clone();
+    let user = app
+        .user_builder("user")
+        .build(&mut db)
+        .await
+        .expect("failed to create user");
+    let user = CookieUser::new(app, user.id, app.state.session_key.clone());
 
     // Create
     let input = CreatePostInput { title: "Test".to_string() };
@@ -299,8 +317,14 @@ async fn test_create_post() {
 ```rust
 #[tokio::test]
 async fn test_invalid_input() {
-    let app = TestApp::new();
-    let user = CookieUser::new(app, "user").await;
+    let app = TestApp::new().await;
+    let mut db = app.db.db_clone();
+    let user = app
+        .user_builder("user")
+        .build(&mut db)
+        .await
+        .expect("failed to create user");
+    let user = CookieUser::new(app, user.id, app.state.session_key.clone());
 
     let invalid_input = CreatePostInput { title: "".to_string() };
     let response = user.post("/api/posts", &invalid_input).await;
@@ -313,7 +337,7 @@ async fn test_invalid_input() {
 ```rust
 #[tokio::test]
 async fn test_unauthorized_access() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/protected").await;
@@ -326,7 +350,7 @@ async fn test_unauthorized_access() {
 ```rust
 #[tokio::test]
 async fn test_rate_limiting() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     // Make multiple requests

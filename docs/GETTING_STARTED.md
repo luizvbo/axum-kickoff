@@ -101,14 +101,21 @@ Use the output as your `SESSION_KEY` in `.env`.
 
 ### 5. Run Database Migrations
 
-axum-kickoff uses Toasty ORM for database management. The schema is defined in `src/models/` and migrations are handled automatically on first run.
+axum-kickoff uses Toasty ORM for database management. The schema is defined in `src/models/` and the application does **not** auto-apply migrations on startup. You must run the `migrate` command before starting the server, or as part of your release process.
 
-For development, SQLite will create the database file automatically on first startup.
+For development, run:
+
+```bash
+cargo run --bin axum-kickoff -- migrate migration apply
+```
+
+SQLite will create the database file automatically if it does not exist.
 
 ### 6. Start the Server
 
 ```bash
-cargo run --bin server
+cargo run --bin axum-kickoff -- migrate migration apply
+cargo run --bin axum-kickoff -- server
 ```
 
 You should see output like:
@@ -147,9 +154,9 @@ After logging in, you can create API tokens for programmatic access:
 # Via the web UI (when implemented)
 # Navigate to Settings → API Tokens → Create Token
 
-# Or via API (when implemented)
-curl -X POST http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+# Or via API (requires an existing session or API token with the `create` scope)
+curl -X POST http://localhost:8888/api/v1/tokens \
+  -H "Cookie: session=YOUR_SESSION_COOKIE" \
   -H "Content-Type: application/json" \
   -d '{"name": "My Token", "scopes": ["read"]}'
 ```
@@ -159,7 +166,8 @@ curl -X POST http://localhost:3000/api/tokens \
 Use your API token to make authenticated requests:
 
 ```bash
-curl http://localhost:3000/api/health \
+curl http://localhost:8888/health
+curl http://localhost:8888/api/v1/posts \
   -H "Authorization: Bearer YOUR_API_TOKEN"
 ```
 
@@ -171,7 +179,7 @@ Familiarize yourself with the project structure:
 axum-kickoff/
 ├── src/
 │   ├── bin/
-│   │   └── server.rs          # Server entry point
+│   │   └── main.rs            # CLI entry point (server / migrate / background-worker)
 │   ├── controllers/
 │   │   ├── auth.rs            # Authentication endpoints
 │   │   └── token.rs           # API token management
@@ -183,7 +191,8 @@ axum-kickoff/
 │   ├── models/
 │   │   ├── user.rs            # User model
 │   │   ├── token.rs           # API token model
-│   │   └── oauth_github.rs    # GitHub OAuth model
+│   │   ├── post.rs            # Example post model
+│   │   └── background_job.rs  # Background job queue model
 │   ├── config/
 │   │   ├── mod.rs             # Configuration module
 │   │   ├── base.rs            # Base configuration
@@ -231,9 +240,9 @@ cargo insta accept
 
 ```bash
 # Build release binary
-cargo build --release
+cargo build --release --bin axum-kickoff
 
-# The binary will be at target/release/server
+# The binary will be at target/release/axum-kickoff
 ```
 
 ### Enabling Metrics
@@ -241,7 +250,7 @@ cargo build --release
 Build with the metrics feature flag:
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --features metrics --bin axum-kickoff -- server
 ```
 
 Metrics will be available at `/metrics`.
@@ -249,8 +258,11 @@ Metrics will be available at `/metrics`.
 ### Database Operations
 
 ```bash
-# Generate models from Toasty schema
-cargo run --bin toasty
+# Generate a migration after changing models
+cargo run --bin axum-kickoff -- migrate migration generate
+
+# Apply pending migrations
+cargo run --bin axum-kickoff -- migrate migration apply
 
 # View SQLite database
 sqlite3 axum-kickoff.db

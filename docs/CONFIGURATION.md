@@ -17,7 +17,7 @@ Configuration is managed through environment variables. The application reads th
 
 3. Start the application:
    ```bash
-   cargo run --bin server
+   cargo run --bin axum-kickoff -- server
    ```
 
 ## Required Configuration
@@ -367,7 +367,7 @@ Database URL for tests. Defaults to in-memory SQLite if not set.
 ### Metrics
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --features metrics --bin axum-kickoff -- server
 ```
 
 Enable Prometheus metrics endpoint at `/metrics`.

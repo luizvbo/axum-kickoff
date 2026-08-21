@@ -28,7 +28,11 @@ The roadmap follows these principles:
 - **Testing**: Integration test infrastructure with snapshot testing
 - **Configuration**: Environment-based configuration
 - **Error Handling**: Structured error handling with AppError
-- **Rate Limiting**: In-memory token bucket algorithm
+- **Rate Limiting**: Database-backed token bucket algorithm
+- **OpenAPI / Swagger UI**: Auto-generated API docs (`/swagger-ui`)
+- **Background Worker**: Polling job runner with exponential backoff (`CleanupJob`)
+- **Request ID Middleware**: Per-request IDs in logs and headers
+- **Path Normalization**: Collapse slashes, resolve `..`, trim trailing `/`
 
 ## Planned Features
 

@@ -1,14 +1,13 @@
 # Rate Limiting
 
-This document describes the rate limiting system in axum-kickoff, including in-memory, database-backed, and Redis implementations.
+This document describes the rate limiting system in axum-kickoff. The current implementation is database-backed; in-memory and Redis backends are planned but not yet implemented.
 
 ## Overview
 
-Rate limiting protects your application from abuse by throttling requests based on action types. axum-kickoff supports multiple backends:
+Rate limiting protects your application from abuse by throttling requests based on action types.
 
-- **In-Memory**: Default for single-instance deployments
-- **Database-Backed**: For distributed systems (SQLite/PostgreSQL)
-- **Redis**: For high-throughput distributed systems
+- **Current implementation**: Database-backed token bucket, persisted in the `rate_limit_buckets` table (SQLite or PostgreSQL).
+- **Planned**: In-memory backend for very low-latency single-instance deployments, and Redis for high-throughput distributed systems.
 
 ## Algorithm
 
@@ -39,7 +38,7 @@ Rate limiting is configured per action type:
 | `FileUpload` | File upload requests | 1 request/10sec | 5 requests |
 | `FormSubmission` | Form submissions | 1 request/30sec | 10 requests |
 
-## In-Memory Rate Limiting
+## Planned: In-Memory Rate Limiting
 
 ### Overview
 
@@ -84,7 +83,7 @@ RATE_LIMITER_FORM_SUBMISSION_BURST=10
 - Low to moderate traffic
 - When simplicity is preferred
 
-## Database-Backed Rate Limiting
+## Current: Database-Backed Rate Limiting
 
 ### Overview
 
@@ -136,7 +135,7 @@ CREATE TABLE rate_limit_overrides (
 - When per-user overrides are needed
 - When persistence is required
 
-## Redis Rate Limiting
+## Planned: Redis Rate Limiting
 
 ### Overview
 
@@ -241,7 +240,7 @@ impl RedisRateLimiter {
 
 #### 3. Update Configuration
 
-Add Redis configuration to `src/config/server.rs`:
+Add Redis configuration to `src/config/mod.rs`:
 
 ```rust
 #[derive(Debug, Clone)]
@@ -381,7 +380,7 @@ pub async fn create_post(
 ) -> AppResult<Json<Post>> {
     // Check rate limit
     app.rate_limiter
-        .check("user_123", LimitedAction::ApiRequest)
+        .check_rate_limit("user_123", LimitedAction::ApiRequest)
         .await?;
 
     // Process request

@@ -17,7 +17,7 @@ axum-kickoff supports multiple authentication methods:
 1. Create a GitHub OAuth App:
    - Go to [GitHub Developer Settings](https://github.com/settings/developers)
    - Click "New OAuth App"
-   - Set the authorization callback URL to: `https://your-domain.com/auth/github/callback`
+   - Set the authorization callback URL to: `https://your-domain.com/api/v1/auth/github/callback`
 
 2. Configure environment variables:
    ```bash
@@ -42,9 +42,9 @@ axum-kickoff supports multiple authentication methods:
 
 ### Endpoints
 
-- `GET /auth/github` - Initiate OAuth flow
-- `GET /auth/github/callback` - OAuth callback
-- `GET /auth/logout` - Logout and clear session
+- `GET /api/v1/auth/github/authorize` - Initiate OAuth flow
+- `GET /api/v1/auth/github/callback` - OAuth callback
+- `POST /logout` or `POST /api/v1/auth/logout` - Logout and clear session
 
 ### Implementation
 
@@ -110,15 +110,11 @@ The session middleware in `src/middleware/session.rs`:
 - **Signed Cookies**: Sessions are signed with HMAC to prevent tampering
 - **Secure Flag**: Cookies are marked as secure in production (HTTPS only)
 - **HttpOnly Flag**: Cookies are not accessible via JavaScript
-- **SameSite**: Cookies are set with `SameSite=Lax` to prevent CSRF
+- **SameSite**: Cookies are set with `SameSite=Strict` to prevent CSRF
 
 ### Session Expiration
 
-Sessions expire after a configurable period (default: 24 hours). Configure via environment variable:
-
-```bash
-SESSION_EXPIRATION_HOURS=24
-```
+Session cookies have a default max-age of **90 days**. This is controlled by the session middleware in `src/middleware/session.rs` and is not currently configurable via an environment variable.
 
 ## API Tokens
 
@@ -142,8 +138,8 @@ API tokens have the following properties:
 #### Via API
 
 ```bash
-curl -X POST http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+curl -X POST http://localhost:8888/api/v1/tokens \
+  -H "Cookie: session=YOUR_SESSION_COOKIE" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Token",
@@ -159,7 +155,7 @@ curl -X POST http://localhost:3000/api/tokens \
 {
   "id": "token_id",
   "name": "My Token",
-  "token": "axk_abc123...",  // Only shown on creation
+  "token": "ako...",  // Only shown on creation
   "action_scopes": ["read"],
   "resource_scopes": ["posts"],
   "expires_at": "2024-12-31T23:59:59Z",
@@ -174,8 +170,8 @@ curl -X POST http://localhost:3000/api/tokens \
 Include the token in the `Authorization` header:
 
 ```bash
-curl http://localhost:3000/api/posts \
-  -H "Authorization: Bearer axk_abc123..."
+curl http://localhost:8888/api/v1/posts \
+  -H "Authorization: Bearer ako..."
 ```
 
 ### Token Scopes
@@ -203,15 +199,15 @@ Resource scopes control which resources a token can access:
 #### List Tokens
 
 ```bash
-curl http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+curl http://localhost:8888/api/v1/tokens \
+  -H "Cookie: session=YOUR_SESSION_COOKIE"
 ```
 
 #### Revoke Token
 
 ```bash
-curl -X DELETE http://localhost:3000/api/tokens/TOKEN_ID \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+curl -X POST http://localhost:8888/api/v1/tokens/TOKEN_ID \
+  -H "Cookie: session=YOUR_SESSION_COOKIE"
 ```
 
 ### Token Security
@@ -300,7 +296,7 @@ Locked accounts cannot authenticate until the lock expires.
 
 1. **Secure Session Key**: Use a cryptographically secure 64+ byte key
 2. **Rotate Keys**: Rotate session keys periodically
-3. **Short Expiration**: Use short session expiration (24 hours or less)
+3. **Session Cookie Max-Age**: The default max-age is 90 days; review this for your security model
 4. **Secure Cookies**: Enable secure flag in production
 5. **HttpOnly**: Always use HttpOnly flag
 
@@ -338,7 +334,7 @@ Locked accounts cannot authenticate until the lock expires.
 
 ### API Token Rejected
 
-- Verify token is correctly formatted: `Bearer axk_...`
+- Verify token is correctly formatted: `Bearer ako...`
 - Check token hasn't expired
 - Verify token has required scopes for endpoint
 - Ensure token hasn't been revoked

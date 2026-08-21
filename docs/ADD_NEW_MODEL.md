@@ -58,13 +58,17 @@ pub use post::Post;  // Add this line
 
 ## Step 3: Generate Database Code
 
-Run the Toasty code generator to create the database access code:
+Run the migration generator to create a new migration for your model:
 
 ```bash
-cargo run --bin toasty
+cargo run --bin axum-kickoff -- migrate migration generate
 ```
 
-This will generate the necessary database query methods for your model.
+Then apply it:
+
+```bash
+cargo run --bin axum-kickoff -- migrate migration apply
+```
 
 ## Step 4: Add Helper Methods (Optional)
 
