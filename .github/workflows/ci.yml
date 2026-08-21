@@ -68,7 +68,7 @@ jobs:
 
       - run: cargo machete
 
-      - run: cargo audit
+      - run: cargo audit --db "$(mktemp -d -p "${RUNNER_TEMP}" cargo-audit-db-XXXXXX)"
 
       - run: zizmor .github/workflows
 
