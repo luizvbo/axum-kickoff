@@ -7,13 +7,14 @@ expression: body
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="csrf-token" content="[CSRF_TOKEN]">
+  <meta name="csrf-token" content="">
   <title>Axum Kickoff - Rust Web Application Starter</title>
   <link nonce="[CSP_NONCE]" rel="stylesheet" href="/static/css/style.css">
   <script nonce="[CSP_NONCE]" src="/static/vendor/htmx.min.js"></script>
   <script nonce="[CSP_NONCE]" defer src="/static/vendor/alpine.js"></script>
 </head>
-<body hx-headers='{"X-CSRF-Token": "[CSRF_TOKEN]"}'>
+
+<body>
 
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <nav class="navbar" aria-label="Main navigation">

@@ -19,9 +19,10 @@ use crate::controllers::post::{
     create_post, delete_post, list_posts, publish_post, show_post, unpublish_post, update_post,
 };
 use crate::controllers::token::{create_token, list_tokens, revoke_token};
+use crate::middleware::csrf::session_has_csrf_state;
 use crate::middleware::security_headers::current_csp_nonce;
 use crate::middleware::{
-    csrf_protect, get_or_create_csrf_token, require_auth, CspNonce, SessionExtension,
+    csrf_protect, get_or_create_csrf_token, rate_limit, require_auth, CspNonce, SessionExtension,
 };
 use crate::models::User;
 use crate::util::errors::BoxedAppError;
@@ -90,9 +91,15 @@ impl<S: Send + Sync> FromRequestParts<S> for PageContext {
             .map(|n| n.0.clone())
             .unwrap_or_else(current_csp_nonce);
 
+        // Only mint a CSRF token when the session carries state worth
+        // protecting (authenticated user or existing token). Creating a token
+        // for an empty session would dirty it and emit `Set-Cookie` on
+        // anonymous GETs for no benefit — anonymous unsafe requests skip CSRF
+        // validation anyway.
         let csrf_token = parts
             .extensions
             .get::<SessionExtension>()
+            .filter(|session| session_has_csrf_state(session))
             .map(get_or_create_csrf_token)
             .unwrap_or_default();
 
@@ -103,28 +110,75 @@ impl<S: Send + Sync> FromRequestParts<S> for PageContext {
     }
 }
 
+/// Build the application's route tree.
+///
+/// The tree is split into two subtrees:
+///
+/// - **Operational routes** (`/health`, `/static`, `/metrics`, `/swagger-ui`,
+///   `/api-docs`) only run infrastructure middleware (timeouts, compression,
+///   security headers, request IDs, logging, CORS). They never create
+///   sessions, emit `Set-Cookie`, touch the user database, or consume
+///   rate-limit tokens — so health probes and asset requests stay cheap.
+///
+/// - **Application routes** (HTML pages and `/api/*`) additionally run the
+///   session, authentication, and origin-verification middleware applied in
+///   `middleware::apply_app_middleware`. Authentication requirements, CSRF
+///   validation, and rate limiting are then layered per route group via
+///   `route_layer`, mirroring crates.io's point-of-use `AuthCheck`/
+///   `check_rate_limit` pattern.
 pub fn build_axum_router(state: AppState) -> Router<()> {
-    // Public HTML / example router - no authentication required
+    // Operational routes — infrastructure middleware only.
+    let ops_router = Router::new()
+        .route("/health", get(health_check))
+        .nest_service(
+            "/static",
+            ServeDir::new("static")
+                .precompressed_gzip()
+                .precompressed_br(),
+        );
+
+    #[cfg(feature = "metrics")]
+    let ops_router = ops_router
+        .route("/metrics", get(crate::metrics::metrics_handler))
+        .route("/api/private/metrics", get(crate::metrics::metrics_handler));
+
+    // Public HTML / example routes - no authentication required
     let public_router = Router::new()
         .route("/", get(home))
-        .route("/health", get(health_check))
         .route("/api/server-time", get(server_time))
-        .route("/api/v1/auth/github/authorize", get(github_authorize))
-        .route("/api/v1/auth/github/callback", get(github_callback))
         // Example routes for HTMX + Askama patterns
         .route("/examples/contact", get(contact_page))
-        .route("/examples/contact", post(contact_submit))
+        // Only form submissions consume rate-limit tokens; rendering the page
+        // must not count against the anonymous submission budget.
+        .route(
+            "/examples/contact",
+            post(contact_submit).route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                rate_limit,
+            )),
+        )
         .route("/examples/counter", get(counter_page))
         .route("/examples/counter/increment", post(counter_increment))
         .route("/examples/counter/decrement", post(counter_decrement))
         .route("/examples/json", get(example_json));
+
+    // Sensitive public routes - OAuth flow endpoints are rate limited to
+    // protect the authentication handshake from abuse.
+    let rate_limited_router = Router::new()
+        .route("/api/v1/auth/github/authorize", get(github_authorize))
+        .route("/api/v1/auth/github/callback", get(github_callback))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit,
+        ));
 
     // Public API v1 read-only routes
     let api_v1_public = Router::new()
         .route("/api/v1/posts", get(list_posts))
         .route("/api/v1/posts/{id}", get(show_post));
 
-    // Protected API v1 routes - requires authentication and CSRF for cookie sessions
+    // Protected API v1 routes - requires authentication, CSRF for cookie
+    // sessions, and consumes rate-limit tokens for the matched action.
     let api_v1_protected = Router::new()
         .route("/api/v1/auth/logout", post(logout_api))
         .route("/logout", post(logout_html))
@@ -137,34 +191,36 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/api/v1/posts/{id}", delete(delete_post))
         .route("/api/v1/posts/{id}/publish", post(publish_post))
         .route("/api/v1/posts/{id}/unpublish", post(unpublish_post))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit,
+        ))
         .route_layer(axum::middleware::from_fn(csrf_protect))
-        .route_layer(axum::middleware::from_fn(require_auth));
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_auth,
+        ));
 
-    // Combine all stateful routes
-    let api_router = Router::new()
+    // Combine application routes and apply the session/auth/CSRF subtree.
+    let app_router = Router::new()
         .merge(public_router)
+        .merge(rate_limited_router)
         .merge(api_v1_public)
-        .merge(api_v1_protected)
-        .nest_service(
-            "/static",
-            ServeDir::new("static")
-                .precompressed_gzip()
-                .precompressed_br(),
-        );
+        .merge(api_v1_protected);
 
     // Add development-only routes
-    let api_router = if state.config.env() == Env::Development {
-        api_router.route("/debug", get(debug_info))
+    let app_router = if state.config.env() == Env::Development {
+        app_router.route("/debug", get(debug_info))
     } else {
-        api_router
+        app_router
     };
 
-    #[cfg(feature = "metrics")]
-    let api_router = api_router
-        .route("/metrics", get(crate::metrics::metrics_handler))
-        .route("/api/private/metrics", get(crate::metrics::metrics_handler));
+    let app_router = crate::middleware::apply_app_middleware(state.clone(), app_router);
 
-    let api_router = api_router
+    Router::new()
+        .merge(ops_router)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(app_router)
         .fallback(async |method: Method| match method {
             Method::HEAD => StatusCode::NOT_FOUND.into_response(),
             _ => {
@@ -172,12 +228,7 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
                 not_found().into_response()
             }
         })
-        .with_state(state);
-
-    // Merge Swagger UI with stateless router, then merge the stateful API router
-    Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .merge(api_router)
+        .with_state(state)
 }
 
 async fn home(ctx: PageContext) -> impl IntoResponse {

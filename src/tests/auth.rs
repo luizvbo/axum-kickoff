@@ -105,8 +105,15 @@ async fn github_callback_with_invalid_state_returns_error() {
 #[tokio::test]
 async fn logout_clears_session() {
     let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+    let user = app
+        .user_builder("logout_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
     let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, 42, session_key);
+    let cookie_user = CookieUser::new(app, user.id, session_key);
     let csrf_token = cookie_user.init_csrf().await;
 
     let headers = cookie_user.headers_with_csrf(&csrf_token);

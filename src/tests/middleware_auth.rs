@@ -5,32 +5,120 @@
 use crate::tests::{AnonymousUser, CookieUser, RequestHelper, TestApp};
 use http::StatusCode;
 use jiff::SignedDuration;
+use tower::ServiceExt;
 
+/// Operational endpoints live outside the rate-limited route subtree, so
+/// health probes and asset requests must never consume rate-limit tokens —
+/// even with a tiny burst allowance on every action.
 #[tokio::test]
-async fn rate_limit_blocks_excessive_anonymous_requests() {
+async fn operational_routes_are_never_rate_limited() {
     use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
 
     let mut config = TestApp::test_config();
-    config.rate_limiter_config.insert(
-        LimitedAction::ApiRequest,
-        RateLimiterConfig {
-            rate: std::time::Duration::from_secs(1),
-            burst: 2,
-        },
-    );
+    for action in LimitedAction::VARIANTS {
+        config.rate_limiter_config.insert(
+            action,
+            RateLimiterConfig {
+                rate: std::time::Duration::from_secs(60),
+                burst: 1,
+            },
+        );
+    }
 
     let app = TestApp::with_config(config).await;
     let anon = AnonymousUser::new(app);
 
-    // Exhaust the API request burst allowance
-    for _ in 0..2 {
+    // Far more requests than any burst allowance — none may be limited.
+    for _ in 0..15 {
         let response = anon.get::<()>("/health").await;
         response.assert_status(StatusCode::OK);
+
+        let response = anon.get::<()>("/static/vendor/htmx.min.js").await;
+        response.assert_status(StatusCode::OK);
+    }
+}
+
+/// Anonymous page and asset requests must not create a session cookie: sessions
+/// are only persisted when they carry state (login, CSRF token for an
+/// authenticated session, OAuth handshake).
+#[tokio::test]
+async fn anonymous_requests_do_not_set_cookies() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/").await;
+    response.assert_status(StatusCode::OK);
+    assert!(
+        response.headers().get("set-cookie").is_none(),
+        "anonymous GET / must not emit Set-Cookie"
+    );
+
+    let response = anon.get::<()>("/static/vendor/htmx.min.js").await;
+    response.assert_status(StatusCode::OK);
+    assert!(
+        response.headers().get("set-cookie").is_none(),
+        "anonymous static requests must not emit Set-Cookie"
+    );
+}
+
+/// CORS is the outermost middleware layer: a browser preflight must be answered
+/// without a User-Agent, cookies, or any rate-limit budget. To prove no token
+/// is consumed, all actions are configured with a zero-length burst.
+#[tokio::test]
+async fn cors_preflight_needs_no_user_agent_or_session() {
+    use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
+
+    let mut config = TestApp::test_config();
+    for action in LimitedAction::VARIANTS {
+        config.rate_limiter_config.insert(
+            action,
+            RateLimiterConfig {
+                rate: std::time::Duration::from_secs(60),
+                burst: 0,
+            },
+        );
     }
 
-    // The next request within the same window should be rate limited
-    let response = anon.get::<()>("/health").await;
-    response.assert_status(StatusCode::TOO_MANY_REQUESTS);
+    let app = TestApp::with_config(config).await;
+
+    for _ in 0..3 {
+        let mut request = axum::extract::Request::builder()
+            .method(http::Method::OPTIONS)
+            .uri("/api/v1/tokens")
+            .header("origin", "http://localhost:3000")
+            .header("access-control-request-method", "POST")
+            .body(axum::body::Body::empty())
+            .expect("Failed to build request");
+        request
+            .extensions_mut()
+            .insert(axum::extract::connect_info::MockConnectInfo(
+                std::net::SocketAddr::from(([127, 0, 0, 1], 8080)),
+            ));
+
+        let response = app
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "preflight must succeed even with zero rate-limit budget"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .and_then(|h| h.to_str().ok()),
+            Some("http://localhost:3000")
+        );
+        assert!(
+            response.headers().get("set-cookie").is_none(),
+            "preflight must not emit Set-Cookie"
+        );
+    }
 }
 
 #[tokio::test]
@@ -90,95 +178,123 @@ async fn oauth_authorize_without_session_succeeds() {
     response.assert_status(StatusCode::SEE_OTHER);
 }
 
+/// A session carrying `user_id` but no CSRF token must NOT bypass CSRF
+/// validation on unsafe methods — regression test for the bypass where
+/// `csrf_protect` only validated sessions that already held a token.
 #[tokio::test]
 async fn csrf_protected_route_with_session_but_no_csrf_returns_error() {
     let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+    let user = app
+        .user_builder("csrfless_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    // Fabricate a session that has user_id but no csrf_token.
     let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, 42, session_key);
+    let cookie_user = CookieUser::new(app, user.id, session_key);
 
-    // First, call a route that creates a CSRF token in the session
-    let _ = cookie_user.get::<()>("/").await;
-
-    // Token routes require both session auth AND CSRF protection
-    // With session but no CSRF token, should return an error (400 or 422)
     let response = cookie_user
-        .post::<serde_json::Value>("/api/v1/tokens", &[] as &[u8])
+        .post::<serde_json::Value>(
+            "/api/v1/tokens",
+            serde_json::json!({ "name": "test-token" }),
+        )
         .await;
 
-    // Should return an error status (not 200 OK)
-    assert_ne!(response.status(), StatusCode::OK);
-    // Should be a client error (4xx)
-    assert!(response.status().is_client_error());
+    // Authentication passes (the user exists); CSRF rejects the request.
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "session with user_id but no csrf_token must be rejected"
+    );
 }
 
 #[tokio::test]
 async fn csrf_protected_route_with_valid_csrf_succeeds() {
     let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+    let user = app
+        .user_builder("csrf_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
     let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, 42, session_key);
+    let cookie_user = CookieUser::new(app, user.id, session_key);
 
-    // First, call a route that creates a CSRF token in the session
-    let response = cookie_user.get::<()>("/").await;
-
-    // Update the session cookie from the response
-    if let Some(set_cookie) = response.headers().get("set-cookie") {
-        if let Ok(set_cookie_str) = set_cookie.to_str() {
-            cookie_user.update_session_cookie(set_cookie_str.to_string());
-        }
-    }
-
-    // Get the CSRF token from the session
-    let csrf_token = cookie_user
-        .get_csrf_token()
-        .expect("CSRF token should exist after GET request");
-
-    // Create a request with the CSRF token in the header
-    let mut headers = cookie_user.headers();
-    headers.insert("X-CSRF-Token", csrf_token.parse().unwrap());
+    // Creates the CSRF token in the session and returns the new cookie.
+    let csrf_token = cookie_user.init_csrf().await;
 
     // Token routes should succeed with valid CSRF token
     let response = cookie_user
-        .post_with_headers::<serde_json::Value>("/api/v1/tokens", &[] as &[u8], headers)
+        .post_with_headers::<serde_json::Value>(
+            "/api/v1/tokens",
+            serde_json::json!({ "name": "test-token" }),
+            cookie_user.headers_with_csrf(&csrf_token),
+        )
         .await;
 
-    // Should succeed (may fail for other reasons like validation, but not CSRF)
-    // We're just testing that CSRF validation passes
-    assert_ne!(response.status(), StatusCode::BAD_REQUEST);
+    response.assert_status(StatusCode::CREATED);
 }
 
 #[tokio::test]
 async fn malformed_json_returns_error() {
     let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+    let user = app
+        .user_builder("malformed_json_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
     let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, 42, session_key);
-
-    // First, call a route that creates a CSRF token in the session
-    let response = cookie_user.get::<()>("/").await;
-
-    // Update the session cookie from the response
-    if let Some(set_cookie) = response.headers().get("set-cookie") {
-        if let Ok(set_cookie_str) = set_cookie.to_str() {
-            cookie_user.update_session_cookie(set_cookie_str.to_string());
-        }
-    }
-
-    // Get CSRF token
-    let csrf_token = cookie_user
-        .get_csrf_token()
-        .expect("CSRF token should exist after GET request");
-
-    // Create a request with the CSRF token in the header
-    let mut headers = cookie_user.headers();
-    headers.insert("X-CSRF-Token", csrf_token.parse().unwrap());
+    let cookie_user = CookieUser::new(app, user.id, session_key);
+    let csrf_token = cookie_user.init_csrf().await;
 
     // Send malformed JSON
-    let malformed_json = b"{invalid json}";
     let response = cookie_user
-        .post_with_headers::<serde_json::Value>("/api/v1/tokens", malformed_json, headers)
+        .post_with_headers::<serde_json::Value>(
+            "/api/v1/tokens",
+            &b"{invalid json}"[..],
+            cookie_user.headers_with_csrf(&csrf_token),
+        )
         .await;
 
     // Should return a client error (400 or 422)
     assert!(response.status().is_client_error());
+}
+
+/// HTMX requests must still receive partial templates — the `REQUEST_FORMAT`
+/// task-local is scoped by a dedicated middleware, independent of the error
+/// logging layer.
+#[tokio::test]
+async fn htmx_requests_render_partial_templates() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    // Full page by default
+    let response = anon.get::<()>("/api/server-time").await;
+    response.assert_status(StatusCode::OK);
+    let body = response.into_string().await;
+    assert!(body.contains("<main"), "expected full page, got: {body}");
+
+    // HTMX request renders the partial fragment only
+    let mut request = anon.request_builder(http::Method::GET, "/api/server-time");
+    request
+        .headers_mut()
+        .insert("hx-request", "true".parse().unwrap());
+    let response = anon.run::<()>(request).await;
+    response.assert_status(StatusCode::OK);
+    let body = response.into_string().await;
+    assert!(
+        body.contains("time-response"),
+        "expected partial fragment, got: {body}"
+    );
+    assert!(
+        !body.contains("<main"),
+        "HTMX request must not render the full page"
+    );
 }
 
 #[tokio::test]
@@ -206,4 +322,36 @@ async fn locked_user_with_valid_session_is_forbidden() {
     let response = cookie_user.get::<serde_json::Value>("/api/v1/tokens").await;
 
     response.assert_status(StatusCode::FORBIDDEN);
+}
+
+/// Account locks are enforced lazily, only where authentication is required.
+/// A locked user may still browse public pages — matching crates.io's model
+/// where `AuthCheck` runs per-route.
+#[tokio::test]
+async fn locked_user_can_access_public_routes() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("locked_public_user")
+        .locked(
+            "Account is locked",
+            Some(
+                jiff::Timestamp::now()
+                    .checked_add(SignedDuration::from_hours(1))
+                    .unwrap(),
+            ),
+        )
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let session_key = app.state.session_key.clone();
+    let cookie_user = CookieUser::new(app, user.id, session_key);
+
+    let response = cookie_user.get::<()>("/").await;
+    response.assert_status(StatusCode::OK);
+
+    let response = cookie_user.get::<serde_json::Value>("/api/v1/posts").await;
+    response.assert_status(StatusCode::OK);
 }

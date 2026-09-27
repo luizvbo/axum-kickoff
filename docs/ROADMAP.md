@@ -28,7 +28,9 @@ The roadmap follows these principles:
 - **Testing**: Integration test infrastructure with snapshot testing
 - **Configuration**: Environment-based configuration
 - **Error Handling**: Structured error handling with AppError
-- **Rate Limiting**: In-memory token bucket algorithm
+- **Rate Limiting**: Database-backed token bucket algorithm (SQLite/PostgreSQL), applied to sensitive routes
+- **Background Worker**: Database-backed job queue with retries (`src/worker/`)
+- **OpenAPI**: Auto-generated API documentation via utoipa (`/swagger-ui`)
 
 ## Planned Features
 
@@ -133,7 +135,7 @@ The roadmap follows these principles:
 
 #### 6. Background Worker System
 
-**Status**: Not implemented
+**Status**: Implemented
 
 **What to Implement**:
 - Simple job queue (database-backed or in-memory)
@@ -233,7 +235,7 @@ The roadmap follows these principles:
 
 #### 11. OpenAPI Documentation
 
-**Status**: Not implemented
+**Status**: Implemented
 
 **What to Implement**:
 - Auto-generated OpenAPI spec with utoipa

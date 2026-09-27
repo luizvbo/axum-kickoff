@@ -9,7 +9,10 @@
   <script nonce="{{ ctx.csp_nonce }}" src="/static/vendor/htmx.min.js"></script>
   <script nonce="{{ ctx.csp_nonce }}" defer src="/static/vendor/alpine.js"></script>
 </head>
-<body hx-headers='{"X-CSRF-Token": "{{ ctx.csrf_token | safe }}"}'>
+{# `X-CSRF-Token` is a non-safelisted header — even an empty value forces a CORS
+   preflight on cross-origin HTMX requests, so omit the attribute entirely when
+   no token exists (anonymous sessionless pages). #}
+<body{% if !ctx.csrf_token.is_empty() %} hx-headers='{"X-CSRF-Token": "{{ ctx.csrf_token | safe }}"}'{% endif %}>
 {% block content %}{% endblock %}
 </body>
 </html>

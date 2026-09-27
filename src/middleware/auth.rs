@@ -121,44 +121,32 @@ impl<S: Send + Sync> FromRequestParts<S> for OptionalCurrentUserId {
 /// It first checks for a valid API token in the `Authorization` header. If present
 /// and valid, it sets `Authentication` and `CurrentUserId` and does not require
 /// a session. If no token is provided, it falls back to the session cookie.
+///
+/// This middleware is deliberately lazy for cookie sessions: the session
+/// middleware already decoded the signed cookie, so the `user_id` claim is
+/// trusted without a database lookup. The user record (and account-lock check)
+/// is only loaded by `require_auth`/`require_login` on routes that actually
+/// need authentication — mirroring crates.io's `AuthCheck` pattern. Bearer
+/// tokens are still validated eagerly because the token lookup and the
+/// `last_used_at` update are inherent to token authentication.
 pub async fn authenticate(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     // If another middleware has already set the user, continue
     if req.extensions().get::<CurrentUserId>().is_some() {
         return next.run(req).await;
     }
 
-    // Metrics endpoints authenticate with their own bearer token and should
-    // not be validated against API tokens.
-    let path = req.uri().path().trim_end_matches('/');
-    if path == "/metrics" || path == "/api/private/metrics" {
-        return next.run(req).await;
-    }
-
-    // Try session first so we have the auth context available for route extractors.
-    // Load the user and reject the request if the account is currently locked.
+    // Cookie sessions: trust the session extension populated by the session
+    // middleware. Whether the user still exists (and is not locked) is enforced
+    // lazily on authentication-required routes — see `enforce_authentication`.
     if let Some(user_id) = req
         .extensions()
         .get::<SessionExtension>()
         .and_then(|s| s.get("user_id"))
         .and_then(|s| s.parse::<u64>().ok())
     {
-        let mut db = state.0.database.db_clone();
-        match User::get_by_id(&mut db, user_id).await {
-            Ok(user) if user.is_locked() => {
-                let reason = user
-                    .account_lock_reason
-                    .unwrap_or_else(|| "Account is locked".into());
-                return forbidden(reason).into_response();
-            }
-            Ok(_) => {
-                req.extensions_mut().insert(CurrentUserId(user_id));
-                req.extensions_mut()
-                    .insert(Authentication::Cookie { user_id });
-            }
-            Err(_) => {
-                // Invalid or stale session user; treat as not authenticated.
-            }
-        }
+        req.extensions_mut().insert(CurrentUserId(user_id));
+        req.extensions_mut()
+            .insert(Authentication::Cookie { user_id });
     }
 
     // If an Authorization header is present, prefer token auth
@@ -236,6 +224,58 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
     })
 }
 
+/// Enforce authentication at the point where a route requires it.
+///
+/// Token-authenticated requests were already fully validated — including the
+/// account-lock check — by `authenticate`, so they pass through untouched.
+/// Cookie sessions only carry a `user_id` claim, so the `User` record is
+/// loaded here, exactly once and only for requests that need it. Locked users
+/// are rejected with 403; sessions referencing missing users get 401.
+///
+/// On success the loaded `User` is inserted into the request extensions so
+/// handlers can reuse it without a second lookup.
+async fn enforce_authentication(state: &AppState, req: &mut Request) -> Result<(), Response> {
+    if req
+        .extensions()
+        .get::<Authentication>()
+        .is_some_and(|auth| auth.is_token())
+    {
+        return Ok(());
+    }
+
+    let user_id = req
+        .extensions()
+        .get::<CurrentUserId>()
+        .map(|id| id.0)
+        .or_else(|| {
+            req.extensions()
+                .get::<SessionExtension>()
+                .and_then(|s| s.get("user_id"))
+                .and_then(|s| s.parse::<u64>().ok())
+        });
+
+    let Some(user_id) = user_id else {
+        return Err(unauthorized("Not logged in").response());
+    };
+
+    let mut db = state.0.database.db_clone();
+    match User::get_by_id(&mut db, user_id).await {
+        Ok(user) if user.is_locked() => {
+            let reason = user
+                .account_lock_reason
+                .clone()
+                .unwrap_or_else(|| "Account is locked".into());
+            Err(forbidden(reason).response())
+        }
+        Ok(user) => {
+            req.extensions_mut().insert(user);
+            Ok(())
+        }
+        // The session references a user that no longer exists.
+        Err(_) => Err(unauthorized("Not logged in").response()),
+    }
+}
+
 /// Require authenticated user middleware
 ///
 /// Returns a 401 Unauthorized error if the request is not authenticated.
@@ -247,22 +287,16 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
 /// ```ignore
 /// let router = Router::new()
 ///     .route("/api/dashboard", get(dashboard_handler))
-///     .route_layer(middleware::from_fn(require_auth));
+///     .route_layer(middleware::from_fn_with_state(
+///         app_state.clone(),
+///         require_auth
+///     ));
 /// ```
-pub async fn require_auth(req: Request, next: Next) -> Response {
-    let is_authenticated = req.extensions().get::<CurrentUserId>().is_some()
-        || req.extensions().get::<Authentication>().is_some()
-        || req
-            .extensions()
-            .get::<SessionExtension>()
-            .and_then(|s| s.get("user_id"))
-            .is_some();
-
-    if !is_authenticated {
-        return unauthorized("Not logged in").response();
+pub async fn require_auth(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    match enforce_authentication(&state, &mut req).await {
+        Ok(()) => next.run(req).await,
+        Err(response) => response,
     }
-
-    next.run(req).await
 }
 
 /// Require login middleware
@@ -281,23 +315,22 @@ pub async fn require_auth(req: Request, next: Next) -> Response {
 ///         require_login
 ///     ));
 /// ```
-pub async fn require_login(State(_state): State<AppState>, req: Request, next: Next) -> Response {
-    let is_authenticated = req.extensions().get::<CurrentUserId>().is_some()
-        || req.extensions().get::<Authentication>().is_some()
-        || req
-            .extensions()
-            .get::<SessionExtension>()
-            .and_then(|s| s.get("user_id"))
-            .is_some();
-
-    if !is_authenticated {
-        // Redirect to GitHub OAuth login
-        let redirect_url = format!(
-            "/api/v1/auth/github/authorize?redirect_to={}",
-            req.uri().path()
-        );
-        return Redirect::to(&redirect_url).into_response();
+pub async fn require_login(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    match enforce_authentication(&state, &mut req).await {
+        Ok(()) => next.run(req).await,
+        Err(response) => {
+            if response.status() == StatusCode::UNAUTHORIZED {
+                let redirect_url = format!(
+                    "/api/v1/auth/github/authorize?redirect_to={}",
+                    req.uri().path()
+                );
+                return Redirect::to(&redirect_url).into_response();
+            }
+            response
+        }
     }
-
-    next.run(req).await
 }

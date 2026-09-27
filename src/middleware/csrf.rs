@@ -63,6 +63,11 @@ pub fn generate_token() -> String {
 }
 
 /// Get or create a CSRF token for the current session
+///
+/// Creating a token writes to the session, which marks it dirty and emits a
+/// `Set-Cookie` header. Callers rendering pages for anonymous, sessionless
+/// visitors should check [`session_has_csrf_state`] first to avoid sending
+/// cookies on requests that carry no state worth protecting.
 pub fn get_or_create_csrf_token(session: &SessionExtension) -> String {
     if let Some(token) = session.get(CSRF_TOKEN_KEY) {
         return token;
@@ -71,6 +76,15 @@ pub fn get_or_create_csrf_token(session: &SessionExtension) -> String {
     let token = generate_token();
     session.insert(CSRF_TOKEN_KEY.to_string(), token.clone());
     token
+}
+
+/// Returns true when the session carries state worth protecting with CSRF:
+/// either an authenticated user (`user_id`) or an already-issued CSRF token.
+///
+/// A session with a `user_id` but no token still returns `true` — such a
+/// session must not bypass CSRF validation on unsafe methods.
+pub(crate) fn session_has_csrf_state(session: &SessionExtension) -> bool {
+    session.get("user_id").is_some() || session.get(CSRF_TOKEN_KEY).is_some()
 }
 
 /// Validate a CSRF token against the session
@@ -235,7 +249,7 @@ pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
     if is_unsafe_method(&method) {
         if let Some(session) = req.extensions().get::<SessionExtension>().cloned() {
             // Only validate if session has actual data (not empty/anonymous)
-            if session.get("user_id").is_some() || session.get(CSRF_TOKEN_KEY).is_some() {
+            if session_has_csrf_state(&session) {
                 // Extract CSRF token from header or form body
                 let (provided_token, req) = extract_csrf_token(&method, &headers, req).await;
 
@@ -295,11 +309,13 @@ pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
         return next.run(req).await;
     }
 
-    // Only validate unsafe methods if session exists and has CSRF token
+    // Only validate unsafe methods if a session exists and carries state worth
+    // protecting: an authenticated session (`user_id`) or one already holding a
+    // CSRF token. A session with a `user_id` but no token must NOT bypass
+    // validation — otherwise logging in without a token would skip CSRF checks.
     if is_unsafe_method(&method) {
         if let Some(session) = req.extensions().get::<SessionExtension>().cloned() {
-            // Only validate if session has CSRF token
-            if session.get(CSRF_TOKEN_KEY).is_some() {
+            if session_has_csrf_state(&session) {
                 // Extract CSRF token from header or form body
                 let (provided_token, req) = extract_csrf_token(&method, &headers, req).await;
 
@@ -327,19 +343,6 @@ pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
         }
     }
 
-    next.run(req).await
-}
-
-/// Middleware that ensures a CSRF token exists in the session
-///
-/// This middleware should be applied to routes that render forms.
-/// It ensures that a CSRF token is available in the session before the handler runs.
-/// If no session exists, the request passes through unchanged.
-pub async fn ensure_token(req: axum::extract::Request, next: Next) -> Response {
-    // Only create CSRF token if session exists
-    if let Some(session) = req.extensions().get::<SessionExtension>() {
-        get_or_create_csrf_token(session);
-    }
     next.run(req).await
 }
 

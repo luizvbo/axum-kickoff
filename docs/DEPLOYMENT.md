@@ -556,6 +556,10 @@ cargo run --bin server --features metrics
 
 Metrics available at `/metrics`.
 
+**Warning:** without `METRICS_TOKEN` set, `/metrics` is publicly readable.
+Set a token (requests then need `Authorization: Bearer <token>`) or restrict
+the endpoint at your reverse proxy before exposing the service.
+
 Set up Prometheus and Grafana for visualization.
 
 ## Scaling

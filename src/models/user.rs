@@ -5,7 +5,7 @@
 
 use toasty::Model;
 
-#[derive(Debug, Model)]
+#[derive(Clone, Debug, Model)]
 pub struct User {
     /// Primary key - auto-generated
     #[key]

@@ -153,17 +153,17 @@ See [Storage Documentation](docs/STORAGE.md) for details.
 | User Agent Validation          | Validate User-Agent header to block malicious bots                   | Implemented                                                                           |
 | API Token Creation/List/Revoke | Manage scoped API tokens for programmatic access                     | Implemented                                                                           |
 | API Token Auth Middleware      | Authenticate requests via Bearer tokens with scope validation        | Implemented (with CurrentUser/CurrentAuth extractors)                                 |
-| Rate Limiting                  | Limit request rate to prevent abuse and DoS attacks                  | Core implemented / not applied globally                                               |
-| Traffic Blocking               | Block requests from malicious IPs or patterns                        | Infrastructure exists / not wired globally                                            |
-| CSRF Protection                | Prevent Cross-Site Request Forgery attacks on forms                  | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
+| Rate Limiting                  | Limit request rate to prevent abuse and DoS attacks                  | Implemented (database-backed, scoped to sensitive routes)                             |
+| Traffic Blocking               | Block requests from malicious IPs or patterns                        | Implemented                                                                           |
+| CSRF Protection                | Prevent Cross-Site Request Forgery attacks on forms                  | Implemented (split middleware: csrf_protect, require_auth)                            |
 | CORS                           | Cross-Origin Resource Sharing for frontend-backend communication     | Implemented                                                                           |
 | Metrics Endpoint               | Prometheus metrics for monitoring and observability                  | Feature-gated / partial                                                               |
 | S3 Storage                     | Object storage backend for file uploads (AWS S3, MinIO, etc.)        | Planned                                                                               |
 | Redis Rate Limiting            | Distributed rate limiting using Redis for multi-instance deployments | Planned                                                                               |
-| Database-backed Rate Limiting  | Persistent rate limiting using SQLite/PostgreSQL                     | Planned                                                                               |
+| Database-backed Rate Limiting  | Persistent rate limiting using SQLite/PostgreSQL                     | Implemented                                                                           |
 | QuickWit Integration           | Self-hosted error tracking and log aggregation                       | Planned                                                                               |
-| OpenAPI                        | Auto-generated API documentation (Swagger/OpenAPI)                   | Planned                                                                               |
-| Background Worker              | Async job processing for tasks like email, webhooks                  | Planned                                                                               |
+| OpenAPI                        | Auto-generated API documentation (Swagger/OpenAPI)                   | Implemented                                                                           |
+| Background Worker              | Async job processing for tasks like email, webhooks                  | Implemented                                                                           |
 | Email System                   | Transactional email sending (SMTP, SendGrid, etc.)                   | Planned                                                                               |
 | Webhooks                       | Webhook delivery for event notifications                             | Planned                                                                               |
 | Read Replicas                  | Database read replicas for scaling read-heavy workloads              | Planned                                                                               |
@@ -245,7 +245,7 @@ This project adapts crates.io's production-grade patterns while simplifying for 
 - **Single-crate application** vs 25+ crate workspace
 - **Toasty/SQLite** vs Diesel/PostgreSQL (with migration path)
 - **HTMX/Alpine.js** vs SvelteKit SPA
-- **In-memory rate limiting** vs database-backed (with upgrade path)
+- **Database-backed rate limiting scoped to sensitive routes** vs per-handler rate limit checks (same effectiveness, less plumbing)
 - **QuickWit** vs Sentry for error tracking (self-hosted alternative)
 
 See [Roadmap](docs/ROADMAP.md) for detailed comparison and implementation plans.

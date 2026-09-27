@@ -66,6 +66,13 @@ pub async fn contact_page(ctx: PageContext) -> impl IntoResponse {
 /// - On success: Return HTML partial with success message
 /// - On error: Return HTML partial with validation errors
 /// - HTMX swaps the response into the target element
+///
+/// This endpoint is intentionally anonymous and does NOT validate the CSRF
+/// token — the submitted `csrf_token` field is illustrative only (anonymous
+/// sessions carry no state worth protecting, so the token is empty). The
+/// session cookie's `SameSite=Strict` attribute and the `verify_origin`
+/// middleware are what protect this route. Forms behind authentication are
+/// validated by the `csrf_protect` route layer instead.
 pub async fn contact_submit(
     ctx: PageContext,
     State(_state): State<AppState>,

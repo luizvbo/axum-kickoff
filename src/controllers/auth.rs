@@ -320,6 +320,12 @@ fn is_valid_redirect(url: &str, _domain_name: &str) -> bool {
         return false;
     }
 
+    // Reject backslashes: browsers normalize `/\evil.com` to `//evil.com`,
+    // turning a "relative" path into a protocol-relative external redirect.
+    if url.contains('\\') {
+        return false;
+    }
+
     // Only allow relative URLs (but not protocol-relative)
     url.starts_with('/')
 }
@@ -350,6 +356,15 @@ mod tests {
         // Protocol-relative URLs are not allowed
         assert!(!is_valid_redirect("//evil.com", "localhost"));
         assert!(!is_valid_redirect("//example.com/path", "example.com"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_rejects_backslashes() {
+        // Backslashes are normalized to forward slashes by browsers, so
+        // `/\evil.com` would become the protocol-relative `//evil.com`.
+        assert!(!is_valid_redirect("/\\evil.com", "localhost"));
+        assert!(!is_valid_redirect("\\evil.com", "localhost"));
+        assert!(!is_valid_redirect("/path\\with-backslash", "localhost"));
     }
 
     #[test]

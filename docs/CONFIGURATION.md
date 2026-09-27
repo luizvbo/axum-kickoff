@@ -220,6 +220,23 @@ RATE_LIMITER_FORM_SUBMISSION_RATE_SECONDS=30
 RATE_LIMITER_FORM_SUBMISSION_BURST=10
 ```
 
+### Client IP and Anonymous Buckets
+
+Anonymous rate-limit buckets are keyed on the client IP address resolved by the
+`real_ip` middleware, which honors forwarding headers (`X-Forwarded-For`,
+`X-Real-Ip`) only when the direct peer is listed in `TRUSTED_PROXIES`:
+
+```bash
+TRUSTED_PROXIES=127.0.0.1/32,::1/128,10.0.0.0/8
+```
+
+**Warning:** if `TRUSTED_PROXIES` does not cover your reverse proxy or CDN —
+or, conversely, trusts a range too broad — every anonymous client collapses
+into a single shared bucket (either the proxy's IP or a spoofed address). Once
+that bucket is exhausted, *all* anonymous traffic gets `429 Too Many Requests`.
+Verify that the logged `network.client.ip` matches real client addresses when
+deploying behind a proxy.
+
 ## Security Configuration
 
 ### Blocked IPs
@@ -370,7 +387,16 @@ Database URL for tests. Defaults to in-memory SQLite if not set.
 cargo run --bin server --features metrics
 ```
 
-Enable Prometheus metrics endpoint at `/metrics`.
+Enable Prometheus metrics endpoint at `/metrics` (and `/api/private/metrics`).
+
+```bash
+METRICS_TOKEN=<bearer-token>
+```
+
+**Warning:** when `METRICS_TOKEN` is unset, the metrics endpoints are
+**publicly readable** — they run outside the session/auth middleware subtree
+by design. In production, either set `METRICS_TOKEN` (requests then need
+`Authorization: Bearer <token>`) or restrict `/metrics` at your reverse proxy.
 
 ## Configuration Files
 

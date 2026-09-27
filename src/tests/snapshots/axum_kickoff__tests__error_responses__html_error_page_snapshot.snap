@@ -13,7 +13,8 @@ expression: body
   <script nonce="[CSP_NONCE]" src="/static/vendor/htmx.min.js"></script>
   <script nonce="[CSP_NONCE]" defer src="/static/vendor/alpine.js"></script>
 </head>
-<body hx-headers='{"X-CSRF-Token": ""}'>
+
+<body>
 
 <main class="container error-page" id="main-content">
     <h1 class="error-status">404</h1>
