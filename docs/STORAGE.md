@@ -1,6 +1,6 @@
 # Storage
 
-This document describes the storage abstraction layer in axum-kickoff, which provides a unified interface for file operations across different backends.
+This document describes the storage abstraction layer in {{project-name}}, which provides a unified interface for file operations across different backends.
 
 ## Overview
 
@@ -50,7 +50,7 @@ CDN_PREFIX=cdn.example.com  # Optional
 Or programmatically:
 
 ```rust
-use axum_kickoff::storage::{Storage, StorageConfig};
+use {{crate_name}}::storage::{Storage, StorageConfig};
 
 let config = StorageConfig::local_filesystem("/tmp/uploads");
 let storage = Storage::from_config(&config);
@@ -329,10 +329,10 @@ let data = storage.download(&file_path).await?;
 
 ```bash
 # Backup
-rsync -av /opt/axum-kickoff/uploads/ /backup/uploads/
+rsync -av /opt/{{project-name}}/uploads/ /backup/uploads/
 
 # Restore
-rsync -av /backup/uploads/ /opt/axum-kickoff/uploads/
+rsync -av /backup/uploads/ /opt/{{project-name}}/uploads/
 ```
 
 ### S3 Storage
@@ -362,7 +362,7 @@ To migrate from local to S3:
 #!/bin/bash
 # Migrate local files to S3
 
-aws s3 sync /opt/axum-kickoff/uploads/ s3://your-bucket/uploads/ --acl private
+aws s3 sync /opt/{{project-name}}/uploads/ s3://your-bucket/uploads/ --acl private
 ```
 
 ## Testing
@@ -394,8 +394,8 @@ let storage = Storage::from_config(&config);
 Ensure the storage directory is writable:
 
 ```bash
-chmod 755 /opt/axum-kickoff/uploads
-chown axum-kickoff:axum-kickoff /opt/axum-kickoff/uploads
+chmod 755 /opt/{{project-name}}/uploads
+chown {{project-name}}:{{project-name}} /opt/{{project-name}}/uploads
 ```
 
 ### Disk Full
@@ -403,7 +403,7 @@ chown axum-kickoff:axum-kickoff /opt/axum-kickoff/uploads
 Check disk space:
 
 ```bash
-df -h /opt/axum-kickoff/uploads
+df -h /opt/{{project-name}}/uploads
 ```
 
 Clean up old files if necessary.

@@ -1,10 +1,10 @@
 # Architecture
 
-This document describes the high-level architecture of axum-kickoff, its design decisions, and how components interact.
+This document describes the high-level architecture of {{project-name}}, its design decisions, and how components interact.
 
 ## Overview
 
-axum-kickoff is a single-crate Rust web application built on Axum, following production-grade patterns from crates.io while maintaining simplicity for general web applications.
+{{project-name}} is a single-crate Rust web application built on Axum, following production-grade patterns from crates.io while maintaining simplicity for general web applications.
 
 ## Design Principles
 

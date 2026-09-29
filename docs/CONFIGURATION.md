@@ -1,6 +1,6 @@
 # Configuration
 
-This document provides a complete reference for configuring axum-kickoff.
+This document provides a complete reference for configuring {{project-name}}.
 
 ## Overview
 
@@ -25,7 +25,7 @@ Configuration is managed through environment variables. The application reads th
 ### Database
 
 ```bash
-DATABASE_URL=sqlite:./axum_kickoff.db
+DATABASE_URL=sqlite:./{{crate_name}}.db
 ```
 
 **Options:**
@@ -33,7 +33,7 @@ DATABASE_URL=sqlite:./axum_kickoff.db
 - SQLite in-memory: `sqlite::memory:`
 - PostgreSQL: `postgresql://user:password@host:port/database`
 
-**Default:** `sqlite:./axum_kickoff.db`
+**Default:** `sqlite:./{{crate_name}}.db`
 
 ### Session Key
 
@@ -364,7 +364,7 @@ Set the logging level using the `RUST_LOG` environment variable.
 ### Module-Specific Logging
 
 ```bash
-RUST_LOG=axum_kickoff=debug,tower_http=info
+RUST_LOG={{crate_name}}=debug,tower_http=info
 ```
 
 Set different log levels for specific modules.
@@ -432,7 +432,7 @@ For production deployment, ensure you have:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://user:password@db.example.com:5432/axum_kickoff
+DATABASE_URL=postgresql://user:password@db.example.com:5432/{{crate_name}}
 
 # Session
 SESSION_KEY=<generate-secure-64-byte-key>
@@ -451,7 +451,7 @@ GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
 WEB_ALLOWED_ORIGINS=https://example.com
 
 # Storage
-STORAGE_PATH=/var/lib/axum-kickoff/uploads
+STORAGE_PATH=/var/lib/{{project-name}}/uploads
 CDN_PREFIX=cdn.example.com
 
 # Security
@@ -479,7 +479,7 @@ RUST_LOG=info
 
 ```bash
 # Database
-DATABASE_URL=sqlite:./axum_kickoff.db
+DATABASE_URL=sqlite:./{{crate_name}}.db
 
 # Session
 SESSION_KEY=dev-session-key-for-local-development-only

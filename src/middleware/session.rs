@@ -14,7 +14,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub static COOKIE_NAME: &str = "axum_kickoff_session";
+pub static COOKIE_NAME: &str = "{{crate_name}}_session";
 
 /// State passed to the session middleware.
 #[derive(Clone)]

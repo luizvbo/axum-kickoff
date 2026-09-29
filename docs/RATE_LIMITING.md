@@ -1,10 +1,10 @@
 # Rate Limiting
 
-This document describes the rate limiting system in axum-kickoff, including in-memory, database-backed, and Redis implementations.
+This document describes the rate limiting system in {{project-name}}, including in-memory, database-backed, and Redis implementations.
 
 ## Overview
 
-Rate limiting protects your application from abuse by throttling requests based on action types. axum-kickoff supports multiple backends:
+Rate limiting protects your application from abuse by throttling requests based on action types. {{project-name}} supports multiple backends:
 
 - **In-Memory**: Default for single-instance deployments
 - **Database-Backed**: For distributed systems (SQLite/PostgreSQL)

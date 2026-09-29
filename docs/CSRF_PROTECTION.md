@@ -1,6 +1,6 @@
 # CSRF Protection
 
-This document describes the CSRF (Cross-Site Request Forgery) protection implementation in axum-kickoff.
+This document describes the CSRF (Cross-Site Request Forgery) protection implementation in this application.
 
 ## Overview
 

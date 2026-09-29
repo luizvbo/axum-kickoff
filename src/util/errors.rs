@@ -160,6 +160,7 @@ fn build_error_response(
         let ctx = PageContext {
             csrf_token: String::new(),
             csp_nonce: current_csp_nonce(),
+            app_name: crate::router::app_name(),
         };
         let html = HtmlError {
             ctx,

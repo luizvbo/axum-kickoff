@@ -1,7 +1,7 @@
 //! Test infrastructure
 //!
 //! This module provides testing utilities adapted from crates.io's
-//! test infrastructure, simplified for axum-kickoff's architecture.
+//! test infrastructure, simplified for {{project-name}}'s architecture.
 //!
 //! # Overview
 //!
@@ -15,7 +15,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use axum_kickoff::tests::{TestApp, AnonymousUser};
+//! use {{crate_name}}::tests::{TestApp, AnonymousUser};
 //!
 //! #[tokio::test]
 //! async fn test_example() {
@@ -39,9 +39,9 @@ pub mod auth;
 pub mod block_traffic;
 pub mod builders;
 pub mod error_responses;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 pub mod metrics;
-pub mod middleware;
+{% endif %}pub mod middleware;
 pub mod middleware_auth;
 pub mod posts;
 pub mod request_helper;

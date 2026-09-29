@@ -176,7 +176,7 @@ pub async fn github_callback(
             "Authorization",
             format!("Bearer {}", token.access_token().secret()),
         )
-        .header("User-Agent", "axum-kickoff")
+        .header("User-Agent", "{{project-name}}")
         .send()
         .await
         .map_err(|e| server_error(format!("Failed to fetch user profile: {}", e)))?;

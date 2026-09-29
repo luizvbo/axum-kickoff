@@ -3,7 +3,7 @@
 //! This file shows how to use the adapted test infrastructure
 //! from crates.io for writing integration tests.
 
-use axum_kickoff::tests::{AnonymousUser, TestApp};
+use crate::tests::{AnonymousUser, TestApp};
 use http::StatusCode;
 
 #[tokio::test]

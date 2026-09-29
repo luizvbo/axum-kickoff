@@ -7,7 +7,7 @@
 //! # Example Usage
 //!
 //! ```no_run
-//! use axum_kickoff::storage::{Storage, StorageConfig};
+//! use {{crate_name}}::storage::{Storage, StorageConfig};
 //! use bytes::Bytes;
 //!
 //! # async fn example() -> anyhow::Result<()> {

@@ -8,18 +8,18 @@ use tower::Layer;
 
 use crate::app::AppState;
 use crate::router::build_axum_router;
-
+{% if jemalloc %}
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
+{% endif %}
 pub mod app;
 pub mod config;
 pub mod controllers;
 pub mod db;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 pub mod metrics;
-pub mod middleware;
+{% endif %}pub mod middleware;
 pub mod models;
 pub mod rate_limiter;
 mod router;

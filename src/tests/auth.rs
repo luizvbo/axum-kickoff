@@ -213,7 +213,7 @@ async fn forged_unsigned_session_cookie_is_rejected() {
     let encoded = crate::middleware::session::encode(&map);
 
     // Create an UNSIGNED cookie (no signature)
-    let cookie = cookie::Cookie::build(("axum_kickoff_session", encoded))
+    let cookie = cookie::Cookie::build((crate::middleware::session::COOKIE_NAME, encoded))
         .path("/")
         .http_only(true)
         .same_site(cookie::SameSite::Strict)

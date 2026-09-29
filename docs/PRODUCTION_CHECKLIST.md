@@ -1,6 +1,6 @@
 # Production Deployment Checklist
 
-Use this checklist when deploying axum-kickoff to production.
+Use this checklist when deploying {{project-name}} to production.
 
 ## Security
 

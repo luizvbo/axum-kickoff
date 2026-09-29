@@ -10,7 +10,7 @@ use thiserror::Error;
 
 const TOKEN_LENGTH: usize = 32;
 
-/// Token prefix for axum-kickoff API tokens
+/// Token prefix for {{project-name}} API tokens
 ///
 /// NEVER CHANGE THE PREFIX OF EXISTING TOKENS!!! Doing so will implicitly
 /// revoke all the tokens, disrupting production users.
@@ -19,7 +19,7 @@ const TOKEN_PREFIX: &str = "ako";
 /// An error indicating that a token is invalid.
 ///
 /// This error is returned when a token is not prefixed with a
-/// known axum-kickoff-specific prefix.
+/// known {{project-name}}-specific prefix.
 #[derive(Debug, Error)]
 #[error("invalid token format")]
 pub struct InvalidTokenError;

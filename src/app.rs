@@ -2,9 +2,9 @@
 
 use crate::config;
 use crate::db::Database;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 use crate::metrics::InstanceMetrics;
-use crate::models::BackgroundJob;
+{% endif %}use crate::models::BackgroundJob;
 use crate::rate_limiter::RateLimiter;
 use crate::storage::Storage;
 use crate::worker::Job;
@@ -23,10 +23,10 @@ pub struct App {
     pub database: Database,
     /// Storage backend for file uploads and static assets
     pub storage: Storage,
-    /// Instance metrics for monitoring (available with `metrics` feature)
+{% if metrics %}    /// Instance metrics for monitoring (available with `metrics` feature)
     #[cfg(feature = "metrics")]
     pub metrics: std::sync::Arc<InstanceMetrics>,
-    /// Session key for signing cookies
+{% endif %}    /// Session key for signing cookies
     pub session_key: cookie::Key,
     /// Rate limiter for API request throttling
     pub rate_limiter: RateLimiter,
@@ -51,9 +51,9 @@ impl App {
             config: Arc::new(config),
             database,
             storage,
-            #[cfg(feature = "metrics")]
+{% if metrics %}            #[cfg(feature = "metrics")]
             metrics: std::sync::Arc::new(InstanceMetrics::new()),
-            session_key,
+{% endif %}            session_key,
             rate_limiter,
             http_client,
         })

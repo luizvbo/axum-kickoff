@@ -15,6 +15,12 @@ use secrecy::{ExposeSecret, SecretString};
 use std::collections::HashMap;
 use url::Url;
 
+/// Fallback `DATABASE_URL` used when neither `DATABASE_URL` nor
+/// `TEST_DATABASE_URL` is set. Selected at project-generation time: a local
+/// SQLite file for the `sqlite` backend, a conventional localhost DSN for
+/// `postgresql`.
+const DEFAULT_DATABASE_URL: &str = {% if database == "postgresql" %}"postgresql://postgres:postgres@localhost:5432/{{crate_name}}"{% else %}"sqlite:./{{crate_name}}.db"{% endif %};
+
 pub struct DatabaseConfig {
     pub url: SecretString,
 }
@@ -23,7 +29,7 @@ impl DatabaseConfig {
     pub fn from_environment() -> Result<Self> {
         let url = dotenvy::var("DATABASE_URL")
             .or_else(|_| dotenvy::var("TEST_DATABASE_URL"))
-            .unwrap_or_else(|_| "sqlite:./axum_kickoff.db".to_string());
+            .unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
 
         Ok(Self {
             url: SecretString::from(url),
@@ -59,7 +65,7 @@ impl DatabaseConfig {
             "postgresql" | "postgres" => {
                 if !query.contains_key("application_name") {
                     let application_name = dotenvy::var("DATABASE_APPLICATION_NAME")
-                        .unwrap_or_else(|_| "axum_kickoff".to_string());
+                        .unwrap_or_else(|_| "{{crate_name}}".to_string());
                     query.insert("application_name".to_string(), application_name);
                 }
 
@@ -140,7 +146,7 @@ mod tests {
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
         // Only assert if we're not getting the default value (which means .env is interfering)
-        if config.url.expose_secret() != "sqlite:./axum_kickoff.db" {
+        if config.url.expose_secret() != DEFAULT_DATABASE_URL {
             assert_eq!(config.url.expose_secret(), "sqlite::memory:");
         }
 
@@ -195,7 +201,7 @@ mod tests {
         std::env::remove_var("TEST_DATABASE_URL");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        assert_eq!(config.url.expose_secret(), "sqlite:./axum_kickoff.db");
+        assert_eq!(config.url.expose_secret(), DEFAULT_DATABASE_URL);
 
         // Restore original values
         if let Some(val) = original_db {

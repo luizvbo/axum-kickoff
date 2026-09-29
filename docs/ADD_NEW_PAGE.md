@@ -1,6 +1,6 @@
 # Add a New Page
 
-This guide shows you how to add a new page to your axum-kickoff application.
+This guide shows you how to add a new page to your application.
 
 ## Overview
 

@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide will help you get axum-kickoff up and running on your local machine.
+This guide will help you get {{project-name}} up and running on your local machine.
 
 ## Prerequisites
 
@@ -34,8 +34,8 @@ Download from [SQLite官网](https://www.sqlite.org/download.html)
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/luizvbo/axum-kickoff.git
-cd axum-kickoff
+git clone https://github.com/your-org/{{project-name}}.git
+cd {{project-name}}
 ```
 
 ### 2. Set Up Environment Variables
@@ -54,7 +54,7 @@ PORT=8888
 DOMAIN_NAME=localhost
 
 # Database
-DATABASE_URL=sqlite:axum-kickoff.db
+DATABASE_URL=sqlite:{{project-name}}.db
 
 # Session Key (generate a secure random key)
 SESSION_KEY=your-secret-key-minimum-64-bytes-long
@@ -78,7 +78,7 @@ To enable GitHub OAuth authentication:
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Click "New OAuth App"
 3. Fill in the form:
-   - **Application name**: axum-kickoff (or your app name)
+   - **Application name**: {{project-name}} (or your app name)
    - **Homepage URL**: `http://localhost:8888`
    - **Authorization callback URL**: `http://localhost:8888/api/v1/auth/github/callback`
 4. Click "Register application"
@@ -101,7 +101,7 @@ Use the output as your `SESSION_KEY` in `.env`.
 
 ### 5. Run Database Migrations
 
-axum-kickoff uses Toasty ORM for database management. The schema is defined in `src/models/` and migrations are handled automatically on first run.
+{{project-name}} uses Toasty ORM for database management. The schema is defined in `src/models/` and migrations are handled automatically on first run.
 
 For development, SQLite will create the database file automatically on first startup.
 
@@ -168,7 +168,7 @@ curl http://localhost:3000/api/health \
 Familiarize yourself with the project structure:
 
 ```
-axum-kickoff/
+{{project-name}}/
 ├── src/
 │   ├── bin/
 │   │   └── server.rs          # Server entry point
@@ -253,10 +253,10 @@ Metrics will be available at `/metrics`.
 cargo run --bin toasty
 
 # View SQLite database
-sqlite3 axum-kickoff.db
+sqlite3 {{project-name}}.db
 
 # Backup SQLite database
-cp axum-kickoff.db axum-kickoff.db.backup
+cp {{project-name}}.db {{project-name}}.db.backup
 ```
 
 ## Troubleshooting
@@ -275,7 +275,7 @@ Ensure the `DATABASE_URL` is correct:
 
 ```bash
 # For SQLite (file-based)
-DATABASE_URL=sqlite:axum-kickoff.db
+DATABASE_URL=sqlite:{{project-name}}.db
 
 # For SQLite (in-memory, for testing)
 DATABASE_URL=sqlite::memory:
@@ -316,7 +316,7 @@ chmod 755 ./uploads
 ## Getting Help
 
 - Check the [Documentation](README.md#documentation) for detailed guides
-- Review existing [Issues](https://github.com/luizvbo/axum-kickoff/issues)
+- Review existing [Issues](https://github.com/your-org/{{project-name}}/issues)
 - Open a new issue if you encounter problems
 
 ## Additional Resources

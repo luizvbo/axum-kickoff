@@ -123,7 +123,7 @@ async fn non_blocked_user_agent_passes_through() {
     let app = app_with_blocked_traffic("User-Agent", vec!["bad-bot"]).await;
     let anon = AnonymousUser::new(app);
 
-    // Default User-Agent from request_builder is "axum-kickoff-test"
+    // Default User-Agent from request_builder is "{{project-name}}-test"
     let response = anon.get::<()>("/health").await;
 
     response.assert_status(StatusCode::OK);

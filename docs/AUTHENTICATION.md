@@ -1,10 +1,10 @@
 # Authentication
 
-This document describes the authentication system in axum-kickoff, including GitHub OAuth, session management, and API tokens.
+This document describes the authentication system in {{project-name}}, including GitHub OAuth, session management, and API tokens.
 
 ## Overview
 
-axum-kickoff supports multiple authentication methods:
+{{project-name}} supports multiple authentication methods:
 
 - **GitHub OAuth**: OAuth 2.0 flow with GitHub
 - **Session-Based**: Signed cookie sessions for web users

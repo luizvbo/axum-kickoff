@@ -59,7 +59,7 @@ use crate::Env;
         (name = "Tokens", description = "API token management")
     ),
     info(
-        title = "axum-kickoff API",
+        title = "{{project-name}} API",
         version = "0.1.0",
         description = "A pragmatic Axum + Askama + HTMX starter API"
     ),
@@ -79,6 +79,24 @@ pub struct PageContext {
     pub csrf_token: String,
     /// CSP nonce for the current request.
     pub csp_nonce: String,
+    /// Display name of the application, derived from `CARGO_PKG_NAME`.
+    pub app_name: String,
+}
+
+/// Human-friendly application name derived from the crate's package name
+/// (`my-app` / `my_app` -> `My App`).
+pub(crate) fn app_name() -> String {
+    env!("CARGO_PKG_NAME")
+        .split(['-', '_'])
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for PageContext {
@@ -106,6 +124,7 @@ impl<S: Send + Sync> FromRequestParts<S> for PageContext {
         Ok(PageContext {
             csrf_token,
             csp_nonce,
+            app_name: app_name(),
         })
     }
 }
@@ -137,12 +156,12 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
                 .precompressed_br(),
         );
 
-    #[cfg(feature = "metrics")]
+{% if metrics %}    #[cfg(feature = "metrics")]
     let ops_router = ops_router
         .route("/metrics", get(crate::metrics::metrics_handler))
         .route("/api/private/metrics", get(crate::metrics::metrics_handler));
 
-    // Public HTML / example routes - no authentication required
+{% endif %}    // Public HTML / example routes - no authentication required
     let public_router = Router::new()
         .route("/", get(home))
         .route("/api/server-time", get(server_time))
@@ -367,6 +386,7 @@ mod tests {
             ctx: PageContext {
                 csrf_token: "test-csrf".into(),
                 csp_nonce: "test-nonce".into(),
+                app_name: app_name(),
             },
             time: "now".to_string(),
         };
@@ -380,6 +400,7 @@ mod tests {
             ctx: PageContext {
                 csrf_token: "test-csrf".into(),
                 csp_nonce: "test-nonce".into(),
+                app_name: app_name(),
             },
             time: "now".to_string(),
         };
@@ -387,6 +408,7 @@ mod tests {
             ctx: PageContext {
                 csrf_token: "test-csrf".into(),
                 csp_nonce: "test-nonce".into(),
+                app_name: app_name(),
             },
             time: "now".to_string(),
         };

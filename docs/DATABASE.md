@@ -1,6 +1,6 @@
 # Database Guide
 
-This guide covers database operations in axum-kickoff using the Toasty ORM. Toasty is a modern Rust ORM that provides type-safe query builders, automatic migrations, and compile-time guarantees.
+This guide covers database operations in {{project-name}} using the Toasty ORM. Toasty is a modern Rust ORM that provides type-safe query builders, automatic migrations, and compile-time guarantees.
 
 ## Table of Contents
 
@@ -19,7 +19,7 @@ This guide covers database operations in axum-kickoff using the Toasty ORM. Toas
 
 ## Overview
 
-axum-kickoff uses Toasty ORM for database operations with the following characteristics:
+{{project-name}} uses Toasty ORM for database operations with the following characteristics:
 
 - **Default backend**: SQLite (zero-setup for development)
 - **Production backend**: PostgreSQL (migration path available)
@@ -122,13 +122,13 @@ The database connection is configured via the `DATABASE_URL` environment variabl
 
 ```bash
 # SQLite (file-based, default)
-DATABASE_URL=sqlite:./axum_kickoff.db
+DATABASE_URL=sqlite:./{{crate_name}}.db
 
 # SQLite (in-memory, for testing)
 DATABASE_URL=sqlite::memory:
 
 # PostgreSQL
-DATABASE_URL=postgresql://user:password@localhost:5432/axum_kickoff
+DATABASE_URL=postgresql://user:password@localhost:5432/{{crate_name}}
 ```
 
 ### Connection Pooling
@@ -404,13 +404,13 @@ SQLite is the default database for development:
 
 ```bash
 # View database contents
-sqlite3 axum_kickoff.db
+sqlite3 {{crate_name}}.db
 
 # Backup database
-cp axum_kickoff.db axum_kickoff.db.backup
+cp {{crate_name}}.db {{crate_name}}.db.backup
 
 # Reset database (delete file)
-rm axum_kickoff.db
+rm {{crate_name}}.db
 ```
 
 #### SQLite in Testing
@@ -455,13 +455,13 @@ brew services start postgresql
 2. Create a database:
 
 ```bash
-createdb axum_kickoff
+createdb {{crate_name}}
 ```
 
 3. Update `.env`:
 
 ```bash
-DATABASE_URL=postgresql://username:password@localhost:5432/axum_kickoff
+DATABASE_URL=postgresql://username:password@localhost:5432/{{crate_name}}
 ```
 
 4. Run migrations:

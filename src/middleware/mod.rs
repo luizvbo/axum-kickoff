@@ -19,9 +19,9 @@ pub mod auth;
 pub mod block_traffic;
 pub mod csrf;
 pub mod error_handler;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 pub mod metrics;
-pub mod normalize_path;
+{% endif %}pub mod normalize_path;
 pub mod real_ip;
 pub mod request_format;
 pub mod request_id;
@@ -36,9 +36,9 @@ pub use csrf::{
     csrf_protect, get_or_create_csrf_token, protect, validate_csrf_token, verify_origin,
 };
 pub use error_handler::middleware as error_handler;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 pub use metrics::update_metrics;
-pub use real_ip::middleware as real_ip;
+{% endif %}pub use real_ip::middleware as real_ip;
 pub use real_ip::RealIp;
 pub use request_format::middleware as request_format;
 pub use request_id::{middleware as request_id, RequestId};
@@ -99,13 +99,13 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         ))
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(30)))
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
-
+{% if metrics %}
     #[cfg(feature = "metrics")]
     let router = router.layer(from_fn_with_state(
         state.clone(),
         self::metrics::update_metrics,
     ));
-
+{% endif %}
     // CORS is the outermost layer so preflights are answered before the user
     // agent check, session middleware, or rate limiting can run.
     let router = router.layer(cors);

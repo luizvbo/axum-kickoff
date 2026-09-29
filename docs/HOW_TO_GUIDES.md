@@ -1,6 +1,6 @@
 # How-to Guides
 
-This section contains practical guides for common tasks when building with axum-kickoff.
+This section contains practical guides for common tasks when building with {{project-name}}.
 
 ## Guides
 

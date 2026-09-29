@@ -1,6 +1,6 @@
 # Middleware
 
-This document describes the middleware stack in axum-kickoff, including all middleware components, their order, and configuration.
+This document describes the middleware stack in {{project-name}}, including all middleware components, their order, and configuration.
 
 ## Overview
 
@@ -459,7 +459,7 @@ cargo run --bin server --features metrics
 Test middleware with integration tests:
 
 ```rust
-use axum_kickoff::tests::{TestApp, AnonymousUser};
+use {{crate_name}}::tests::{TestApp, AnonymousUser};
 
 #[tokio::test]
 async fn test_security_headers() {

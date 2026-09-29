@@ -15,7 +15,7 @@
 //! # Example Usage
 //!
 //! ```ignore
-//! use axum_kickoff::rate_limiter::{RateLimiter, LimitedAction, RateLimiterConfig};
+//! use {{crate_name}}::rate_limiter::{RateLimiter, LimitedAction, RateLimiterConfig};
 //! use std::time::Duration;
 //! use std::collections::HashMap;
 //!

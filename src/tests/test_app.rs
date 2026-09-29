@@ -146,7 +146,10 @@ mod tests {
         let csrf_json = Regex::new(r#""X-CSRF-Token": "[A-Za-z0-9]{32}""#).unwrap();
         let nonce = Regex::new(r#"nonce="[A-Za-z0-9+/=]{20,26}""#).unwrap();
 
-        let html = csrf.replace_all(html, r#"content="[CSRF_TOKEN]""#);
+        // The app name comes from `CARGO_PKG_NAME`, so it differs per
+        // generated project — normalize it like the other dynamic values.
+        let html = html.replace(&crate::router::app_name(), "[APP_NAME]");
+        let html = csrf.replace_all(&html, r#"content="[CSRF_TOKEN]""#);
         let html = csrf_json.replace_all(&html, r#""X-CSRF-Token": "[CSRF_TOKEN]""#);
         nonce
             .replace_all(&html, r#"nonce="[CSP_NONCE]""#)

@@ -1,10 +1,10 @@
 # Roadmap
 
-This document outlines the development roadmap for axum-kickoff, including planned features, improvements, and implementation priorities.
+This document outlines the development roadmap for {{project-name}}, including planned features, improvements, and implementation priorities.
 
 ## Overview
 
-axum-kickoff is a production-ready Rust web application starter template. This roadmap prioritizes features that provide universal value for web applications while maintaining simplicity and cost-consciousness.
+{{project-name}} is a production-ready Rust web application starter template. This roadmap prioritizes features that provide universal value for web applications while maintaining simplicity and cost-consciousness.
 
 ## Philosophy
 
@@ -362,7 +362,7 @@ The following components from crates.io are domain-specific and should NOT be im
 
 ## Alternative Approaches
 
-These components have cost-conscious alternatives in axum-kickoff:
+These components have cost-conscious alternatives in {{project-name}}:
 
 - **Sentry error tracking**: Use QuickWit instead (documented in `docs/quickwit-integration.md`)
 - **Separate frontend**: Use HTMX + Alpine.js instead of SvelteKit

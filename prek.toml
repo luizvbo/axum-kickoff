@@ -1,4 +1,4 @@
-# Pre-commit hooks for axum-kickoff
+# Pre-commit hooks for {{project-name}}
 # Install prek: cargo install prek
 # Run: prek install
 # Skip: SKIP=cargo-fmt git commit ...
