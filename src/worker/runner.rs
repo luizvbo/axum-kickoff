@@ -264,11 +264,7 @@ impl Runner {
 
         if let Err(e) = self
             .app
-            .enqueue_job_on_queue(
-                &self.queue,
-                CleanupJob::new(self.cleanup_max_age_days),
-                0,
-            )
+            .enqueue_job_on_queue(&self.queue, CleanupJob::new(self.cleanup_max_age_days), 0)
             .await
         {
             error!(error = ?e, "Failed to enqueue scheduled cleanup job");
@@ -725,7 +721,7 @@ mod tests {
         static RELEASE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
         #[derive(serde::Deserialize)]
-        struct SignalingJob;
+        struct SignalingJob {}
 
         impl crate::worker::Job for SignalingJob {
             const NAME: &'static str = "signaling";
@@ -765,18 +761,23 @@ mod tests {
 
         let claimed = async {
             STARTED.notified().await;
-            BackgroundJob::filter(BackgroundJob::fields().job_type().eq("signaling".to_string()))
-                .first()
-                .exec(&mut db)
-                .await
-                .unwrap()
-                .map(|job| {
-                    RELEASE.notify_one();
-                    job
-                })
+            BackgroundJob::filter(
+                BackgroundJob::fields()
+                    .job_type()
+                    .eq("signaling".to_string()),
+            )
+            .first()
+            .exec(&mut db)
+            .await
+            .unwrap()
+            .inspect(|_| RELEASE.notify_one())
         };
 
-        let (result, mid_run_job) = tokio::join!(runner.run_once(), claimed);
+        let (result, mid_run_job) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(runner.run_once(), claimed)
+        })
+        .await
+        .expect("signaling job timed out");
         assert!(result.unwrap());
         let job = mid_run_job.expect("job should exist while it is running");
         assert_eq!(job.locked_by.as_deref(), Some("test-worker"));
@@ -955,5 +956,39 @@ mod tests {
         assert_eq!(jobs[0].queue, "maintenance");
         assert_eq!(jobs[0].retries, 0);
         assert!(jobs[0].locked_until.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_run_loop_enqueues_scheduled_jobs() {
+        let test_app = TestApp::new().await;
+        let app = test_app.state.0.clone();
+
+        // Drive the real worker loop: it must enqueue the recurring cleanup
+        // job on its first iteration. The job has no registered handler here,
+        // so after being claimed once it is merely rescheduled and the row
+        // stays visible for the assertion.
+        let runner = Runner::new(app.clone()).poll_interval(Duration::from_millis(10));
+        let worker = tokio::spawn(runner.run());
+
+        let mut db = app.database.db_clone();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let found = loop {
+            let jobs =
+                BackgroundJob::filter(BackgroundJob::fields().job_type().eq("cleanup".to_string()))
+                    .exec(&mut db)
+                    .await
+                    .unwrap();
+            if let Some(job) = jobs.into_iter().next() {
+                break job;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "worker loop did not enqueue a cleanup job"
+            );
+            sleep(Duration::from_millis(25)).await;
+        };
+
+        worker.abort();
+        assert_eq!(found.queue, "default");
     }
 }

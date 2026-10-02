@@ -14,6 +14,7 @@ pub struct Post {
     pub id: u64,
 
     /// Foreign key to the user who created the post
+    #[index]
     pub user_id: u64,
 
     /// Post title

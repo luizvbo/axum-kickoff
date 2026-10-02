@@ -128,8 +128,7 @@ fn xff_client_ip(headers: &http::HeaderMap, trusted_proxies: &[ipnet::IpNet]) ->
         .filter_map(|h| h.to_str().ok())
         .flat_map(|s| s.split(','))
         .filter_map(|s| s.trim().parse::<IpAddr>().ok())
-        .filter(|ip| !is_trusted_proxy(*ip, trusted_proxies))
-        .last();
+        .rfind(|ip| !is_trusted_proxy(*ip, trusted_proxies));
 
     if let Some(ip) = ip {
         debug!(target: "real_ip", "Using X-Forwarded-For client IP: {ip}");
@@ -159,8 +158,7 @@ fn forwarded_client_ip(
                 None
             }
         })
-        .filter(|ip| !is_trusted_proxy(*ip, trusted_proxies))
-        .last();
+        .rfind(|ip| !is_trusted_proxy(*ip, trusted_proxies));
 
     if let Some(ip) = ip {
         debug!(target: "real_ip", "Using Forwarded client IP: {ip}");

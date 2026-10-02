@@ -9,7 +9,13 @@ use toasty::Model;
 /// row becomes claimable again automatically. The poll query is served by
 /// `index_background_jobs_poll` on `(queue, failed_at, locked_until, run_at)`.
 #[derive(Debug, Model)]
-#[index(name = "index_background_jobs_poll", queue, failed_at, locked_until, run_at)]
+#[index(
+    name = "index_background_jobs_poll",
+    queue,
+    failed_at,
+    locked_until,
+    run_at
+)]
 pub struct BackgroundJob {
     /// Primary key - auto-generated
     #[key]

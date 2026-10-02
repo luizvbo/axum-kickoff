@@ -233,6 +233,11 @@ pub async fn github_callback(
 
     let user = match User::get_by_gh_id(&mut db, &github_user.id).await {
         Ok(mut existing_user) => {
+            // Deactivated accounts may not log back in
+            if !existing_user.is_active {
+                return Err(forbidden("Account is not active"));
+            }
+
             // Check if locked
             if existing_user.is_locked() {
                 let reason = existing_user

@@ -386,3 +386,29 @@ async fn token_auth_for_locked_user_is_forbidden() {
 
     response.assert_status(StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn token_auth_for_inactive_user_is_forbidden() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("inactive_token_user")
+        .inactive()
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let (_api_token, plain_token) = app
+        .token_builder(user.id, "inactive-user-token")
+        .action_scopes(vec![ActionScope::Read])
+        .build(&mut db)
+        .await
+        .expect("Failed to create token");
+
+    let token_user = TokenUser::new(app, plain_token);
+
+    let response = token_user.get::<Value>("/api/v1/tokens").await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}

@@ -94,8 +94,13 @@ pub async fn list_posts(
 
     let mut db = state.0.database.db_clone();
 
-    // Public read: list all posts, optionally paginated.
-    let posts = Post::filter(Post::fields().id().ge(0u64))
+    // Public read: only published posts are listed. The total order
+    // (created_at, then id as tie-breaker) keeps page boundaries stable.
+    let posts = Post::filter(Post::fields().published().eq(true))
+        .order_by((
+            Post::fields().created_at().desc(),
+            Post::fields().id().desc(),
+        ))
         .limit(per_page)
         .offset(offset)
         .exec(&mut db)
@@ -144,7 +149,10 @@ pub async fn show_post(
 ) -> AppResult<Json<ApiResponse<PostResponse>>> {
     let mut db = state.0.database.db_clone();
 
+    // Public read: unpublished drafts are not visible here. Owners can still
+    // operate on drafts through the authenticated mutation endpoints.
     let post = Post::filter(Post::fields().id().eq(id))
+        .filter(Post::fields().published().eq(true))
         .first()
         .exec(&mut db)
         .await

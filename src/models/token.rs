@@ -22,6 +22,7 @@ pub struct ApiToken {
     pub name: String,
 
     /// Hashed token value (SHA-256)
+    #[unique]
     pub token: Vec<u8>,
 
     /// The date and time when the token was created

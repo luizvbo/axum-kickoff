@@ -324,6 +324,26 @@ async fn locked_user_with_valid_session_is_forbidden() {
     response.assert_status(StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn inactive_user_with_valid_session_is_forbidden() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("inactive_session_user")
+        .inactive()
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let session_key = app.state.session_key.clone();
+    let cookie_user = CookieUser::new(app, user.id, session_key);
+
+    let response = cookie_user.get::<serde_json::Value>("/api/v1/tokens").await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
 /// Account locks are enforced lazily, only where authentication is required.
 /// A locked user may still browse public pages — matching crates.io's model
 /// where `AuthCheck` runs per-route.
@@ -342,6 +362,30 @@ async fn locked_user_can_access_public_routes() {
                     .unwrap(),
             ),
         )
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let session_key = app.state.session_key.clone();
+    let cookie_user = CookieUser::new(app, user.id, session_key);
+
+    let response = cookie_user.get::<()>("/").await;
+    response.assert_status(StatusCode::OK);
+
+    let response = cookie_user.get::<serde_json::Value>("/api/v1/posts").await;
+    response.assert_status(StatusCode::OK);
+}
+
+/// Deactivated users are rejected only where authentication is enforced —
+/// like locked users, they may still browse public pages.
+#[tokio::test]
+async fn inactive_user_can_access_public_routes() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("inactive_public_user")
+        .inactive()
         .build(&mut db)
         .await
         .expect("Failed to create user");

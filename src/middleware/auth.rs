@@ -136,8 +136,9 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
     }
 
     // Cookie sessions: trust the session extension populated by the session
-    // middleware. Whether the user still exists (and is not locked) is enforced
-    // lazily on authentication-required routes — see `enforce_authentication`.
+    // middleware. Whether the user still exists, is active, and is not locked
+    // is enforced lazily on authentication-required routes — see
+    // `enforce_authentication`.
     if let Some(user_id) = req
         .extensions()
         .get::<SessionExtension>()
@@ -202,11 +203,12 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
         return Err(StatusCode::UNAUTHORIZED.into_response());
     }
 
-    // Verify the owning user is not locked before treating the token as valid.
+    // Verify the owning user is active and not locked before treating the
+    // token as valid.
     let user = User::get_by_id(&mut db, api_token.user_id)
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
-    if user.is_locked() {
+    if !user.is_active || user.is_locked() {
         return Err(StatusCode::FORBIDDEN.into_response());
     }
 
@@ -227,10 +229,11 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
 /// Enforce authentication at the point where a route requires it.
 ///
 /// Token-authenticated requests were already fully validated — including the
-/// account-lock check — by `authenticate`, so they pass through untouched.
-/// Cookie sessions only carry a `user_id` claim, so the `User` record is
-/// loaded here, exactly once and only for requests that need it. Locked users
-/// are rejected with 403; sessions referencing missing users get 401.
+/// account-active and account-lock checks — by `authenticate`, so they pass
+/// through untouched. Cookie sessions only carry a `user_id` claim, so the
+/// `User` record is loaded here, exactly once and only for requests that need
+/// it. Deactivated and locked users are rejected with 403; sessions
+/// referencing missing users get 401.
 ///
 /// On success the loaded `User` is inserted into the request extensions so
 /// handlers can reuse it without a second lookup.
@@ -260,6 +263,9 @@ async fn enforce_authentication(state: &AppState, req: &mut Request) -> Result<(
 
     let mut db = state.0.database.db_clone();
     match User::get_by_id(&mut db, user_id).await {
+        Ok(user) if !user.is_active => {
+            Err(forbidden("Account is not active").response())
+        }
         Ok(user) if user.is_locked() => {
             let reason = user
                 .account_lock_reason
