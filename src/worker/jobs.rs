@@ -21,7 +21,9 @@ pub trait Job: serde::de::DeserializeOwned + Send + Sync + 'static {
     /// Unique name for this job type; stored in `background_jobs.job_type`.
     const NAME: &'static str;
 
-    /// Execute the job. Implementations should be idempotent because they may be
+    /// Execute the job. Implementations **must** be idempotent: the worker
+    /// claims jobs with a lease, so a crashed or slow worker's job can be
+    /// reclaimed and run again by another worker in addition to being
     /// retried on failure.
     fn run<'a>(
         &'a self,

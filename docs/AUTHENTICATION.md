@@ -93,9 +93,9 @@ openssl rand -base64 64
 
 Sessions store:
 
-- User ID
-- Session creation time
-- Session expiration time
+- User ID and login (`user_id`, `user_login`)
+- CSRF token (`csrf_token`)
+- Transient OAuth state (`github_oauth_state`, `github_pkce_verifier`, `redirect_to`)
 
 ### Session Middleware
 
@@ -114,11 +114,8 @@ The session middleware in `src/middleware/session.rs`:
 
 ### Session Expiration
 
-Sessions expire after a configurable period (default: 24 hours). Configure via environment variable:
-
-```bash
-SESSION_EXPIRATION_HOURS=24
-```
+Session cookies expire via `Max-Age` (90 days). Expiration is enforced by the
+browser, not the server — revoke access by locking the account instead.
 
 ## API Tokens
 

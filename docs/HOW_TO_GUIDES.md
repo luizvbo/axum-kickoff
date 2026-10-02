@@ -49,7 +49,7 @@ pub async fn list_items(
     let items = Item::all()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(Json(items))
 }
@@ -69,7 +69,7 @@ pub async fn create_item(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(db_error)?;
 
     Ok(Json(item))
 }

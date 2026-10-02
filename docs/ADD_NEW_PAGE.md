@@ -151,7 +151,7 @@ pub async fn about_page(
 
     // Fetch data using Toasty
     let users = User::all().exec(&mut db).await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(HtmlTemplate(AboutTemplate {
         user_count: users.len(),

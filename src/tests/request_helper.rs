@@ -403,7 +403,7 @@ pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String 
     let cookie = cookie::Cookie::build((cookie_name, encoded))
         .path("/")
         .http_only(true)
-        .same_site(cookie::SameSite::Strict)
+        .same_site(cookie::SameSite::Lax)
         .max_age(cookie::time::Duration::days(90))
         .build();
 

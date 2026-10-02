@@ -91,7 +91,7 @@ impl App {
 
     /// Enqueue a background job in the default queue.
     pub async fn enqueue_job<J: Job + serde::Serialize>(&self, job: J) -> anyhow::Result<()> {
-        self.enqueue_job_with_priority(job, 0).await
+        self.enqueue_job_on_queue("default", job, 0).await
     }
 
     /// Enqueue a background job with an explicit priority.
@@ -100,17 +100,30 @@ impl App {
         job: J,
         priority: i16,
     ) -> anyhow::Result<()> {
+        self.enqueue_job_on_queue("default", job, priority).await
+    }
+
+    /// Enqueue a background job on a specific queue with an explicit priority.
+    pub async fn enqueue_job_on_queue<J: Job + serde::Serialize>(
+        &self,
+        queue: &str,
+        job: J,
+        priority: i16,
+    ) -> anyhow::Result<()> {
         let data = serde_json::to_string(&job)?;
         let mut db = self.database.db_clone();
 
         toasty::create!(BackgroundJob {
-            queue: "default".to_string(),
+            queue: queue.to_string(),
             job_type: J::NAME.to_string(),
             data,
             retries: 0,
             priority,
             run_at: jiff::Timestamp::now(),
             created_at: jiff::Timestamp::now(),
+            locked_until: None,
+            locked_by: None,
+            failed_at: None,
         })
         .exec(&mut db)
         .await?;

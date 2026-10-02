@@ -23,9 +23,13 @@
 //!
 //! 2. **X-Forwarded-For header**: Proxies add this header to show the original client IP
 //!    - Format: `X-Forwarded-For: client_ip, proxy1_ip, proxy2_ip`
-//!    - The leftmost untrusted IP is the client
+//!    - The rightmost untrusted IP is the client: the list is scanned right-to-left,
+//!      entries inside `TRUSTED_PROXIES` are skipped, and the first remaining entry
+//!      wins. Client-supplied (spoofable) entries can only ever sit to the left of
+//!      that address, so they are never selected.
 //!
 //! 3. **Forwarded header fallback**: Supports the RFC 7239 `Forwarded` header if `X-Forwarded-For` is absent
+//!    - Uses the same rightmost-untrusted selection as `X-Forwarded-For`
 //!
 //! 4. **Fallback**: If no trusted forwarding header exists, uses the direct connection IP
 //!
@@ -39,9 +43,15 @@
 //!
 //! # Security Note
 //!
-//! In production, ensure your proxy is configured to:
-//! - Set/overwrite the `X-Forwarded-For` header correctly
-//! - Not trust `X-Forwarded-For` from untrusted sources
+//! This middleware is only sound under the following proxy contract:
+//! - Every trusted proxy MUST either append the peer IP it observed to
+//!   `X-Forwarded-For` (e.g. nginx `proxy_set_header X-Forwarded-For
+//!   $proxy_add_x_forwarded_for`) or replace the header entirely. A proxy that
+//!   passes a client-supplied `X-Forwarded-For` through unchanged lets clients
+//!   spoof their IP.
+//! - In production, clients MUST NOT be able to reach the app directly —
+//!   all inbound traffic must flow through a trusted proxy (enforce with
+//!   firewall rules / security groups).
 //! - Configure `TRUSTED_PROXIES` with your proxy's IP addresses or CIDR ranges
 //!
 //! Example `TRUSTED_PROXIES` values:
@@ -104,67 +114,59 @@ fn extract_real_ip(
     socket_ip
 }
 
-/// Find the leftmost untrusted IP address in `X-Forwarded-For` headers.
+/// Find the rightmost untrusted IP address in `X-Forwarded-For` headers.
+///
+/// Trusted proxies append the peer address they observed to the right end of
+/// the list, so scanning right-to-left and skipping entries inside
+/// `trusted_proxies` yields the address the closest trusted proxy saw — the
+/// real client. Client-supplied entries can only appear to the left of that
+/// address and are never selected.
 fn xff_client_ip(headers: &http::HeaderMap, trusted_proxies: &[ipnet::IpNet]) -> Option<IpAddr> {
-    for token in headers
+    let ip = headers
         .get_all(X_FORWARDED_FOR)
         .iter()
         .filter_map(|h| h.to_str().ok())
         .flat_map(|s| s.split(','))
-        .map(|s| s.trim())
-    {
-        if token.is_empty() {
-            continue;
-        }
+        .filter_map(|s| s.trim().parse::<IpAddr>().ok())
+        .filter(|ip| !is_trusted_proxy(*ip, trusted_proxies))
+        .last();
 
-        match token.parse::<IpAddr>() {
-            Ok(ip) if !is_trusted_proxy(ip, trusted_proxies) => {
-                debug!(target: "real_ip", "Using X-Forwarded-For client IP: {ip}");
-                return Some(ip);
-            }
-            Ok(_) => continue,
-            Err(_) => {
-                debug!(target: "real_ip", "Invalid X-Forwarded-For token, falling back");
-                return None;
-            }
-        }
+    if let Some(ip) = ip {
+        debug!(target: "real_ip", "Using X-Forwarded-For client IP: {ip}");
     }
 
-    None
+    ip
 }
 
-/// Find the leftmost untrusted IP address in RFC 7239 `Forwarded` headers.
+/// Find the rightmost untrusted `for=` address in RFC 7239 `Forwarded` headers.
+///
+/// Same rightmost-untrusted selection as [`xff_client_ip`].
 fn forwarded_client_ip(
     headers: &http::HeaderMap,
     trusted_proxies: &[ipnet::IpNet],
 ) -> Option<IpAddr> {
-    for value in headers.get_all(FORWARDED).iter() {
-        let Ok(forwarded) = value.to_str() else {
-            continue;
-        };
-
-        for element in forwarded.split(',') {
-            for pair in element.split(';') {
-                let pair = pair.trim();
-                if pair.len() < 4 {
-                    continue;
-                }
-                if !pair[..4].eq_ignore_ascii_case("for=") {
-                    continue;
-                }
-
-                let raw = &pair[4..];
-                if let Some(ip) = parse_forwarded_for(raw) {
-                    if !is_trusted_proxy(ip, trusted_proxies) {
-                        debug!(target: "real_ip", "Using Forwarded client IP: {ip}");
-                        return Some(ip);
-                    }
-                }
+    let ip = headers
+        .get_all(FORWARDED)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|forwarded| forwarded.split(','))
+        .flat_map(|element| element.split(';'))
+        .map(str::trim)
+        .filter_map(|pair| {
+            if pair.get(..4)?.eq_ignore_ascii_case("for=") {
+                parse_forwarded_for(&pair[4..])
+            } else {
+                None
             }
-        }
+        })
+        .filter(|ip| !is_trusted_proxy(*ip, trusted_proxies))
+        .last();
+
+    if let Some(ip) = ip {
+        debug!(target: "real_ip", "Using Forwarded client IP: {ip}");
     }
 
-    None
+    ip
 }
 
 /// Parse a `for=` value from a `Forwarded` header.
@@ -216,7 +218,9 @@ mod tests {
         let socket_ip = "127.0.0.1".parse().unwrap();
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted_local());
 
-        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
+        // Rightmost untrusted entry wins: the socket peer is the trusted proxy,
+        // so 198.51.100.1 is the address that proxy observed.
+        assert_eq!(real_ip, "198.51.100.1".parse::<IpAddr>().unwrap());
     }
 
     #[test]
@@ -262,7 +266,7 @@ mod tests {
         let socket_ip = "10.0.0.1".parse().unwrap();
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
 
-        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
+        assert_eq!(real_ip, "198.51.100.1".parse::<IpAddr>().unwrap());
     }
 
     #[test]
@@ -270,6 +274,65 @@ mod tests {
         let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
         let mut headers = HeaderMap::new();
         headers.insert(X_FORWARDED_FOR, "10.0.0.2, 203.0.113.1".parse().unwrap());
+
+        let socket_ip = "10.0.0.1".parse().unwrap();
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
+
+        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_real_ip_ignores_attacker_prepended_xff() {
+        // Attacker sends `X-Forwarded-For: 6.6.6.6`; the edge proxy appends the
+        // real client address per `$proxy_add_x_forwarded_for`.
+        let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let mut headers = HeaderMap::new();
+        headers.insert(X_FORWARDED_FOR, "6.6.6.6, 203.0.113.1".parse().unwrap());
+
+        let socket_ip = "10.0.0.1".parse().unwrap();
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
+
+        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_real_ip_multi_hop_proxy_chain() {
+        // client 203.0.113.1 -> trusted proxy 10.0.0.2 -> trusted proxy 10.0.0.3 -> app
+        let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            X_FORWARDED_FOR,
+            "203.0.113.1, 10.0.0.2, 10.0.0.3".parse().unwrap(),
+        );
+
+        let socket_ip = "10.0.0.3".parse().unwrap();
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
+
+        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_real_ip_attacker_prefix_plus_trusted_suffix() {
+        // Forged prefix, real client observed by the edge, trusted hop appended last.
+        let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            X_FORWARDED_FOR,
+            "6.6.6.6, 203.0.113.1, 10.0.0.2".parse().unwrap(),
+        );
+
+        let socket_ip = "10.0.0.1".parse().unwrap();
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
+
+        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_real_ip_xff_across_multiple_header_lines() {
+        let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let mut headers = HeaderMap::new();
+        headers.append(X_FORWARDED_FOR, "6.6.6.6".parse().unwrap());
+        headers.append(X_FORWARDED_FOR, "203.0.113.1".parse().unwrap());
 
         let socket_ip = "10.0.0.1".parse().unwrap();
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
@@ -326,5 +389,22 @@ mod tests {
         let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
 
         assert_eq!(real_ip, socket_ip);
+    }
+
+    #[test]
+    fn test_extract_real_ip_ignores_attacker_prepended_forwarded() {
+        // Attacker sends `Forwarded: for=6.6.6.6`; the edge proxy appends the
+        // element for the real client.
+        let trusted: Vec<ipnet::IpNet> = vec!["10.0.0.0/8".parse().unwrap()];
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            FORWARDED,
+            "for=6.6.6.6, for=203.0.113.1;proto=https".parse().unwrap(),
+        );
+
+        let socket_ip = "10.0.0.1".parse().unwrap();
+        let real_ip = extract_real_ip(&headers, socket_ip, &trusted);
+
+        assert_eq!(real_ip, "203.0.113.1".parse::<IpAddr>().unwrap());
     }
 }

@@ -70,7 +70,7 @@ pub async fn contact_page(ctx: PageContext) -> impl IntoResponse {
 /// This endpoint is intentionally anonymous and does NOT validate the CSRF
 /// token — the submitted `csrf_token` field is illustrative only (anonymous
 /// sessions carry no state worth protecting, so the token is empty). The
-/// session cookie's `SameSite=Strict` attribute and the `verify_origin`
+/// session cookie's `SameSite=Lax` attribute and the `verify_origin`
 /// middleware are what protect this route. Forms behind authentication are
 /// validated by the `csrf_protect` route layer instead.
 pub async fn contact_submit(

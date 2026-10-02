@@ -26,12 +26,20 @@ pub struct AuthorizeQuery {
 }
 
 /// OAuth callback query parameters
+///
+/// `code`/`state` are optional because GitHub redirects back with
+/// `?error=...` (e.g. `error=access_denied`) instead when the user declines
+/// authorization or the OAuth app is misconfigured.
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
     /// The authorization code from GitHub
-    pub code: String,
+    pub code: Option<String>,
     /// The state parameter for CSRF protection
-    pub state: String,
+    pub state: Option<String>,
+    /// Error code returned by GitHub when authorization fails
+    pub error: Option<String>,
+    /// Human-readable error description returned by GitHub
+    pub error_description: Option<String>,
 }
 
 /// GitHub user profile data from OAuth
@@ -128,12 +136,33 @@ pub async fn github_callback(
 ) -> Result<Redirect, BoxedAppError> {
     let config = &state.0.config;
 
+    // GitHub redirects here with `?error=...` when the user declines
+    // authorization or the app is misconfigured, so `code`/`state` are
+    // optional. Handle that first so the callback is a controlled response
+    // instead of a query-deserialization 400.
+    if let Some(error) = &query.error {
+        tracing::warn!(
+            error = %error,
+            error_description = query.error_description.as_deref().unwrap_or_default(),
+            "GitHub OAuth callback returned an error"
+        );
+        return Err(bad_request(match error.as_str() {
+            "access_denied" => "GitHub authorization was declined",
+            _ => "GitHub authorization failed, please try again",
+        }));
+    }
+
+    let (code, csrf_state) = match (query.code, query.state) {
+        (Some(code), Some(state)) => (code, state),
+        _ => return Err(bad_request("Missing OAuth code or state parameter")),
+    };
+
     // Verify CSRF state
     let session_state = session
         .remove("github_oauth_state")
         .ok_or_else(|| bad_request("Missing OAuth state in session"))?;
 
-    if session_state != query.state {
+    if session_state != csrf_state {
         return Err(bad_request("Invalid OAuth state - possible CSRF attack"));
     }
 
@@ -161,11 +190,14 @@ pub async fn github_callback(
 
     // Exchange code for access token with PKCE verifier
     let token = client
-        .exchange_code(oauth2::AuthorizationCode::new(query.code.clone()))
+        .exchange_code(oauth2::AuthorizationCode::new(code))
         .set_pkce_verifier(pkce_verifier)
         .request_async(&ReqwestClient(state.0.http_client.clone()))
         .await
-        .map_err(|e| server_error(format!("Failed to exchange authorization code: {}", e)))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to exchange OAuth authorization code");
+            server_error("Error obtaining token")
+        })?;
 
     // Fetch user profile from GitHub
     let user_response = state
@@ -179,16 +211,23 @@ pub async fn github_callback(
         .header("User-Agent", "{{project-name}}")
         .send()
         .await
-        .map_err(|e| server_error(format!("Failed to fetch user profile: {}", e)))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to fetch GitHub user profile");
+            server_error("Error obtaining user info")
+        })?;
 
     if !user_response.status().is_success() {
-        return Err(server_error("Failed to fetch user profile from GitHub"));
+        tracing::error!(
+            status = %user_response.status(),
+            "GitHub user profile request returned an error status"
+        );
+        return Err(server_error("Error obtaining user info"));
     }
 
-    let github_user: GitHubUser = user_response
-        .json()
-        .await
-        .map_err(|e| server_error(format!("Failed to parse user profile: {}", e)))?;
+    let github_user: GitHubUser = user_response.json().await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to parse GitHub user profile");
+        server_error("Error obtaining user info")
+    })?;
 
     let mut db = state.0.database.db_clone();
 
@@ -396,16 +435,33 @@ mod tests {
 
     #[test]
     fn test_callback_query_missing_code() {
+        // `code` is optional so GitHub's `?error=...` redirects deserialize
         let json = r#"{"state": "test_state"}"#;
-        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
-        assert!(query.is_err());
+        let query: CallbackQuery = serde_json::from_str(json).unwrap();
+        assert!(query.code.is_none());
+        assert_eq!(query.state.as_deref(), Some("test_state"));
     }
 
     #[test]
     fn test_callback_query_missing_state() {
         let json = r#"{"code": "test_code"}"#;
-        let query: Result<CallbackQuery, _> = serde_json::from_str(json);
-        assert!(query.is_err());
+        let query: CallbackQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.code.as_deref(), Some("test_code"));
+        assert!(query.state.is_none());
+    }
+
+    #[test]
+    fn test_callback_query_error_params() {
+        let json =
+            r#"{"error": "access_denied", "error_description": "The user has denied access"}"#;
+        let query: CallbackQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.error.as_deref(), Some("access_denied"));
+        assert_eq!(
+            query.error_description.as_deref(),
+            Some("The user has denied access")
+        );
+        assert!(query.code.is_none());
+        assert!(query.state.is_none());
     }
 
     #[test]
