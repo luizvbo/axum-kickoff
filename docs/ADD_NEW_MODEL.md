@@ -61,7 +61,7 @@ pub use post::Post;  // Add this line
 Run the Toasty code generator to create the database access code:
 
 ```bash
-cargo run --bin toasty
+cargo run --bin {{project-name}} -- migrate migration generate
 ```
 
 This will generate the necessary database query methods for your model.

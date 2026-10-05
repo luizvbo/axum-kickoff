@@ -19,7 +19,7 @@ This section contains practical guides for common tasks when building with {{pro
 
 ### Creating a new feature
 1. Define your model in `src/models/`
-2. Run `cargo run --bin toasty` to generate database code
+2. Run `cargo run --bin {{project-name}} -- migrate migration generate` to generate database code
 3. Create a controller in `src/controllers/`
 4. Add routes in `src/router.rs`
 5. Create templates in `templates/`

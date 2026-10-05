@@ -277,7 +277,22 @@ async fn debug_requests(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    tracing::debug!("Request: {:?}", req);
+    // Log only selected, non-sensitive headers — `{:?}` on the whole request
+    // would leak Authorization and Cookie values into the logs.
+    const LOGGED_HEADERS: &[header::HeaderName] = &[
+        header::USER_AGENT,
+        header::REFERER,
+        header::CONTENT_TYPE,
+        header::ACCEPT,
+        header::ORIGIN,
+    ];
+
+    let headers: Vec<(&header::HeaderName, &header::HeaderValue)> = LOGGED_HEADERS
+        .iter()
+        .filter_map(|name| req.headers().get(name).map(|value| (name, value)))
+        .collect();
+
+    tracing::debug!(method = %req.method(), uri = %req.uri(), ?headers, "Request");
 
     next.run(req).await
 }

@@ -133,6 +133,49 @@ let url = storage.public_url("test.txt");
 // Returns: "/test.txt" or "https://cdn.example.com/test.txt"
 ```
 
+> **Important:** without a `CDN_PREFIX`, `public_url` returns a root-relative
+> `/{path}` — but no route serves stored files out of the box, so the
+> generated URLs will 404 until you wire one up.
+>
+> The convention that composes cleanly is to store files under a key prefix
+> matching the URL mount point, and serve them via `Storage::download` (which
+> validates the path against the storage root, rejecting `..` and absolute
+> paths before touching the filesystem):
+>
+> ```rust
+> use axum::{
+>     extract::{Path, State},
+>     http::{header, StatusCode},
+>     response::{IntoResponse, Response},
+>     routing::get,
+> };
+> use {{crate_name}}::app::AppState;
+>
+> async fn serve_upload(
+>     State(state): State<AppState>,
+>     Path(path): Path<String>,
+> ) -> Response {
+>     match state.storage.download(&format!("uploads/{path}")).await {
+>         Ok(bytes) => (
+>             [(header::CONTENT_TYPE, "application/octet-stream")],
+>             bytes,
+>         )
+>             .into_response(),
+>         Err(_) => StatusCode::NOT_FOUND.into_response(),
+>     }
+> }
+>
+> // In the router:
+> // .route("/uploads/{*path}", get(serve_upload))
+> ```
+>
+> Add a `mime_guess`-based `Content-Type` lookup if you want real MIME types.
+>
+> Then `storage.upload("uploads/pic.png", bytes)` and
+> `storage.public_url("uploads/pic.png")` -> `"/uploads/pic.png"` resolve
+> end-to-end. Uploaded files are public by definition with this wiring — add
+> an authorization layer (`require_auth`) if they should be private.
+
 ## S3 Storage (Planned)
 
 ### Configuration

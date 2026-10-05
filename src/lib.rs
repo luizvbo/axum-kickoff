@@ -42,7 +42,7 @@ pub enum Env {
 
 /// Configures routes, sessions, logging, and other middleware.
 ///
-/// Called from the binary entry point (e.g., src/bin/server.rs).
+/// Called from the binary entry point (src/bin/main.rs).
 pub fn build_handler(app: Arc<App>) -> axum::Router {
     let state = AppState(app.clone());
 

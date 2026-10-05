@@ -32,7 +32,7 @@ This guide covers development workflow, coding standards, and contribution guide
 
 4. Run the server:
    ```bash
-   cargo run --bin server
+   cargo run --bin {{project-name}} -- server
    ```
 
 ## Project Structure
@@ -41,7 +41,7 @@ This guide covers development workflow, coding standards, and contribution guide
 {{project-name}}/
 ├── src/
 │   ├── bin/              # Binary entry points
-│   │   └── server.rs     # Main server binary
+│   │   └── main.rs       # Binary entry point (server, background-worker, migrate)
 │   ├── controllers/      # HTTP request handlers
 │   │   ├── auth.rs      # Authentication endpoints
 │   │   └── token.rs     # API token management
@@ -240,7 +240,7 @@ Database models are defined in `src/models/` using Toasty macros. The schema is 
 
 ```bash
 # Generate models from schema
-cargo run --bin toasty
+cargo run --bin {{project-name}} -- migrate migration generate
 ```
 
 ### Manual Database Changes
@@ -332,7 +332,7 @@ Use profiling tools to identify bottlenecks:
 cargo install flamegraph
 
 # Generate flamegraph
-cargo flamegraph --bin server
+cargo flamegraph --bin {{project-name}} -- server
 ```
 
 ### Database Optimization
@@ -407,7 +407,7 @@ pub async fn my_handler(State(app): State<AppState>) -> AppResult<()> {
 cargo build
 
 # Run with debug logging
-RUST_LOG=debug cargo run --bin server
+RUST_LOG=debug cargo run --bin {{project-name}} -- server
 ```
 
 ### Common Issues

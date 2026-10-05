@@ -35,6 +35,10 @@
 //!    - Useful for temporary maintenance or disabling features
 //!    - Configure via `BLOCKED_ROUTES` environment variable
 //!    - Example: `BLOCKED_ROUTES=/api/admin,/api/internal`
+//!    - Entries are compared against the axum route template
+//!      (`MatchedPath`), not the literal request path — write
+//!      `/api/v1/posts/{id}` to block every post id, since
+//!      `/api/v1/posts/1` would never match.
 //!
 //! # Configuration Examples
 //!
@@ -183,6 +187,12 @@ pub fn block_by_header(state: &AppState, req: &Request) -> Result<(), impl IntoR
 
 /// Allow blocking individual routes by their pattern through the `BLOCKED_ROUTES`
 /// environment variable.
+///
+/// Entries are matched against the axum `MatchedPath` — the route *template*
+/// such as `/api/v1/posts/{id}` — not the literal request path. To block all
+/// requests to a parameterized route, use the template syntax
+/// (e.g. `BLOCKED_ROUTES=/api/v1/posts/{id}`); a literal `/api/v1/posts/1`
+/// would never match any request.
 pub fn block_routes(
     matched_path: Option<&MatchedPath>,
     state: &AppState,

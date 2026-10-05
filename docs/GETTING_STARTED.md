@@ -49,6 +49,10 @@ cp .env.sample .env
 Edit `.env` with your configuration. The minimum required variables are:
 
 ```bash
+# Application environment — defaults to `production` when unset, so set this
+# explicitly for local development
+APP_ENV=development
+
 # Server Configuration
 PORT=8888
 DOMAIN_NAME=localhost
@@ -108,7 +112,7 @@ For development, SQLite will create the database file automatically on first sta
 ### 6. Start the Server
 
 ```bash
-cargo run --bin server
+cargo run --bin {{project-name}} -- server
 ```
 
 You should see output like:
@@ -148,7 +152,7 @@ After logging in, you can create API tokens for programmatic access:
 # Navigate to Settings → API Tokens → Create Token
 
 # Or via API (when implemented)
-curl -X POST http://localhost:3000/api/tokens \
+curl -X POST http://localhost:8888/api/v1/tokens \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "My Token", "scopes": ["read"]}'
@@ -159,7 +163,7 @@ curl -X POST http://localhost:3000/api/tokens \
 Use your API token to make authenticated requests:
 
 ```bash
-curl http://localhost:3000/api/health \
+curl http://localhost:8888/api/v1/posts \
   -H "Authorization: Bearer YOUR_API_TOKEN"
 ```
 
@@ -171,7 +175,7 @@ Familiarize yourself with the project structure:
 {{project-name}}/
 ├── src/
 │   ├── bin/
-│   │   └── server.rs          # Server entry point
+│   │   └── main.rs            # Entry point (server, background-worker, migrate subcommands)
 │   ├── controllers/
 │   │   ├── auth.rs            # Authentication endpoints
 │   │   └── token.rs           # API token management
@@ -183,11 +187,12 @@ Familiarize yourself with the project structure:
 │   ├── models/
 │   │   ├── user.rs            # User model
 │   │   ├── token.rs           # API token model
-│   │   └── oauth_github.rs    # GitHub OAuth model
+│   │   └── post.rs            # Post model
 │   ├── config/
 │   │   ├── mod.rs             # Configuration module
 │   │   ├── base.rs            # Base configuration
-│   │   └── database.rs        # Database configuration
+│   │   ├── database.rs        # Database configuration
+│   │   └── server.rs          # Server configuration
 │   ├── util/
 │   │   ├── auth.rs            # Authentication utilities
 │   │   ├── errors.rs          # Error handling
@@ -233,7 +238,7 @@ cargo insta accept
 # Build release binary
 cargo build --release
 
-# The binary will be at target/release/server
+# The binary will be at target/release/{{project-name}}
 ```
 
 ### Enabling Metrics
@@ -241,7 +246,7 @@ cargo build --release
 Build with the metrics feature flag:
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
 Metrics will be available at `/metrics`.
@@ -249,8 +254,8 @@ Metrics will be available at `/metrics`.
 ### Database Operations
 
 ```bash
-# Generate models from Toasty schema
-cargo run --bin toasty
+# Run database migrations (generate, apply, snapshot, ...)
+cargo run --bin {{project-name}} -- migrate migration generate
 
 # View SQLite database
 sqlite3 {{project-name}}.db

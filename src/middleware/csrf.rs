@@ -39,7 +39,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, Method};
 use axum::middleware::Next;
 use axum::response::Response;
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Limited};
 use rand::distr::Alphanumeric;
 use rand::RngExt;
 use subtle::ConstantTimeEq;
@@ -52,6 +52,13 @@ use crate::util::errors::{bad_request, AppResult};
 pub static CSRF_TOKEN_KEY: &str = "csrf_token";
 pub static CSRF_HEADER_NAME: &str = "x-csrf-token";
 pub static CSRF_FORM_FIELD: &str = "csrf_token";
+
+/// Maximum bytes buffered when scanning a form body for the CSRF token.
+///
+/// Matches axum's `DefaultBodyLimit` default (2 MiB). Larger form bodies must
+/// submit the token via the `X-CSRF-Token` header; bodies over the cap fail
+/// validation rather than buffering unbounded data pre-authentication.
+const MAX_CSRF_FORM_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 /// Generate a cryptographically secure random CSRF token
 pub fn generate_token() -> String {
@@ -66,7 +73,7 @@ pub fn generate_token() -> String {
 ///
 /// Creating a token writes to the session, which marks it dirty and emits a
 /// `Set-Cookie` header. Callers rendering pages for anonymous, sessionless
-/// visitors should check [`session_has_csrf_state`] first to avoid sending
+/// visitors should check `session_has_csrf_state` first to avoid sending
 /// cookies on requests that carry no state worth protecting.
 pub fn get_or_create_csrf_token(session: &SessionExtension) -> String {
     if let Some(token) = session.get(CSRF_TOKEN_KEY) {
@@ -136,9 +143,10 @@ async fn extract_csrf_token(
         .unwrap_or(false);
 
     if is_form_encoded {
-        // Read body bytes
+        // Read body bytes, capped so an unauthenticated oversized body cannot
+        // exhaust memory while we scan for the token.
         let body = std::mem::replace(req.body_mut(), Body::empty());
-        match body.collect().await {
+        match Limited::new(body, MAX_CSRF_FORM_BODY_BYTES).collect().await {
             Ok(collected) => {
                 let bytes = collected.to_bytes();
                 let body_str = String::from_utf8_lossy(&bytes);
@@ -180,9 +188,8 @@ fn is_unsafe_method(method: &Method) -> bool {
 /// Verify the Origin header for unsafe methods as defense-in-depth against CSRF.
 ///
 /// Checks the `Origin` header against the allowed origins list.
-/// If no `Origin` header is present, falls back to `Referer` header.
-/// Requests with no origin/referer are allowed (same-origin browser navigations
-/// may omit these headers).
+/// Requests with no `Origin` header are allowed (same-origin browser
+/// navigations and non-browser clients may omit the header).
 ///
 /// This is designed to be used as `from_fn_with_state` middleware with `AllowedOrigins`.
 pub async fn verify_origin(
@@ -217,85 +224,19 @@ pub async fn verify_origin(
     next.run(req).await
 }
 
-/// CSRF protection middleware
+/// Shared CSRF validation for the [`protect`] and [`csrf_protect`] middleware.
 ///
 /// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
 /// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
 ///
-/// This middleware checks for the CSRF token in:
+/// The token is looked up in:
 /// 1. The `X-CSRF-Token` header (for HTMX and API clients)
 /// 2. The `csrf_token` form field (for traditional form submissions)
 ///
-/// # Note
-///
-/// For form submissions, this middleware expects the form data to be available
-/// in the request body. This works with axum's Form extractor.
-/// If no session exists or the session is empty, the request passes through unchanged (for API endpoints).
-pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
-    let method = req.method().clone();
-    let headers = req.headers().clone();
-
-    // API token-authenticated requests do not require CSRF protection
-    if is_unsafe_method(&method)
-        && req
-            .extensions()
-            .get::<Authentication>()
-            .is_some_and(|auth| auth.is_token())
-    {
-        return next.run(req).await;
-    }
-
-    // Only validate unsafe methods if session exists and has data
-    if is_unsafe_method(&method) {
-        if let Some(session) = req.extensions().get::<SessionExtension>().cloned() {
-            // Only validate if session has actual data (not empty/anonymous)
-            if session_has_csrf_state(&session) {
-                // Extract CSRF token from header or form body
-                let (provided_token, req) = extract_csrf_token(&method, &headers, req).await;
-
-                let validation_result = if let Some(token) = provided_token {
-                    if !token.is_empty() {
-                        validate_csrf_token(&session, &token)
-                    } else {
-                        Err(bad_request(
-                            "CSRF token missing. Please include a CSRF token in your request.",
-                        ))
-                    }
-                } else {
-                    Err(bad_request(
-                        "CSRF token missing. Please include a CSRF token in your request.",
-                    ))
-                };
-
-                // Handle validation errors
-                if let Err(err) = validation_result {
-                    return err.response();
-                }
-
-                return next.run(req).await;
-            }
-        }
-    }
-
-    next.run(req).await
-}
-
-/// CSRF-only protection middleware
-///
-/// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
-/// This middleware does NOT check authentication - it only validates CSRF tokens.
-/// Use this for routes that require CSRF protection but may be accessed by anonymous users.
-///
-/// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
-///
-/// This middleware checks for the CSRF token in:
-/// 1. The `X-CSRF-Token` header (for HTMX and API clients)
-/// 2. The `csrf_token` form field (for traditional form submissions)
-///
-/// # Note
-///
-/// If no session exists or the session is empty, the request passes through unchanged.
-pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
+/// API token-authenticated requests skip validation entirely, and requests
+/// pass through unchanged when there is no session or the session carries no
+/// state worth protecting (anonymous endpoints).
+async fn enforce_csrf(req: axum::extract::Request, next: Next) -> Response {
     let method = req.method().clone();
     let headers = req.headers().clone();
 
@@ -344,6 +285,43 @@ pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
     }
 
     next.run(req).await
+}
+
+/// CSRF protection middleware
+///
+/// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
+/// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
+///
+/// This middleware checks for the CSRF token in:
+/// 1. The `X-CSRF-Token` header (for HTMX and API clients)
+/// 2. The `csrf_token` form field (for traditional form submissions)
+///
+/// # Note
+///
+/// For form submissions, this middleware expects the form data to be available
+/// in the request body. This works with axum's Form extractor.
+/// If no session exists or the session is empty, the request passes through unchanged (for API endpoints).
+pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
+    enforce_csrf(req, next).await
+}
+
+/// CSRF-only protection middleware
+///
+/// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
+/// This middleware does NOT check authentication - it only validates CSRF tokens.
+/// Use this for routes that require CSRF protection but may be accessed by anonymous users.
+///
+/// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
+///
+/// This middleware checks for the CSRF token in:
+/// 1. The `X-CSRF-Token` header (for HTMX and API clients)
+/// 2. The `csrf_token` form field (for traditional form submissions)
+///
+/// # Note
+///
+/// If no session exists or the session is empty, the request passes through unchanged.
+pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
+    enforce_csrf(req, next).await
 }
 
 #[cfg(test)]

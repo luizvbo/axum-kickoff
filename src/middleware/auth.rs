@@ -212,12 +212,20 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
         return Err(StatusCode::FORBIDDEN.into_response());
     }
 
-    // Update last_used_at timestamp
-    let last_used_at = Some(jiff::Timestamp::now());
-    toasty::update!(api_token { last_used_at })
-        .exec(&mut db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+    // Refresh last_used_at at most once per hour. A write on every
+    // bearer-token request would serialize token-authenticated traffic onto
+    // this row.
+    let now = jiff::Timestamp::now();
+    let stale = api_token
+        .last_used_at
+        .is_none_or(|ts| ts < now - jiff::SignedDuration::from_hours(1));
+    if stale {
+        let last_used_at = Some(now);
+        toasty::update!(api_token { last_used_at })
+            .exec(&mut db)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+    }
 
     Ok(ApiTokenAuth {
         user_id: api_token.user_id,

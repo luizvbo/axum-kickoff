@@ -17,7 +17,7 @@ Configuration is managed through environment variables. The application reads th
 
 3. Start the application:
    ```bash
-   cargo run --bin server
+   cargo run --bin {{project-name}} -- server
    ```
 
 ## Required Configuration
@@ -110,13 +110,28 @@ Maximum number of blocking threads for blocking operations (e.g., file I/O). Lea
 
 ## Environment Detection
 
+### Application Environment
+
+```bash
+APP_ENV=development
+```
+
+One of `development`, `test`, or `production`.
+
+**Default:** `production` (secure-by-default — an unset variable never enables
+development behavior). Set `APP_ENV=development` for local work to enable the
+`/debug` route, non-Secure cookies, and pretty logs. Set `APP_ENV=test` when
+running the application against the `TEST_DATABASE_URL` database.
+
 ### Heroku
 
 ```bash
 HEROKU=1
 ```
 
-Set to any value to indicate running on Heroku. This sets the environment to `Production`.
+Set to any value to indicate running on Heroku. This adjusts the bind address
+and Postgres `sslmode`; it does not select the environment — `APP_ENV` does,
+and already defaults to `production`.
 
 ### Docker
 
@@ -253,7 +268,10 @@ Comma-separated list of blocked IP addresses.
 BLOCKED_ROUTES=/api/admin,/api/internal
 ```
 
-Comma-separated list of blocked route patterns.
+Comma-separated list of blocked route patterns. Entries are compared against
+axum route templates (`MatchedPath`), not literal request paths — write
+`/api/v1/posts/{id}` to block every post id; `/api/v1/posts/1` would never
+match. Blocked routes return `503 Service Unavailable`.
 
 ### Blocked Traffic by Headers
 
@@ -384,7 +402,7 @@ Database URL for tests. Defaults to in-memory SQLite if not set.
 ### Metrics
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
 Enable Prometheus metrics endpoint at `/metrics` (and `/api/private/metrics`).

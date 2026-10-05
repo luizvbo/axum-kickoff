@@ -37,6 +37,8 @@ cp .env.sample .env
 
 # Edit .env with your configuration
 # Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY, WEB_ALLOWED_ORIGINS
+# For local development also keep APP_ENV=development (the default when unset
+# is production, which enables Secure cookies, JSON logs, and disables /debug)
 
 # Run the server
 cargo run --bin {{project-name}} -- server
@@ -49,6 +51,9 @@ The server will start on `http://localhost:8888` by default.
 Set the following environment variables in `.env`:
 
 ```bash
+# Environment (defaults to production when unset)
+APP_ENV=development
+
 # Server
 PORT=8888
 DOMAIN_NAME=localhost

@@ -5,7 +5,8 @@
 //! - `DATABASE_URL`: The database connection URL (required in production).
 //!   SQLite format: `sqlite:./path/to/db.sqlite` or `sqlite::memory:`
 //!   PostgreSQL format: `postgresql://user:password@host:port/database`
-//! - `TEST_DATABASE_URL`: The database connection URL for tests (optional).
+//! - `TEST_DATABASE_URL`: Fallback for `DATABASE_URL`, only honored when
+//!   `APP_ENV=test` (optional).
 //! - `DATABASE_APPLICATION_NAME`: Override the PostgreSQL `application_name`.
 //! - `DATABASE_STATEMENT_TIMEOUT`: Override the PostgreSQL `statement_timeout`.
 //! - `DATABASE_SSLMODE`: Override the PostgreSQL `sslmode`.
@@ -27,9 +28,17 @@ pub struct DatabaseConfig {
 
 impl DatabaseConfig {
     pub fn from_environment() -> Result<Self> {
+        // `TEST_DATABASE_URL` is honored only in the test environment — a
+        // production boot must never silently bind the test database.
+        let test_url = match super::base::Base::from_environment()?.env {
+            crate::Env::Test => dotenvy::var("TEST_DATABASE_URL").ok(),
+            _ => None,
+        };
+
         let url = dotenvy::var("DATABASE_URL")
-            .or_else(|_| dotenvy::var("TEST_DATABASE_URL"))
-            .unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
+            .ok()
+            .or(test_url)
+            .unwrap_or_else(|| DEFAULT_DATABASE_URL.to_string());
 
         Ok(Self {
             url: SecretString::from(url),
@@ -137,18 +146,15 @@ mod tests {
     #[test]
     fn test_from_environment_with_test_database_url() {
         let _guard = ENV_LOCK.lock();
-        // Note: This test may fail if there's a .env file with DATABASE_URL set
-        // since dotenvy reads from .env files. This is a known limitation.
         let original_db = std::env::var("DATABASE_URL").ok();
         let original_test = std::env::var("TEST_DATABASE_URL").ok();
+        let original_app_env = std::env::var("APP_ENV").ok();
         std::env::remove_var("DATABASE_URL");
         std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
+        std::env::set_var("APP_ENV", "test");
 
         let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
-        // Only assert if we're not getting the default value (which means .env is interfering)
-        if config.url.expose_secret() != DEFAULT_DATABASE_URL {
-            assert_eq!(config.url.expose_secret(), "sqlite::memory:");
-        }
+        assert_eq!(config.url.expose_secret(), "sqlite::memory:");
 
         // Restore original values
         if let Some(val) = original_db {
@@ -160,6 +166,43 @@ mod tests {
             std::env::set_var("TEST_DATABASE_URL", val);
         } else {
             std::env::remove_var("TEST_DATABASE_URL");
+        }
+        if let Some(val) = original_app_env {
+            std::env::set_var("APP_ENV", val);
+        } else {
+            std::env::remove_var("APP_ENV");
+        }
+    }
+
+    #[test]
+    fn test_from_environment_ignores_test_database_url_outside_test_env() {
+        let _guard = ENV_LOCK.lock();
+        let original_db = std::env::var("DATABASE_URL").ok();
+        let original_test = std::env::var("TEST_DATABASE_URL").ok();
+        let original_app_env = std::env::var("APP_ENV").ok();
+        std::env::remove_var("DATABASE_URL");
+        std::env::set_var("TEST_DATABASE_URL", "sqlite::memory:");
+        // APP_ENV unset resolves to production — the fallback must not apply.
+        std::env::remove_var("APP_ENV");
+
+        let config = DatabaseConfig::from_environment().expect("Failed to create Database config");
+        assert_eq!(config.url.expose_secret(), DEFAULT_DATABASE_URL);
+
+        // Restore original values
+        if let Some(val) = original_db {
+            std::env::set_var("DATABASE_URL", val);
+        } else {
+            std::env::remove_var("DATABASE_URL");
+        }
+        if let Some(val) = original_test {
+            std::env::set_var("TEST_DATABASE_URL", val);
+        } else {
+            std::env::remove_var("TEST_DATABASE_URL");
+        }
+        if let Some(val) = original_app_env {
+            std::env::set_var("APP_ENV", val);
+        } else {
+            std::env::remove_var("APP_ENV");
         }
     }
 

@@ -320,7 +320,7 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 
 **Enable:**
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
 **Access:**
@@ -449,7 +449,7 @@ See [Configuration Documentation](CONFIGURATION.md#security-configuration) for s
 - `metrics`: Enable Prometheus metrics
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
 ## Testing

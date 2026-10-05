@@ -32,6 +32,9 @@ Before deploying to production:
 Ensure all required environment variables are set in production:
 
 ```bash
+# Environment (unset already defaults to production — set it explicitly)
+APP_ENV=production
+
 # Database
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 
@@ -99,8 +102,8 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 
 # Create dummy main.rs to cache dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release --bin server
+RUN mkdir -p src/bin && echo "fn main() {}" > src/bin/main.rs
+RUN cargo build --release --bin {{project-name}}
 RUN rm -rf src
 
 # Copy actual source
@@ -109,8 +112,8 @@ COPY templates ./templates
 COPY static ./static
 
 # Build release binary
-RUN touch src/main.rs
-RUN cargo build --release --bin server
+RUN touch src/bin/main.rs
+RUN cargo build --release --bin {{project-name}}
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -122,7 +125,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/server /usr/local/bin/server
+COPY --from=builder /app/target/release/{{project-name}} /usr/local/bin/{{project-name}}
 
 # Copy static assets
 COPY --from=builder /app/static ./static
@@ -135,7 +138,7 @@ RUN mkdir -p /app/uploads
 EXPOSE 3000
 
 # Run the server
-CMD ["server"]
+CMD ["{{project-name}}", "server"]
 ```
 
 ### Docker Compose
@@ -201,10 +204,10 @@ docker-compose logs -f app
 ### Build Release Binary
 
 ```bash
-cargo build --release --bin server
+cargo build --release --bin {{project-name}}
 ```
 
-The binary will be at `target/release/server`.
+The binary will be at `target/release/{{project-name}}`.
 
 ### Create Systemd Service
 
@@ -222,7 +225,7 @@ Group={{project-name}}
 WorkingDirectory=/opt/{{project-name}}
 Environment="RUST_LOG=info"
 EnvironmentFile=/opt/{{project-name}}/.env
-ExecStart=/opt/{{project-name}}/server
+ExecStart=/opt/{{project-name}}/{{project-name}} server
 Restart=always
 RestartSec=10
 
@@ -250,7 +253,7 @@ sudo mkdir -p /opt/{{project-name}}/static
 sudo mkdir -p /opt/{{project-name}}/templates
 
 # Copy files
-sudo cp target/release/server /opt/{{project-name}}/
+sudo cp target/release/{{project-name}} /opt/{{project-name}}/
 sudo cp -r static/* /opt/{{project-name}}/static/
 sudo cp -r templates/* /opt/{{project-name}}/templates/
 
@@ -551,7 +554,7 @@ export LOG_FORMAT=json
 Enable Prometheus metrics:
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
 Metrics available at `/metrics`.

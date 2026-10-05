@@ -7,7 +7,7 @@
 //! - `DEV_DOCKER`: Set to any value to indicate running in Docker (defaults to 127.0.0.1 bind).
 //! - `HEROKU`: Set to any value to indicate running on Heroku (defaults to 0.0.0.0 bind).
 //! - `APP_ENV`: The environment the application is running in (`development`, `test`,
-//!   or `production`).
+//!   or `production`). Defaults to `production` when unset.
 //! - `SERVER_THREADS`: Maximum number of blocking threads (optional).
 //! - `DOMAIN_NAME`: The domain name of the application (defaults to "localhost").
 //! - `WEB_ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required).
@@ -142,6 +142,13 @@ impl Server {
 
         // Load session key for signing cookies
         let session_key = SecretString::from(env::required_var("SESSION_KEY")?);
+
+        // `cookie::Key::derive_from` accepts keys of any length, so enforce
+        // the documented 64-byte minimum explicitly in production rather
+        // than letting a weak key sign real sessions.
+        if base.env == Env::Production && session_key.expose_secret().len() < 64 {
+            anyhow::bail!("SESSION_KEY must be at least 64 bytes when APP_ENV=production");
+        }
 
         // Load GitHub OAuth credentials
         let gh_client_id = env::required_var("GH_CLIENT_ID")?;
