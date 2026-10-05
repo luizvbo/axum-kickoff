@@ -180,10 +180,7 @@ async fn list_posts_returns_newest_first() {
 
     let body = response.into_json::<Value>().await;
     let data = body["data"].as_array().expect("data should be an array");
-    let titles: Vec<&str> = data
-        .iter()
-        .map(|p| p["title"].as_str().unwrap())
-        .collect();
+    let titles: Vec<&str> = data.iter().map(|p| p["title"].as_str().unwrap()).collect();
     assert_eq!(titles, ["Newest", "Middle", "Oldest"]);
 }
 

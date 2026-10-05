@@ -263,9 +263,7 @@ async fn enforce_authentication(state: &AppState, req: &mut Request) -> Result<(
 
     let mut db = state.0.database.db_clone();
     match User::get_by_id(&mut db, user_id).await {
-        Ok(user) if !user.is_active => {
-            Err(forbidden("Account is not active").response())
-        }
+        Ok(user) if !user.is_active => Err(forbidden("Account is not active").response()),
         Ok(user) if user.is_locked() => {
             let reason = user
                 .account_lock_reason
