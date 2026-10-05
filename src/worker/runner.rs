@@ -119,8 +119,10 @@ pub struct Runner {
     cleanup_interval: Duration,
     /// `max_age_days` argument for the recurring [`CleanupJob`].
     cleanup_max_age_days: u64,
-    /// When the recurring cleanup job was last enqueued (`None` = due at
-    /// startup, so the first loop iteration enqueues it immediately).
+    /// When the recurring cleanup job was last *successfully* enqueued
+    /// (`None` = due at startup, so the first loop iteration enqueues it
+    /// immediately; a failed enqueue also leaves it `None` so the next poll
+    /// retries instead of waiting a full `cleanup_interval`).
     last_cleanup_enqueue: Option<Instant>,
 }
 
@@ -260,14 +262,18 @@ impl Runner {
         if !due {
             return;
         }
-        self.last_cleanup_enqueue = Some(Instant::now());
 
         if let Err(e) = self
             .app
             .enqueue_job_on_queue(&self.queue, CleanupJob::new(self.cleanup_max_age_days), 0)
             .await
         {
+            // Leave the timestamp unset so the next poll retries the enqueue
+            // rather than waiting a full `cleanup_interval`.
+            self.last_cleanup_enqueue = None;
             error!(error = ?e, "Failed to enqueue scheduled cleanup job");
+        } else {
+            self.last_cleanup_enqueue = Some(Instant::now());
         }
     }
 
@@ -956,6 +962,41 @@ mod tests {
         assert_eq!(jobs[0].queue, "maintenance");
         assert_eq!(jobs[0].retries, 0);
         assert!(jobs[0].locked_until.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_failed_cleanup_enqueue_retries_on_next_poll() {
+        let test_app = TestApp::new().await;
+        let app = test_app.state.0.clone();
+
+        // Force the enqueue to fail by removing the jobs table.
+        let mut db = app.database.db_clone();
+        sql::statement("DROP TABLE background_jobs")
+            .exec(&mut db)
+            .await
+            .unwrap();
+
+        let mut runner = Runner::new(app.clone());
+        runner.enqueue_scheduled_jobs().await;
+
+        // A failed enqueue must not be recorded: the job stays due so the
+        // next poll retries instead of waiting a full `cleanup_interval`.
+        assert!(runner.last_cleanup_enqueue.is_none());
+
+        // Point the runner at a healthy database: the very next call retries
+        // and the cleanup job is enqueued.
+        let healthy_app = TestApp::new().await;
+        runner.app = healthy_app.state.0.clone();
+        runner.enqueue_scheduled_jobs().await;
+        assert!(runner.last_cleanup_enqueue.is_some());
+
+        let mut healthy_db = healthy_app.db().db_clone();
+        let jobs =
+            BackgroundJob::filter(BackgroundJob::fields().job_type().eq("cleanup".to_string()))
+                .exec(&mut healthy_db)
+                .await
+                .unwrap();
+        assert_eq!(jobs.len(), 1);
     }
 
     #[tokio::test]

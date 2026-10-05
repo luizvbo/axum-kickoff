@@ -121,6 +121,38 @@ async fn cors_preflight_needs_no_user_agent_or_session() {
     }
 }
 
+/// Public read-only API routes are rate limited per client IP: anonymous
+/// reads of the open API are rejected once the `PublicApiRead` burst is
+/// exhausted. (Operational routes like `/health` stay exempt — covered by
+/// `operational_routes_are_never_rate_limited` above.)
+#[tokio::test]
+async fn public_api_reads_are_rate_limited() {
+    use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
+
+    let mut config = TestApp::test_config();
+    config.rate_limiter_config.insert(
+        LimitedAction::PublicApiRead,
+        RateLimiterConfig {
+            rate: std::time::Duration::from_secs(60),
+            burst: 1,
+        },
+    );
+
+    let app = TestApp::with_config(config).await;
+    let anon = AnonymousUser::new(app);
+
+    // burst = 1 allows a single read; subsequent reads are rejected.
+    let response = anon.get::<serde_json::Value>("/api/v1/posts").await;
+    response.assert_status(StatusCode::OK);
+
+    let response = anon.get::<serde_json::Value>("/api/v1/posts").await;
+    response.assert_status(StatusCode::TOO_MANY_REQUESTS);
+
+    // The bucket is shared by every public read route, including show-by-id.
+    let response = anon.get::<serde_json::Value>("/api/v1/posts/1").await;
+    response.assert_status(StatusCode::TOO_MANY_REQUESTS);
+}
+
 #[tokio::test]
 async fn health_check_succeeds_without_session() {
     let app = TestApp::new().await;

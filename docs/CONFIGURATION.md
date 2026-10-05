@@ -92,21 +92,27 @@ The IP address to bind to.
 
 **Default:** `127.0.0.1`
 
-### Worker Threads
+### Async Worker Threads
 
 ```bash
-SERVER_THREADS=4
+SERVER_CORE_THREADS=4
 ```
 
-Number of worker threads for the Tokio runtime. Leave unset for default (number of CPU cores).
+Number of async worker threads for the Tokio runtime (`worker_threads`).
+
+**Default:** the number of available CPU cores (Tokio's built-in default).
 
 ### Max Blocking Threads
 
 ```bash
-MAX_BLOCKING_THREADS=512
+SERVER_THREADS=512
 ```
 
-Maximum number of blocking threads for blocking operations (e.g., file I/O). Leave unset for default.
+Maximum number of blocking threads for `spawn_blocking` work (e.g., file I/O).
+Despite the name, `SERVER_THREADS` does *not* configure async worker threads —
+use `SERVER_CORE_THREADS` for that.
+
+**Default:** `512` (Tokio's built-in default).
 
 ## Environment Detection
 
@@ -234,6 +240,16 @@ RATE_LIMITER_FILE_UPLOAD_BURST=5
 RATE_LIMITER_FORM_SUBMISSION_RATE_SECONDS=30
 RATE_LIMITER_FORM_SUBMISSION_BURST=10
 ```
+
+### Public API Read Rate Limiting
+
+```bash
+RATE_LIMITER_PUBLIC_API_READ_RATE_SECONDS=1
+RATE_LIMITER_PUBLIC_API_READ_BURST=60
+```
+
+Applies to anonymous/authenticated reads on the public API (`GET /api/v1/posts`,
+`GET /api/v1/posts/{id}`). Anonymous buckets are keyed by client IP.
 
 ### Client IP and Anonymous Buckets
 

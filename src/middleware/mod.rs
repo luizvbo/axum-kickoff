@@ -204,6 +204,12 @@ fn determine_limited_action(
         (&http::Method::POST, "/logout") | (&http::Method::POST, "/api/v1/auth/logout") => {
             LimitedAction::FormSubmission
         }
+        // Anonymous reads on the public API are throttled per client IP; the
+        // mutating variants below `/api/v1/posts` are protected routes and
+        // keep the generic `ApiRequest` budget.
+        (&http::Method::GET, p) if p == "/api/v1/posts" || p.starts_with("/api/v1/posts/") => {
+            LimitedAction::PublicApiRead
+        }
         _ => LimitedAction::ApiRequest,
     }
 }

@@ -191,10 +191,16 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
             rate_limit,
         ));
 
-    // Public API v1 read-only routes
+    // Public API v1 read-only routes - no authentication required, but
+    // anonymous reads are rate limited per client IP (the limiter keys on
+    // `RealIp` when no user/session is present) to throttle scraping.
     let api_v1_public = Router::new()
         .route("/api/v1/posts", get(list_posts))
-        .route("/api/v1/posts/{id}", get(show_post));
+        .route("/api/v1/posts/{id}", get(show_post))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit,
+        ));
 
     // Protected API v1 routes - requires authentication, CSRF for cookie
     // sessions, and consumes rate-limit tokens for the matched action.

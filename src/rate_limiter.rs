@@ -69,6 +69,8 @@ pub enum LimitedAction {
     OAuthCallback,
     /// API token creation
     TokenCreation,
+    /// Public read-only API requests (anonymous or authenticated)
+    PublicApiRead,
 }
 
 impl LimitedAction {
@@ -82,6 +84,7 @@ impl LimitedAction {
             LimitedAction::OAuthAuthorize => "oauth_authorize",
             LimitedAction::OAuthCallback => "oauth_callback",
             LimitedAction::TokenCreation => "token_creation",
+            LimitedAction::PublicApiRead => "public_api_read",
         }
     }
 
@@ -95,6 +98,7 @@ impl LimitedAction {
             LimitedAction::OAuthAuthorize => 5,
             LimitedAction::OAuthCallback => 5,
             LimitedAction::TokenCreation => 10,
+            LimitedAction::PublicApiRead => 1,
         }
     }
 
@@ -108,6 +112,7 @@ impl LimitedAction {
             LimitedAction::OAuthAuthorize => 5,
             LimitedAction::OAuthCallback => 5,
             LimitedAction::TokenCreation => 3,
+            LimitedAction::PublicApiRead => 60,
         }
     }
 
@@ -121,6 +126,7 @@ impl LimitedAction {
             LimitedAction::OAuthAuthorize => "OAUTH_AUTHORIZE",
             LimitedAction::OAuthCallback => "OAUTH_CALLBACK",
             LimitedAction::TokenCreation => "TOKEN_CREATION",
+            LimitedAction::PublicApiRead => "PUBLIC_API_READ",
         }
     }
 
@@ -146,10 +152,11 @@ impl LimitedAction {
             LimitedAction::TokenCreation => {
                 "Too many token creation requests. Please wait before trying again."
             }
+            LimitedAction::PublicApiRead => "Too many requests. Please slow down.",
         }
     }
 
-    pub const VARIANTS: [LimitedAction; 8] = [
+    pub const VARIANTS: [LimitedAction; 9] = [
         LimitedAction::ApiRequest,
         LimitedAction::LoginAttempt,
         LimitedAction::PasswordReset,
@@ -158,6 +165,7 @@ impl LimitedAction {
         LimitedAction::OAuthAuthorize,
         LimitedAction::OAuthCallback,
         LimitedAction::TokenCreation,
+        LimitedAction::PublicApiRead,
     ];
 }
 

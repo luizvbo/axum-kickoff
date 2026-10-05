@@ -8,7 +8,10 @@
 //! - `HEROKU`: Set to any value to indicate running on Heroku (defaults to 0.0.0.0 bind).
 //! - `APP_ENV`: The environment the application is running in (`development`, `test`,
 //!   or `production`). Defaults to `production` when unset.
-//! - `SERVER_THREADS`: Maximum number of blocking threads (optional).
+//! - `SERVER_THREADS`: Maximum number of blocking threads (`max_blocking_threads`,
+//!   the `spawn_blocking` pool — optional).
+//! - `SERVER_CORE_THREADS`: Number of async worker threads (`worker_threads` —
+//!   optional, defaults to the available CPU parallelism).
 //! - `DOMAIN_NAME`: The domain name of the application (defaults to "localhost").
 //! - `WEB_ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required).
 //! - `BLOCKED_IPS`: Comma-separated list of blocked IP addresses (optional).
@@ -79,7 +82,11 @@ pub struct Server {
     pub base: Base,
     pub ip: IpAddr,
     pub port: u16,
+    /// `SERVER_THREADS`: cap on the blocking thread pool (`spawn_blocking`).
     pub max_blocking_threads: Option<usize>,
+    /// `SERVER_CORE_THREADS`: async worker threads; `None` = available
+    /// parallelism (Tokio's default).
+    pub core_threads: Option<usize>,
     pub domain_name: String,
     pub allowed_origins: AllowedOrigins,
     pub blocked_ips: HashSet<IpAddr>,
@@ -115,6 +122,7 @@ impl Server {
 
         let port = env::var_parsed("PORT")?.unwrap_or(8888);
         let max_blocking_threads = env::var_parsed("SERVER_THREADS")?;
+        let core_threads = env::var_parsed("SERVER_CORE_THREADS")?;
 
         let base = Base::from_environment()?;
 
@@ -189,6 +197,7 @@ impl Server {
             ip,
             port,
             max_blocking_threads,
+            core_threads,
             domain_name,
             allowed_origins,
             blocked_ips,

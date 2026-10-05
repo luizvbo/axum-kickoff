@@ -80,6 +80,7 @@ impl TestApp {
             ip: IpAddr::from([127, 0, 0, 1]),
             port: 8888,
             max_blocking_threads: None,
+            core_threads: None,
             domain_name: "localhost".to_string(),
             allowed_origins: AllowedOrigins::parse("http://localhost:3000"),
             blocked_ips: Default::default(),

@@ -9,8 +9,6 @@ use tracing::info;
 
 use {{crate_name}}::{build_handler, App};
 
-const CORE_THREADS: usize = 4;
-
 #[derive(Parser)]
 #[command(name = "{{project-name}}")]
 #[command(about = "{{project-name}} - web server, background worker, and migrations")]
@@ -56,22 +54,13 @@ fn main() -> Result<()> {
             // default for the environment.
             {{crate_name}}::tracing::init_tracing_with_format(config.env(), config.log_format);
 
-            let mut builder = tokio::runtime::Builder::new_multi_thread();
-            builder.enable_all();
-            builder.worker_threads(CORE_THREADS);
-            if let Some(threads) = config.max_blocking_threads {
-                builder.max_blocking_threads(threads);
-            }
-
-            let rt = builder.build()?;
+            let rt = build_runtime(&config)?;
             rt.block_on(run_server(config))?;
         }
         Command::BackgroundWorker => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(CORE_THREADS)
-                .build()?;
-            rt.block_on(run_worker())?;
+            let config = {{crate_name}}::config::Server::from_environment()?;
+            let rt = build_runtime(&config)?;
+            rt.block_on(run_worker(config))?;
         }
         Command::Migrate { args } => {
             let rt = tokio::runtime::Runtime::new()?;
@@ -82,9 +71,26 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_worker() -> Result<()> {
-    let config = {{crate_name}}::config::Server::from_environment()?;
+/// Build the multi-threaded Tokio runtime shared by `server` and
+/// `background-worker`.
+///
+/// Tokio already defaults `worker_threads` to the number of available CPU
+/// cores, so async workers are only pinned when `SERVER_CORE_THREADS` is set.
+/// `SERVER_THREADS` instead caps the blocking pool used by `spawn_blocking`
+/// (`max_blocking_threads`).
+fn build_runtime(config: &{{crate_name}}::config::Server) -> Result<tokio::runtime::Runtime> {
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.enable_all();
+    if let Some(threads) = config.core_threads {
+        builder.worker_threads(threads);
+    }
+    if let Some(threads) = config.max_blocking_threads {
+        builder.max_blocking_threads(threads);
+    }
+    Ok(builder.build()?)
+}
 
+async fn run_worker(config: {{crate_name}}::config::Server) -> Result<()> {
     {{crate_name}}::tracing::init_tracing_with_format(config.env(), config.log_format);
 
     let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
