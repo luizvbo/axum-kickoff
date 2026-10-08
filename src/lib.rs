@@ -21,6 +21,7 @@ pub mod db;
 pub mod metrics;
 {% endif %}pub mod middleware;
 pub mod models;
+pub mod oauth;
 pub mod rate_limiter;
 mod router;
 pub mod storage;

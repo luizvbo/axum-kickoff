@@ -17,7 +17,7 @@ Before deploying to production:
 
 - [ ] Generate secure session key (64+ bytes)
 - [ ] Configure PostgreSQL database (not SQLite)
-- [ ] Set up GitHub OAuth production app
+- [ ] Set up production OAuth apps for each enabled provider
 - [ ] Configure S3 or equivalent storage
 - [ ] Enable HTTPS with valid SSL certificate
 - [ ] Configure environment variables
@@ -46,10 +46,17 @@ PORT=3000
 DOMAIN_NAME=example.com
 SERVER_IP=0.0.0.0
 
-# GitHub OAuth
-GH_CLIENT_ID=production_client_id
+# OAuth providers
+{% if oauth_github %}GH_CLIENT_ID=production_client_id
 GH_CLIENT_SECRET=production_client_secret
 GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}GOOGLE_CLIENT_ID=production_client_id
+GOOGLE_CLIENT_SECRET=production_client_secret
+GOOGLE_REDIRECT_URI=https://example.com/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}FACEBOOK_CLIENT_ID=production_app_id
+FACEBOOK_CLIENT_SECRET=production_app_secret
+FACEBOOK_REDIRECT_URI=https://example.com/api/v1/auth/facebook/callback
+{% endif %}
 
 # CORS
 WEB_ALLOWED_ORIGINS=https://example.com
@@ -156,9 +163,16 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/{{crate_name}}
       - SESSION_KEY=${SESSION_KEY}
-      - GH_CLIENT_ID=${GH_CLIENT_ID}
+{% if oauth_github %}      - GH_CLIENT_ID=${GH_CLIENT_ID}
       - GH_CLIENT_SECRET=${GH_CLIENT_SECRET}
       - GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=https://example.com/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}      - FACEBOOK_CLIENT_ID=${FACEBOOK_CLIENT_ID}
+      - FACEBOOK_CLIENT_SECRET=${FACEBOOK_CLIENT_SECRET}
+      - FACEBOOK_REDIRECT_URI=https://example.com/api/v1/auth/facebook/callback
+{% endif %}
       - WEB_ALLOWED_ORIGINS=https://example.com
       - STORAGE_BACKEND=s3
       - STORAGE_S3_BUCKET=${S3_BUCKET}
@@ -515,9 +529,16 @@ heroku create your-app-name
 heroku addons create heroku-postgresql
 heroku config:set DATABASE_URL=$(heroku config:get DATABASE_URL)
 heroku config:set SESSION_KEY=$(openssl rand -base64 64)
-heroku config:set GH_CLIENT_ID=your_client_id
+{% if oauth_github %}heroku config:set GH_CLIENT_ID=your_client_id
 heroku config:set GH_CLIENT_SECRET=your_client_secret
 heroku config:set GH_REDIRECT_URI=https://your-app-name.herokuapp.com/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}heroku config:set GOOGLE_CLIENT_ID=your_client_id
+heroku config:set GOOGLE_CLIENT_SECRET=your_client_secret
+heroku config:set GOOGLE_REDIRECT_URI=https://your-app-name.herokuapp.com/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}heroku config:set FACEBOOK_CLIENT_ID=your_app_id
+heroku config:set FACEBOOK_CLIENT_SECRET=your_app_secret
+heroku config:set FACEBOOK_REDIRECT_URI=https://your-app-name.herokuapp.com/api/v1/auth/facebook/callback
+{% endif %}
 heroku config:set WEB_ALLOWED_ORIGINS=https://your-app-name.herokuapp.com
 git push heroku main
 ```

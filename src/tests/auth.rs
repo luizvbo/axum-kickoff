@@ -1,19 +1,40 @@
 //! OAuth authentication integration tests
 //!
-//! Adapted from crates.io's authentication tests to verify that
-//! the GitHub OAuth flow works correctly.
+//! Adapted from crates.io's authentication tests to verify that the OAuth
+//! sign-in flow works correctly. Tests exercise whichever providers were
+//! compiled in at generation time (`oauth_*` template options) via the first
+//! configured provider — every provider shares the same generic handlers.
 
+use crate::config::OAuthProviderConfig;
 use crate::tests::{AnonymousUser, CookieUser, RequestHelper, TestApp};
 use crate::Env;
 use http::StatusCode;
 
+/// Returns the first configured OAuth provider, if any were compiled in.
+/// Tests using this helper return early on renders with no providers.
+fn test_provider(app: &TestApp) -> Option<&OAuthProviderConfig> {
+    app.config.oauth_providers.first()
+}
+
+fn authorize_uri(slug: &str) -> String {
+    format!("/api/v1/auth/{slug}/authorize")
+}
+
+fn callback_uri(slug: &str, query: &str) -> String {
+    format!("/api/v1/auth/{slug}/callback{query}")
+}
+
 #[tokio::test]
-async fn github_authorize_redirects_to_github() {
+async fn oauth_authorize_redirects_to_provider() {
     let app = TestApp::new().await;
+    let Some(provider) = test_provider(&app).map(|p| (p.spec.slug, p.spec.authorize_url)) else {
+        return;
+    };
+    let (slug, authorize_url) = provider;
     let anon = AnonymousUser::new(app);
 
     let response = anon
-        .get::<()>("/api/v1/auth/github/authorize?redirect_to=/dashboard")
+        .get::<()>(&format!("{}?redirect_to=/dashboard", authorize_uri(slug)))
         .await;
 
     response.assert_status(StatusCode::SEE_OTHER);
@@ -24,16 +45,20 @@ async fn github_authorize_redirects_to_github() {
         .unwrap()
         .to_str()
         .unwrap();
-    assert!(location.starts_with("https://github.com/login/oauth/authorize"));
-    assert!(location.contains("client_id=test_client_id"));
+    assert!(location.starts_with(authorize_url));
+    assert!(location.contains(&format!("client_id=test_{slug}_client_id")));
 }
 
 #[tokio::test]
-async fn github_authorize_without_redirect_to_uses_default() {
+async fn oauth_authorize_without_redirect_to_uses_default() {
     let app = TestApp::new().await;
+    let Some(provider) = test_provider(&app).map(|p| (p.spec.slug, p.spec.authorize_url)) else {
+        return;
+    };
+    let (slug, authorize_url) = provider;
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let response = anon.get::<()>(&authorize_uri(slug)).await;
 
     response.assert_status(StatusCode::SEE_OTHER);
 
@@ -43,62 +68,96 @@ async fn github_authorize_without_redirect_to_uses_default() {
         .unwrap()
         .to_str()
         .unwrap();
-    assert!(location.starts_with("https://github.com/login/oauth/authorize"));
+    assert!(location.starts_with(authorize_url));
 }
 
 #[tokio::test]
-async fn github_callback_without_state_returns_error() {
+async fn oauth_authorize_unknown_provider_returns_error() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/api/v1/auth/nosuch/authorize").await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn oauth_callback_unknown_provider_returns_error() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon
-        .get::<()>("/api/v1/auth/github/callback?code=test_code")
+        .get::<()>("/api/v1/auth/nosuch/callback?code=test&state=test")
         .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
-async fn github_callback_without_code_returns_error() {
+async fn oauth_callback_without_state_returns_error() {
     let app = TestApp::new().await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>(&callback_uri(slug, "?code=test_code")).await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn oauth_callback_without_code_returns_error() {
+    let app = TestApp::new().await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
     let response = anon
-        .get::<serde_json::Value>("/api/v1/auth/github/callback?state=test_state")
+        .get::<serde_json::Value>(&callback_uri(slug, "?state=test_state"))
         .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
-async fn github_callback_with_error_param_returns_controlled_response() {
+async fn oauth_callback_with_error_param_returns_controlled_response() {
     let app = TestApp::new().await;
+    let Some(provider) = test_provider(&app).map(|p| (p.spec.slug, p.spec.display_name)) else {
+        return;
+    };
+    let (slug, display_name) = provider;
     let anon = AnonymousUser::new(app);
 
-    // GitHub redirects here without code/state when the user declines
+    // Providers redirect here without code/state when the user declines
     // authorization: ?error=access_denied&error_description=...
     let response = anon
-        .get::<serde_json::Value>(
-            "/api/v1/auth/github/callback?error=access_denied&error_description=denied",
-        )
+        .get::<serde_json::Value>(&callback_uri(
+            slug,
+            "?error=access_denied&error_description=denied",
+        ))
         .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
 
     let body = response.into_string().await;
     assert!(
-        body.contains("GitHub authorization was declined"),
+        body.contains(&format!("{display_name} authorization was declined")),
         "Expected friendly 'declined' message but got: {body}"
     );
 }
 
 #[tokio::test]
-async fn github_callback_with_invalid_state_returns_error() {
+async fn oauth_callback_with_invalid_state_returns_error() {
     let app = TestApp::new().await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
     // Call authorize to set up a session with a valid OAuth state
-    let auth_response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let auth_response = anon.get::<()>(&authorize_uri(slug)).await;
     auth_response.assert_status(StatusCode::SEE_OTHER);
 
     // Store the session cookie
@@ -111,7 +170,7 @@ async fn github_callback_with_invalid_state_returns_error() {
 
     // Call callback with a state that doesn't match the one stored in session
     let response = anon
-        .get::<()>("/api/v1/auth/github/callback?code=test_code&state=wrong_state")
+        .get::<()>(&callback_uri(slug, "?code=test_code&state=wrong_state"))
         .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
@@ -122,6 +181,66 @@ async fn github_callback_with_invalid_state_returns_error() {
         "Expected 'Invalid OAuth state' but got: {}",
         body
     );
+}
+
+/// A state issued while starting a flow on one provider must not complete a
+/// callback on another provider — the session records which provider the
+/// state belongs to.
+#[tokio::test]
+async fn oauth_callback_rejects_provider_mismatch() {
+    let app = TestApp::new().await;
+    let mut providers = app.config.oauth_providers.iter();
+    let (Some(first), Some(second)) = (providers.next(), providers.next()) else {
+        // Needs two compiled-in providers; nothing to test otherwise.
+        return;
+    };
+    let (first_slug, second_slug) = (first.spec.slug, second.spec.slug);
+    let anon = AnonymousUser::new(app);
+
+    let auth_response = anon.get::<()>(&authorize_uri(first_slug)).await;
+    auth_response.assert_status(StatusCode::SEE_OTHER);
+
+    let set_cookie = auth_response
+        .headers()
+        .get("set-cookie")
+        .and_then(|h| h.to_str().ok())
+        .expect("No Set-Cookie header from authorize");
+    anon.update_session_cookie(set_cookie.to_string());
+
+    // Replay the first provider's flow against the second provider's
+    // callback endpoint.
+    let response = anon
+        .get::<()>(&callback_uri(second_slug, "?code=test_code&state=whatever"))
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+
+    let body = response.into_string().await;
+    assert!(
+        body.contains("provider mismatch"),
+        "Expected 'provider mismatch' but got: {}",
+        body
+    );
+}
+
+#[tokio::test]
+async fn login_page_lists_configured_providers() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let response = anon.get::<()>("/login").await;
+    response.assert_status(StatusCode::OK);
+
+    let body = response.into_string().await;
+    // Every compiled-in provider has credentials in test config, so each one
+    // renders a sign-in link.
+    for spec in crate::oauth::provider_specs() {
+        assert!(
+            body.contains(&format!("/api/v1/auth/{}/authorize", spec.slug)),
+            "Expected sign-in link for {} in login page",
+            spec.slug
+        );
+    }
 }
 
 #[tokio::test]
@@ -184,10 +303,13 @@ async fn protected_route_requires_session() {
 #[tokio::test]
 async fn session_persists_across_requests() {
     let app = TestApp::new().await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
     // First request to authorize
-    let auth_response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let auth_response = anon.get::<()>(&authorize_uri(slug)).await;
     auth_response.assert_status(StatusCode::SEE_OTHER);
 
     // Extract and store the session cookie
@@ -200,7 +322,7 @@ async fn session_persists_across_requests() {
 
     // Second request should have the session cookie
     let response = anon
-        .get::<()>("/api/v1/auth/github/callback?code=test&state=test")
+        .get::<()>(&callback_uri(slug, "?code=test&state=test"))
         .await;
     // Should get BAD_REQUEST because state doesn't match, but session should be present
     response.assert_status(StatusCode::BAD_REQUEST);
@@ -209,14 +331,17 @@ async fn session_persists_across_requests() {
 #[tokio::test]
 async fn oauth_callback_rejects_malformed_code() {
     let app = TestApp::new().await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
     // Call authorize first to set up session
-    let _ = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let _ = anon.get::<()>(&authorize_uri(slug)).await;
 
     // Call callback with malformed code
     let response = anon
-        .get::<()>("/api/v1/auth/github/callback?code=&state=test")
+        .get::<()>(&callback_uri(slug, "?code=&state=test"))
         .await;
 
     response.assert_status(StatusCode::BAD_REQUEST);
@@ -259,9 +384,12 @@ async fn session_cookie_has_required_security_flags_in_production() {
     let mut config = TestApp::test_config();
     config.base.env = Env::Production;
     let app = TestApp::with_config(config).await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let response = anon.get::<()>(&authorize_uri(slug)).await;
     response.assert_status(StatusCode::SEE_OTHER);
 
     let set_cookie = response
@@ -292,9 +420,12 @@ async fn session_cookie_omits_secure_in_development() {
     let mut config = TestApp::test_config();
     config.base.env = Env::Development;
     let app = TestApp::with_config(config).await;
+    let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let response = anon.get::<()>(&authorize_uri(slug)).await;
     response.assert_status(StatusCode::SEE_OTHER);
 
     let set_cookie = response

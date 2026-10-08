@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in - {{ ctx.app_name }}{% endblock %}
+
+{% block content %}
+    <div class="container" id="main-content">
+        <section class="section">
+            <h1 class="section-title">Sign in</h1>
+            {% if ctx.oauth_providers.is_empty() %}
+            <p class="section-text">
+                No sign-in providers are configured. Set the client credentials
+                for an OAuth provider (see <code>.env.sample</code>) and restart
+                the server.
+            </p>
+            {% else %}
+            <p class="section-text">Choose a provider to continue:</p>
+            <div class="hero-actions">
+                {% for provider in ctx.oauth_providers %}
+                <a
+                    class="btn btn-primary"
+                    href="/api/v1/auth/{{ provider.slug }}/authorize?redirect_to={{ redirect_to | urlencode }}"
+                    >Sign in with {{ provider.display_name }}</a
+                >
+                {% endfor %}
+            </div>
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}

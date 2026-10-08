@@ -65,6 +65,15 @@ metrics-only files (`src/metrics.rs`, `src/middleware/metrics.rs`,
 `src/tests/metrics.rs`, the metrics snapshot) are dropped by a
 `[conditional.'!metrics']` ignore.
 
+`{% if oauth_github %}` / `{% if oauth_google %}` / `{% if oauth_facebook %}`
+gate the provider entries in `src/oauth.rs`, the credential blocks in
+`.env.sample`, and the provider docs. Unlike the feature flags, these only
+control which `OAuthProviderSpec`s are *compiled in* — the generated project
+still enables each provider at runtime via its `*_CLIENT_ID`/`*_CLIENT_SECRET`
+pair (setting only one is a startup error). The login page lists enabled
+providers at runtime from `PageContext.oauth_providers` — no Liquid is needed
+in `templates/`.
+
 ### Tag placement and whitespace
 
 Liquid tags render in place. To keep `cargo fmt --check` happy on **both**

@@ -147,34 +147,47 @@ DEV_DOCKER=1
 
 Set to any value to indicate running in Docker.
 
-## GitHub OAuth Configuration
+{% if oauth_github or oauth_google or oauth_facebook %}## OAuth Provider Configuration
 
-### Client ID
+Each OAuth provider compiled in at generation time ({% if oauth_github %}GitHub{% endif %}{% if oauth_google %}{% if oauth_github %}, {% endif %}Google{% endif %}{% if oauth_facebook %}{% if oauth_github or oauth_google %}, {% endif %}Facebook{% endif %}) uses a `CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI` triple under its own prefix. A provider is enabled when **both** its client ID and secret are set; setting only one is a startup error. `REDIRECT_URI` is optional.
+
+{% if oauth_github %}### GitHub
 
 ```bash
 GH_CLIENT_ID=your_github_client_id
-```
-
-Your GitHub OAuth application client ID.
-
-### Client Secret
-
-```bash
 GH_CLIENT_SECRET=your_github_client_secret
-```
-
-Your GitHub OAuth application client secret.
-
-### Redirect URI
-
-```bash
 GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
 ```
 
-The OAuth callback URL. Must match exactly what you configured in your GitHub OAuth app settings.
+`GH_REDIRECT_URI` must match exactly what you configured in your GitHub OAuth app settings.
 
 **Default:** `http://{DOMAIN_NAME}:{PORT}/api/v1/auth/github/callback`
 
+{% endif %}{% if oauth_google %}### Google
+
+```bash
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:8888/api/v1/auth/google/callback
+```
+
+`GOOGLE_REDIRECT_URI` must be listed under "Authorized redirect URIs" in your Google Cloud OAuth client.
+
+**Default:** `http://{DOMAIN_NAME}:{PORT}/api/v1/auth/google/callback`
+
+{% endif %}{% if oauth_facebook %}### Facebook
+
+```bash
+FACEBOOK_CLIENT_ID=your_facebook_app_id
+FACEBOOK_CLIENT_SECRET=your_facebook_app_secret
+FACEBOOK_REDIRECT_URI=http://localhost:8888/api/v1/auth/facebook/callback
+```
+
+`FACEBOOK_REDIRECT_URI` must be listed under "Valid OAuth Redirect URIs" in the app's Facebook Login settings.
+
+**Default:** `http://{DOMAIN_NAME}:{PORT}/api/v1/auth/facebook/callback`
+
+{% endif %}{% endif %}
 ## Storage Configuration
 
 ### Storage Path
@@ -476,10 +489,17 @@ PORT=3000
 DOMAIN_NAME=example.com
 SERVER_IP=0.0.0.0
 
-# GitHub OAuth
-GH_CLIENT_ID=your_production_client_id
+{% if oauth_github or oauth_google or oauth_facebook %}# OAuth providers (each enabled when both ID and secret are set)
+{% endif %}{% if oauth_github %}GH_CLIENT_ID=your_production_client_id
 GH_CLIENT_SECRET=your_production_client_secret
 GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}GOOGLE_CLIENT_ID=your_production_client_id
+GOOGLE_CLIENT_SECRET=your_production_client_secret
+GOOGLE_REDIRECT_URI=https://example.com/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}FACEBOOK_CLIENT_ID=your_production_app_id
+FACEBOOK_CLIENT_SECRET=your_production_app_secret
+FACEBOOK_REDIRECT_URI=https://example.com/api/v1/auth/facebook/callback
+{% endif %}
 
 # CORS
 WEB_ALLOWED_ORIGINS=https://example.com
@@ -523,10 +543,17 @@ PORT=8888
 DOMAIN_NAME=localhost
 SERVER_IP=127.0.0.1
 
-# GitHub OAuth (use dev app)
-GH_CLIENT_ID=your_dev_client_id
+{% if oauth_github or oauth_google or oauth_facebook %}# OAuth providers (use dev apps; a provider needs both ID and secret)
+{% endif %}{% if oauth_github %}GH_CLIENT_ID=your_dev_client_id
 GH_CLIENT_SECRET=your_dev_client_secret
 GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}GOOGLE_CLIENT_ID=your_dev_client_id
+GOOGLE_CLIENT_SECRET=your_dev_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:8888/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}FACEBOOK_CLIENT_ID=your_dev_app_id
+FACEBOOK_CLIENT_SECRET=your_dev_app_secret
+FACEBOOK_REDIRECT_URI=http://localhost:8888/api/v1/auth/facebook/callback
+{% endif %}
 
 # CORS
 WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888

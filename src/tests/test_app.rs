@@ -88,9 +88,21 @@ impl TestApp {
             blocked_traffic: Default::default(),
             session_key,
             trusted_proxies: vec!["127.0.0.1/32".parse().unwrap(), "::1/128".parse().unwrap()],
-            gh_client_id: "test_client_id".to_string(),
-            gh_client_secret: SecretString::from("test_client_secret"),
-            gh_redirect_uri: "http://localhost:8888/api/v1/auth/github/callback".to_string(),
+            // Enable every compiled-in OAuth provider with dummy credentials,
+            // so tests can exercise whichever providers were selected at
+            // generation time.
+            oauth_providers: crate::oauth::provider_specs()
+                .into_iter()
+                .map(|spec| crate::config::OAuthProviderConfig {
+                    spec,
+                    client_id: format!("test_{}_client_id", spec.slug),
+                    client_secret: SecretString::from(format!("test_{}_client_secret", spec.slug)),
+                    redirect_uri: format!(
+                        "http://localhost:8888/api/v1/auth/{}/callback",
+                        spec.slug
+                    ),
+                })
+                .collect(),
             storage_config: StorageConfig::local_filesystem("./test_uploads"),
             rate_limiter_config: LimitedAction::VARIANTS
                 .iter()
@@ -121,8 +133,8 @@ impl TestApp {
     }
 
     /// Create a new user builder
-    pub fn user_builder(&self, gh_login: &str) -> UserBuilder {
-        UserBuilder::new(gh_login)
+    pub fn user_builder(&self, login: &str) -> UserBuilder {
+        UserBuilder::new(login)
     }
 
     /// Create a new API token builder

@@ -34,11 +34,11 @@ Use this checklist when deploying {{project-name}} to production.
 - [ ] Set up database backups
 
 ### OAuth Configuration
-- [ ] Create a production GitHub OAuth application
-- [ ] Set production callback URL (HTTPS)
-- [ ] Use production GitHub Client ID and Secret
-- [ ] Verify redirect URI matches exactly
-- [ ] Test OAuth flow in production environment
+- [ ] Create production OAuth applications for each enabled provider
+- [ ] Set production callback URLs (HTTPS) in each provider's app settings
+- [ ] Use production client IDs and secrets
+- [ ] Verify each redirect URI matches exactly
+- [ ] Test the OAuth flow for each provider in production environment
 
 ### CORS
 - [ ] Configure `WEB_ALLOWED_ORIGINS` with production domains
@@ -67,6 +67,42 @@ Use this checklist when deploying {{project-name}} to production.
 - [ ] Set production-specific values
 - [ ] Use environment variable manager (e.g., systemd, Docker secrets, AWS Secrets Manager)
 - [ ] Document required environment variables for operations team
+
+### Dependency Auditing
+
+- [ ] Run `cargo deny check` and `cargo audit` against the generated
+  `Cargo.lock` before each release, and re-check when dependencies are
+  updated (CI's `deps` job does this for the default render)
+
+**Known advisories in the shipped lockfile.** These are transitive
+dependencies with no safe upgrade available yet — track them upstream and
+re-check after each `cargo update`:
+
+- `lru` 0.16.4 — RUSTSEC-2026-0253 (unsound: potential use-after-free in
+  `LruCache::pop()`). Transitive via `toasty-core`/`toasty-cli`. Reported as
+  a warning by `cargo deny`/`cargo audit`; resolution requires a `toasty`
+  release that bumps `lru`.
+- `mysql_async` 0.37.0 — yanked from crates.io. It is present in the
+  lockfile via `toasty-driver-mysql`, but no database option in this
+  template enables the MySQL driver, so the crate is never compiled into
+  the binary. The warning can be treated as cosmetic.
+{% if database == "postgresql" %}- `rustls-pemfile` 2.2.0 — RUSTSEC-2025-0134 (unmaintained, not a known
+  vulnerability). Transitive via `toasty-driver-postgresql`, which is only
+  included because this project was generated with `database=postgresql`.
+  There is no safe upgrade: `toasty` must first migrate to the PEM support
+  in `rustls-pki-types`. Until then, `cargo deny check` fails on it. If you
+  accept the risk of an unmaintained parser wrapper, silence it in
+  `deny.toml`:
+
+  ```toml
+  [advisories]
+  ignore = [
+      # Unmaintained, not vulnerable — transitive via toasty-driver-postgresql.
+      # Remove once toasty migrates to rustls-pki-types' PemObject.
+      "RUSTSEC-2025-0134",
+  ]
+  ```
+{% endif %}
 
 ## Infrastructure
 
@@ -206,9 +242,16 @@ Use this checklist when deploying {{project-name}} to production.
 ### Recommended
 - `PORT` - Server port (default: 8888)
 - `DOMAIN_NAME` - Application domain
-- `GH_CLIENT_ID` - GitHub OAuth client ID
+{% if oauth_github %}- `GH_CLIENT_ID` - GitHub OAuth client ID
 - `GH_CLIENT_SECRET` - GitHub OAuth client secret
-- `GH_REDIRECT_URI` - OAuth callback URL
+- `GH_REDIRECT_URI` - GitHub OAuth callback URL
+{% endif %}{% if oauth_google %}- `GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
+- `GOOGLE_REDIRECT_URI` - Google OAuth callback URL
+{% endif %}{% if oauth_facebook %}- `FACEBOOK_CLIENT_ID` - Facebook app ID
+- `FACEBOOK_CLIENT_SECRET` - Facebook app secret
+- `FACEBOOK_REDIRECT_URI` - Facebook OAuth callback URL
+{% endif %}
 
 ### Optional
 - `RUST_LOG` - Log level (default: info)

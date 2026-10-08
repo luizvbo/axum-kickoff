@@ -42,7 +42,7 @@ This document describes the high-level architecture of {{project-name}}, its des
 │                    (Axum Router)                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
 │  │ Auth Routes   │  │ API Routes   │  │ Web Routes   │     │
-│  │ (GitHub OAuth)│  │ (REST API)   │  │ (HTML/HTMX)  │     │
+│  │ (OAuth sign-in)│  │ (REST API)   │  │ (HTML/HTMX)  │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -107,7 +107,7 @@ See [Middleware Documentation](MIDDLEWARE.md) for details.
 
 Controllers in `src/controllers/` handle HTTP requests:
 
-- **Auth Controller**: GitHub OAuth, login, logout
+- **Auth Controller**: OAuth sign-in (provider-generic handlers), login, logout
 - **Token Controller**: API token management
 - **User Controller**: User management (planned)
 
@@ -144,7 +144,7 @@ See [Storage Documentation](STORAGE.md) for details.
 
 Authentication supports multiple methods:
 
-- **GitHub OAuth**: OAuth 2.0 flow with GitHub
+- **OAuth sign-in**: OAuth 2.0 flow (with PKCE) for the providers compiled in at generation time
 - **Session-Based**: Signed cookie sessions
 - **API Tokens**: Scoped tokens with fine-grained permissions
 
@@ -210,12 +210,12 @@ See [Rate Limiting Documentation](RATE_LIMITING.md) for details.
 ### OAuth Flow
 
 ```
-1. User clicks "Login with GitHub"
-2. Redirect to GitHub authorize endpoint
+1. User clicks a "Sign in with <provider>" button
+2. Redirect to the provider's authorize endpoint
 3. User authorizes application
-4. GitHub redirects to callback endpoint
+4. Provider redirects to /api/v1/auth/<provider>/callback
 5. Controller exchanges code for access token
-6. Fetch user profile from GitHub
+6. Fetch user profile from the provider
 7. Create/update user in database
 8. Create session cookie
 9. Redirect to dashboard
@@ -303,7 +303,7 @@ See [QuickWit Integration](quickwit-integration.md) for details.
 
 ### Authentication
 
-- **GitHub OAuth**: OAuth 2.0 with PKCE
+- **OAuth sign-in**: OAuth 2.0 with PKCE
 - **Session Cookies**: Signed with HMAC
 - **API Tokens**: Hashed with SHA-256
 - **Token Scopes**: Fine-grained permissions

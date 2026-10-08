@@ -1,5 +1,6 @@
 ---
 source: src/tests/test_app.rs
+assertion_line: 191
 expression: body
 ---
 <!DOCTYPE html>
@@ -29,6 +30,7 @@ expression: body
                 <a href="#examples">Examples</a>
                 <a href="#getting-started">Getting Started</a>
                 <a href="/swagger-ui" target="_blank">API Docs</a>
+                <a href="/login">Sign in</a>
             </div>
         </div>
     </nav>

@@ -1,8 +1,12 @@
 //! Authentication controller
 //!
-//! Handles GitHub OAuth authentication flow including authorize and callback endpoints.
+//! Handles the OAuth2 authorization-code flow (with PKCE) for every provider
+//! enabled in the configuration, plus the login page and logout endpoints.
+//! Providers are described by [`crate::oauth::OAuthProviderSpec`] and enabled
+//! via environment credentials — see `config::Server::oauth_providers`.
 
-use axum::extract::{Extension, Query, State};
+use askama::Template;
+use axum::extract::{Extension, Path, Query, State};
 use axum::response::{Json, Redirect};
 use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
@@ -14,9 +18,18 @@ use serde_json::json;
 use crate::app::AppState;
 use crate::middleware::session::SessionExtension;
 use crate::models::User;
+use crate::router::{HtmlTemplate, PageContext};
 use crate::util::errors::{bad_request, db_error, forbidden, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 use secrecy::ExposeSecret;
+
+/// Session keys used while an OAuth flow is in progress. The provider slug is
+/// recorded alongside the state so the callback can verify the flow was
+/// started for the same provider that completed it.
+const SESSION_OAUTH_STATE: &str = "oauth_state";
+const SESSION_OAUTH_PKCE_VERIFIER: &str = "oauth_pkce_verifier";
+const SESSION_OAUTH_PROVIDER: &str = "oauth_provider";
+const SESSION_REDIRECT_TO: &str = "redirect_to";
 
 /// OAuth authorize query parameters
 #[derive(Debug, Deserialize)]
@@ -27,91 +40,91 @@ pub struct AuthorizeQuery {
 
 /// OAuth callback query parameters
 ///
-/// `code`/`state` are optional because GitHub redirects back with
+/// `code`/`state` are optional because providers redirect back with
 /// `?error=...` (e.g. `error=access_denied`) instead when the user declines
 /// authorization or the OAuth app is misconfigured.
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
-    /// The authorization code from GitHub
+    /// The authorization code from the provider
     pub code: Option<String>,
     /// The state parameter for CSRF protection
     pub state: Option<String>,
-    /// Error code returned by GitHub when authorization fails
+    /// Error code returned by the provider when authorization fails
     pub error: Option<String>,
-    /// Human-readable error description returned by GitHub
+    /// Human-readable error description returned by the provider
     pub error_description: Option<String>,
 }
 
-/// GitHub user profile data from OAuth
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct GitHubUser {
-    id: i64,
-    login: String,
-    name: Option<String>,
-    email: Option<String>,
-    avatar_url: Option<String>,
-}
-
-/// GitHub OAuth authorize endpoint
+/// OAuth authorize endpoint
 ///
-/// Redirects the user to GitHub's OAuth authorization page.
+/// Redirects the user to the provider's OAuth authorization page.
 /// Uses PKCE (Proof Key for Code Exchange) for enhanced security.
-/// The state parameter is stored in the session for CSRF protection.
+/// The state parameter and provider slug are stored in the session for CSRF
+/// protection.
 ///
 /// # Example
 ///
 /// `GET /api/v1/auth/github/authorize?redirect_to=/dashboard`
-pub async fn github_authorize(
+pub async fn oauth_authorize(
+    Path(provider_slug): Path<String>,
     Query(query): Query<AuthorizeQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Redirect, BoxedAppError> {
     let config = &state.0.config;
+    let provider = config
+        .oauth_provider(&provider_slug)
+        .ok_or_else(|| bad_request("Unknown or unconfigured OAuth provider"))?;
 
     // Create OAuth2 client
-    let auth_url = AuthUrl::new("https://github.com/login/oauth/authorize".to_string())
-        .expect("Invalid authorization URL");
-    let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
-        .expect("Invalid token URL");
+    let auth_url =
+        AuthUrl::new(provider.spec.authorize_url.to_string()).expect("Invalid authorization URL");
+    let token_url = TokenUrl::new(provider.spec.token_url.to_string()).expect("Invalid token URL");
     let redirect_url =
-        RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
+        RedirectUrl::new(provider.redirect_uri.clone()).expect("Invalid redirect URL");
 
-    let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
+    let client = BasicClient::new(ClientId::new(provider.client_id.clone()))
         .set_client_secret(ClientSecret::new(
-            config.gh_client_secret.expose_secret().to_string(),
+            provider.client_secret.expose_secret().to_string(),
         ))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url)
         .set_redirect_uri(redirect_url);
 
-    // Generate PKCE code verifier and challenge
+    // Generate PKCE code verifier and challenge (supported by all configured
+    // providers: GitHub, Google, and Facebook's OIDC code flow)
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
 
     // Generate CSRF state token
-    let (auth_url, csrf_token) = client
+    let mut authorize_request = client
         .authorize_url(CsrfToken::new_random)
-        .add_scope(Scope::new("read:user".to_string()))
-        .set_pkce_challenge(pkce_code_challenge)
-        .url();
+        .set_pkce_challenge(pkce_code_challenge);
+    for scope in provider.spec.scopes {
+        authorize_request = authorize_request.add_scope(Scope::new(scope.to_string()));
+    }
+    let (auth_url, csrf_token) = authorize_request.url();
 
     // Store CSRF token in session for verification on callback
-    session.insert(
-        "github_oauth_state".to_string(),
-        csrf_token.secret().clone(),
-    );
+    session.insert(SESSION_OAUTH_STATE.to_string(), csrf_token.secret().clone());
 
     // Store PKCE code verifier in session for token exchange
     session.insert(
-        "github_pkce_verifier".to_string(),
+        SESSION_OAUTH_PKCE_VERIFIER.to_string(),
         pkce_code_verifier.secret().clone(),
+    );
+
+    // Record which provider this flow was started for, so the callback can
+    // reject state tokens replayed against a different provider's endpoint.
+    session.insert(
+        SESSION_OAUTH_PROVIDER.to_string(),
+        provider.spec.slug.to_string(),
     );
 
     // Store redirect URL in session (validate to prevent open redirect)
     if let Some(redirect_to) = query.redirect_to {
         // Validate redirect URL: must be relative or start with allowed domain
         if is_valid_redirect(&redirect_to, &config.domain_name) {
-            session.insert("redirect_to".to_string(), redirect_to);
+            session.insert(SESSION_REDIRECT_TO.to_string(), redirect_to);
         } else {
             tracing::warn!("Invalid redirect URL provided: {}", redirect_to);
         }
@@ -120,35 +133,42 @@ pub async fn github_authorize(
     Ok(Redirect::to(auth_url.as_str()))
 }
 
-/// GitHub OAuth callback endpoint
+/// OAuth callback endpoint
 ///
-/// Handles the callback from GitHub after user authorization.
-/// Uses PKCE (Proof Key for Code Exchange) for enhanced security.
-/// Exchanges the authorization code for an access token and fetches user profile.
+/// Handles the callback from the provider after user authorization.
+/// Verifies the CSRF state token and the recorded provider, exchanges the
+/// authorization code for an access token using the PKCE verifier, then
+/// fetches and stores the user profile.
 ///
 /// # Example
 ///
 /// `GET /api/v1/auth/github/callback?code=...&state=...`
-pub async fn github_callback(
+pub async fn oauth_callback(
+    Path(provider_slug): Path<String>,
     Query(query): Query<CallbackQuery>,
     State(state): State<AppState>,
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Redirect, BoxedAppError> {
     let config = &state.0.config;
+    let provider = config
+        .oauth_provider(&provider_slug)
+        .ok_or_else(|| bad_request("Unknown or unconfigured OAuth provider"))?;
+    let provider_name = provider.spec.display_name;
 
-    // GitHub redirects here with `?error=...` when the user declines
+    // Providers redirect here with `?error=...` when the user declines
     // authorization or the app is misconfigured, so `code`/`state` are
     // optional. Handle that first so the callback is a controlled response
     // instead of a query-deserialization 400.
     if let Some(error) = &query.error {
         tracing::warn!(
+            provider = %provider.spec.slug,
             error = %error,
             error_description = query.error_description.as_deref().unwrap_or_default(),
-            "GitHub OAuth callback returned an error"
+            "OAuth callback returned an error"
         );
         return Err(bad_request(match error.as_str() {
-            "access_denied" => "GitHub authorization was declined",
-            _ => "GitHub authorization failed, please try again",
+            "access_denied" => format!("{provider_name} authorization was declined"),
+            _ => format!("{provider_name} authorization failed, please try again"),
         }));
     }
 
@@ -157,9 +177,22 @@ pub async fn github_callback(
         _ => return Err(bad_request("Missing OAuth code or state parameter")),
     };
 
+    // Verify the provider recorded at authorize time matches this callback —
+    // a state token issued for one provider must not complete a flow on
+    // another.
+    let session_provider = session
+        .remove(SESSION_OAUTH_PROVIDER)
+        .ok_or_else(|| bad_request("Missing OAuth state in session"))?;
+
+    if session_provider != provider.spec.slug {
+        return Err(bad_request(
+            "OAuth provider mismatch - possible CSRF attack",
+        ));
+    }
+
     // Verify CSRF state
     let session_state = session
-        .remove("github_oauth_state")
+        .remove(SESSION_OAUTH_STATE)
         .ok_or_else(|| bad_request("Missing OAuth state in session"))?;
 
     if session_state != csrf_state {
@@ -168,21 +201,20 @@ pub async fn github_callback(
 
     // Retrieve PKCE code verifier from session
     let pkce_verifier_secret = session
-        .remove("github_pkce_verifier")
+        .remove(SESSION_OAUTH_PKCE_VERIFIER)
         .ok_or_else(|| bad_request("Missing PKCE verifier in session"))?;
     let pkce_verifier = PkceCodeVerifier::new(pkce_verifier_secret);
 
     // Create OAuth2 client
-    let auth_url = AuthUrl::new("https://github.com/login/oauth/authorize".to_string())
-        .expect("Invalid authorization URL");
-    let token_url = TokenUrl::new("https://github.com/login/oauth/access_token".to_string())
-        .expect("Invalid token URL");
+    let auth_url =
+        AuthUrl::new(provider.spec.authorize_url.to_string()).expect("Invalid authorization URL");
+    let token_url = TokenUrl::new(provider.spec.token_url.to_string()).expect("Invalid token URL");
     let redirect_url =
-        RedirectUrl::new(config.gh_redirect_uri.clone()).expect("Invalid redirect URL");
+        RedirectUrl::new(provider.redirect_uri.clone()).expect("Invalid redirect URL");
 
-    let client = BasicClient::new(ClientId::new(config.gh_client_id.clone()))
+    let client = BasicClient::new(ClientId::new(provider.client_id.clone()))
         .set_client_secret(ClientSecret::new(
-            config.gh_client_secret.expose_secret().to_string(),
+            provider.client_secret.expose_secret().to_string(),
         ))
         .set_auth_uri(auth_url)
         .set_token_uri(token_url)
@@ -195,15 +227,15 @@ pub async fn github_callback(
         .request_async(&ReqwestClient(state.0.http_client.clone()))
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to exchange OAuth authorization code");
+            tracing::error!(provider = %provider.spec.slug, error = %e, "Failed to exchange OAuth authorization code");
             server_error("Error obtaining token")
         })?;
 
-    // Fetch user profile from GitHub
+    // Fetch user profile from the provider
     let user_response = state
         .0
         .http_client
-        .get("https://api.github.com/user")
+        .get(provider.spec.userinfo_url)
         .header(
             "Authorization",
             format!("Bearer {}", token.access_token().secret()),
@@ -212,26 +244,38 @@ pub async fn github_callback(
         .send()
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to fetch GitHub user profile");
+            tracing::error!(provider = %provider.spec.slug, error = %e, "Failed to fetch OAuth user profile");
             server_error("Error obtaining user info")
         })?;
 
     if !user_response.status().is_success() {
         tracing::error!(
+            provider = %provider.spec.slug,
             status = %user_response.status(),
-            "GitHub user profile request returned an error status"
+            "OAuth user profile request returned an error status"
         );
         return Err(server_error("Error obtaining user info"));
     }
 
-    let github_user: GitHubUser = user_response.json().await.map_err(|e| {
-        tracing::error!(error = %e, "Failed to parse GitHub user profile");
+    let profile_body: serde_json::Value = user_response.json().await.map_err(|e| {
+        tracing::error!(provider = %provider.spec.slug, error = %e, "Failed to parse OAuth user profile");
+        server_error("Error obtaining user info")
+    })?;
+
+    let profile = (provider.spec.parse_profile)(&profile_body).ok_or_else(|| {
+        tracing::error!(provider = %provider.spec.slug, "OAuth user profile is missing required fields");
         server_error("Error obtaining user info")
     })?;
 
     let mut db = state.0.database.db_clone();
 
-    let user = match User::get_by_gh_id(&mut db, &github_user.id).await {
+    let user = match User::get_by_provider_and_provider_user_id(
+        &mut db,
+        provider.spec.slug,
+        profile.provider_user_id.clone(),
+    )
+    .await
+    {
         Ok(mut existing_user) => {
             // Deactivated accounts may not log back in
             if !existing_user.is_active {
@@ -248,11 +292,12 @@ pub async fn github_callback(
             }
 
             // Update existing user
-            existing_user.gh_login = github_user.login.clone();
-            existing_user.name = github_user.name.clone();
-            existing_user.email = github_user.email.clone();
-            existing_user.gh_avatar = github_user.avatar_url.clone();
-            existing_user.updated_at = jiff::Timestamp::now();
+            existing_user.update_from_oauth(
+                profile.login.clone(),
+                profile.name.clone(),
+                profile.email.clone(),
+                profile.avatar_url.clone(),
+            );
 
             existing_user
                 .update()
@@ -265,11 +310,12 @@ pub async fn github_callback(
         Err(_) => {
             // Create new user
             toasty::create!(User {
-                gh_id: github_user.id,
-                gh_login: github_user.login.clone(),
-                name: github_user.name.clone(),
-                email: github_user.email.clone(),
-                gh_avatar: github_user.avatar_url.clone(),
+                provider: provider.spec.slug.to_string(),
+                provider_user_id: profile.provider_user_id.clone(),
+                login: profile.login.clone(),
+                name: profile.name.clone(),
+                email: profile.email.clone(),
+                avatar_url: profile.avatar_url.clone(),
                 is_active: true,
                 account_lock_reason: None,
                 account_lock_until: None,
@@ -284,13 +330,14 @@ pub async fn github_callback(
 
     // Session fixation protection: clear pre-login session data
     // except redirect_to, then set fresh authenticated session
-    session.remove("github_oauth_state");
-    session.remove("github_pkce_verifier");
+    session.remove(SESSION_OAUTH_STATE);
+    session.remove(SESSION_OAUTH_PKCE_VERIFIER);
+    session.remove(SESSION_OAUTH_PROVIDER);
     session.remove("csrf_token");
 
     // Set user_id in session (this will trigger a fresh signed cookie)
     session.insert("user_id".to_string(), user.id.to_string());
-    session.insert("user_login".to_string(), user.gh_login);
+    session.insert("user_login".to_string(), user.login);
 
     // Generate new CSRF token for the fresh session
     use crate::middleware::csrf::generate_token;
@@ -298,7 +345,7 @@ pub async fn github_callback(
 
     // Redirect to the stored redirect URL or default to home
     let redirect_to = session
-        .remove("redirect_to")
+        .remove(SESSION_REDIRECT_TO)
         .unwrap_or_else(|| "/".to_string());
 
     // Validate redirect URL before using it
@@ -308,6 +355,35 @@ pub async fn github_callback(
     }
 
     Ok(Redirect::to(&redirect_to))
+}
+
+/// Login page
+///
+/// Renders a sign-in button for every OAuth provider that has credentials
+/// configured. The optional `redirect_to` query parameter is validated and
+/// forwarded to the authorize endpoint so users land back where they started.
+///
+/// # Example
+///
+/// `GET /login?redirect_to=/dashboard`
+pub async fn login_page(
+    ctx: PageContext,
+    Query(query): Query<AuthorizeQuery>,
+) -> Result<HtmlTemplate<LoginTemplate>, BoxedAppError> {
+    let redirect_to = match query.redirect_to {
+        Some(url) if is_valid_redirect(&url, "") => url,
+        _ => "/".to_string(),
+    };
+
+    Ok(HtmlTemplate::new(LoginTemplate { ctx, redirect_to }))
+}
+
+/// Login page template.
+#[derive(Template)]
+#[template(path = "login.html")]
+pub struct LoginTemplate {
+    ctx: PageContext,
+    redirect_to: String,
 }
 
 /// Logout endpoint (API)
@@ -324,9 +400,10 @@ pub async fn logout_api(
     // Clear all session data
     session.remove("user_id");
     session.remove("user_login");
-    session.remove("github_oauth_state");
-    session.remove("github_pkce_verifier");
-    session.remove("redirect_to");
+    session.remove(SESSION_OAUTH_STATE);
+    session.remove(SESSION_OAUTH_PKCE_VERIFIER);
+    session.remove(SESSION_OAUTH_PROVIDER);
+    session.remove(SESSION_REDIRECT_TO);
     session.remove("csrf_token");
 
     Ok(Json(json!({"success": true})))
@@ -346,9 +423,10 @@ pub async fn logout_html(
     // Clear all session data
     session.remove("user_id");
     session.remove("user_login");
-    session.remove("github_oauth_state");
-    session.remove("github_pkce_verifier");
-    session.remove("redirect_to");
+    session.remove(SESSION_OAUTH_STATE);
+    session.remove(SESSION_OAUTH_PKCE_VERIFIER);
+    session.remove(SESSION_OAUTH_PROVIDER);
+    session.remove(SESSION_REDIRECT_TO);
     session.remove("csrf_token");
 
     Ok(Redirect::to("/"))
@@ -440,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_callback_query_missing_code() {
-        // `code` is optional so GitHub's `?error=...` redirects deserialize
+        // `code` is optional so providers' `?error=...` redirects deserialize
         let json = r#"{"state": "test_state"}"#;
         let query: CallbackQuery = serde_json::from_str(json).unwrap();
         assert!(query.code.is_none());

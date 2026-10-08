@@ -4,7 +4,7 @@ This guide shows you how to add a route that requires user authentication.
 
 ## Overview
 
-Protected routes require users to be logged in. For browser requests, anonymous users should be redirected to the GitHub login page. For API requests, return a `401 Unauthorized` response.
+Protected routes require users to be logged in. For browser requests, anonymous users should be redirected to the login page (`/login`, which lists the enabled OAuth providers). For API requests, return a `401 Unauthorized` response.
 
 ## Step 1: Create a CurrentUser Extractor
 
@@ -148,8 +148,8 @@ pub async fn require_auth_or_redirect(
         }
     }
 
-    // Redirect to login with return URL
-    Err(Redirect::to("/api/v1/auth/github/authorize?redirect_to=/dashboard"))
+    // Redirect to the login page with return URL
+    Err(Redirect::to("/login?redirect_to=/dashboard"))
 }
 ```
 
@@ -225,7 +225,7 @@ pub async fn dashboard(
 
     Ok(HtmlTemplate(DashboardTemplate {
         user: user.clone(),
-        username: user.gh_login,
+        username: user.login,
         post_count: posts.len(),
     }))
 }
@@ -281,7 +281,7 @@ use crate::middleware::auth::OptionalCurrentUser;
 pub async fn public_page(
     OptionalCurrentUser(maybe_user): OptionalCurrentUser,
 ) -> AppResult<HtmlTemplate<PublicTemplate>> {
-    let username = maybe_user.map(|u| u.gh_login);
+    let username = maybe_user.map(|u| u.login);
 
     Ok(HtmlTemplate(PublicTemplate {
         username,

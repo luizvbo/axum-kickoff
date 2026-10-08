@@ -56,14 +56,16 @@ pub struct User {
     #[auto]
     pub id: u64,
 
-    /// GitHub account ID (unique identifier from GitHub)
-    #[unique]
-    pub gh_id: i64,
+    /// OAuth provider slug that owns this identity
+    pub provider: String,
 
-    /// GitHub username (login)
-    pub gh_login: String,
+    /// Unique user ID assigned by the OAuth provider
+    pub provider_user_id: String,
 
-    /// User's display name (from GitHub profile)
+    /// Username/handle from the provider profile
+    pub login: String,
+
+    /// User's display name (from the provider profile)
     pub name: Option<String>,
 
     /// Timestamp when the user was created
@@ -217,7 +219,7 @@ use crate::models::User;
 let user = User::get(id).exec(&db).await?;
 
 // Find by unique field
-let user = User::filter(User::GhId.eq(gh_id)).get(&db).await?;
+let user = User::get_by_provider_and_provider_user_id(&mut db, provider, provider_user_id).await?;
 
 // Find all records
 let users = User::all().exec(&db).await?;
@@ -294,8 +296,8 @@ let page2 = User::all()
 ```rust
 use crate::models::User;
 
-let user = User::new_from_github(gh_id, gh_login, name, email, avatar);
-user.insert(&db).await?;
+let user = User::new(provider, provider_user_id, login, name, email, avatar_url);
+// Users are created by the OAuth callback handler; use builders in tests.
 ```
 
 ### Updating Records
@@ -340,7 +342,7 @@ pub struct User {
     #[auto]
     pub id: u64,
 
-    pub gh_login: String,
+    pub login: String,
 }
 ```
 
@@ -371,7 +373,7 @@ sql::query("UPDATE users SET is_active = false WHERE id = ?", [user_id])
     .await?;
 
 // Execute a raw query and parse results
-let rows = sql::query("SELECT * FROM users WHERE gh_id = ?", [gh_id])
+let rows = sql::query("SELECT * FROM users WHERE provider = ? AND provider_user_id = ?", [provider, provider_user_id])
     .fetch_all(&db)
     .await?;
 ```

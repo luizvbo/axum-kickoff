@@ -11,7 +11,9 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::app::AppState;
-use crate::controllers::auth::{github_authorize, github_callback, logout_api, logout_html};
+use crate::controllers::auth::{
+    login_page, logout_api, logout_html, oauth_authorize, oauth_callback,
+};
 use crate::controllers::examples::{
     contact_page, contact_submit, counter_decrement, counter_increment, counter_page, example_json,
 };
@@ -81,6 +83,9 @@ pub struct PageContext {
     pub csp_nonce: String,
     /// Display name of the application, derived from `CARGO_PKG_NAME`.
     pub app_name: String,
+    /// OAuth providers with credentials configured — drives the sign-in
+    /// buttons on the login page.
+    pub oauth_providers: Vec<&'static crate::oauth::OAuthProviderSpec>,
 }
 
 /// Human-friendly application name derived from the crate's package name
@@ -99,10 +104,13 @@ pub(crate) fn app_name() -> String {
         .join(" ")
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for PageContext {
+impl FromRequestParts<AppState> for PageContext {
     type Rejection = BoxedAppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let csp_nonce = parts
             .extensions
             .get::<CspNonce>()
@@ -125,6 +133,13 @@ impl<S: Send + Sync> FromRequestParts<S> for PageContext {
             csrf_token,
             csp_nonce,
             app_name: app_name(),
+            oauth_providers: state
+                .0
+                .config
+                .oauth_providers
+                .iter()
+                .map(|provider| provider.spec)
+                .collect(),
         })
     }
 }
@@ -164,6 +179,7 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
 {% endif %}    // Public HTML / example routes - no authentication required
     let public_router = Router::new()
         .route("/", get(home))
+        .route("/login", get(login_page))
         .route("/api/server-time", get(server_time))
         // Example routes for HTMX + Askama patterns
         .route("/examples/contact", get(contact_page))
@@ -182,10 +198,12 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
         .route("/examples/json", get(example_json));
 
     // Sensitive public routes - OAuth flow endpoints are rate limited to
-    // protect the authentication handshake from abuse.
+    // protect the authentication handshake from abuse. The `{provider}` path
+    // segment is validated against the configured providers inside the
+    // handlers.
     let rate_limited_router = Router::new()
-        .route("/api/v1/auth/github/authorize", get(github_authorize))
-        .route("/api/v1/auth/github/callback", get(github_callback))
+        .route("/api/v1/auth/{provider}/authorize", get(oauth_authorize))
+        .route("/api/v1/auth/{provider}/callback", get(oauth_callback))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             rate_limit,
@@ -393,6 +411,7 @@ mod tests {
                 csrf_token: "test-csrf".into(),
                 csp_nonce: "test-nonce".into(),
                 app_name: app_name(),
+                oauth_providers: Vec::new(),
             },
             time: "now".to_string(),
         };
@@ -407,6 +426,7 @@ mod tests {
                 csrf_token: "test-csrf".into(),
                 csp_nonce: "test-nonce".into(),
                 app_name: app_name(),
+                oauth_providers: Vec::new(),
             },
             time: "now".to_string(),
         };
@@ -415,6 +435,7 @@ mod tests {
                 csrf_token: "test-csrf".into(),
                 csp_nonce: "test-nonce".into(),
                 app_name: app_name(),
+                oauth_providers: Vec::new(),
             },
             time: "now".to_string(),
         };

@@ -198,8 +198,14 @@ fn determine_limited_action(
     let path = path.trim_end_matches('/');
     match (method, path) {
         (&http::Method::POST, "/api/v1/tokens") => LimitedAction::TokenCreation,
-        (&http::Method::GET, "/api/v1/auth/github/authorize") => LimitedAction::OAuthAuthorize,
-        (&http::Method::GET, "/api/v1/auth/github/callback") => LimitedAction::OAuthCallback,
+        // OAuth handshake endpoints share one parameterized route
+        // (`/api/v1/auth/{provider}/...`); match by shape, not provider name.
+        (&http::Method::GET, p) if p.starts_with("/api/v1/auth/") && p.ends_with("/authorize") => {
+            LimitedAction::OAuthAuthorize
+        }
+        (&http::Method::GET, p) if p.starts_with("/api/v1/auth/") && p.ends_with("/callback") => {
+            LimitedAction::OAuthCallback
+        }
         (&http::Method::POST, "/examples/contact") => LimitedAction::FormSubmission,
         (&http::Method::POST, "/logout") | (&http::Method::POST, "/api/v1/auth/logout") => {
             LimitedAction::FormSubmission

@@ -89,10 +89,10 @@ Builder pattern for creating test data:
 ```rust
 use {{crate_name}}::tests::builders::UserBuilder;
 
-let user = UserBuilder::new()
-    .with_github_login("testuser")
-    .with_avatar_url("https://example.com/avatar.png")
-    .build(&app.db)
+let user = app
+    .user_builder("testuser")
+    .name("Test User")
+    .build(&mut app.db().db_clone())
     .await;
 ```
 
@@ -267,9 +267,9 @@ Each test gets an isolated database:
 Use builders to create test data:
 
 ```rust
-let user = UserBuilder::new()
-    .with_github_login("testuser")
-    .build(&app.db)
+let user = app
+    .user_builder("testuser")
+    .build(&mut app.db().db_clone())
     .await;
 ```
 
@@ -341,7 +341,7 @@ async fn test_rate_limiting() {
 
 ### External Services
 
-For external services (GitHub OAuth, S3, etc.):
+For external services (OAuth providers, S3, etc.):
 
 1. Use feature flags to skip external calls in tests
 2. Mock responses at the HTTP level
@@ -352,8 +352,8 @@ Example with test configuration:
 ```rust
 #[cfg(test)]
 impl TestApp {
-    pub fn with_mock_github() -> Self {
-        // Configure mock GitHub responses
+    pub fn with_mock_oauth() -> Self {
+        // Configure mock OAuth provider responses
         Self::new()
     }
 }
