@@ -23,9 +23,35 @@ env:
   # renovate: datasource=crate depName=cargo-audit versioning=semver
   CARGO_AUDIT_VERSION: 0.22.2
 
+# NOTE: this file is also the generated-project CI. It is copied verbatim
+# (cargo-generate `exclude`) into every rendered project. In the template
+# repository itself the checkout cannot compile (Liquid placeholders in
+# Cargo.toml), so `detect` below gates every cargo job on the absence of
+# `cargo-generate.toml` — which cargo-generate drops from renders via `ignore`.
+# Template verification lives in `.github/workflows/template-ci.yml`.
 jobs:
+  detect:
+    name: Detect template repository
+    runs-on: ubuntu-24.04
+    outputs:
+      template: ${{ steps.check.outputs.template }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - id: check
+        run: |
+          if [ -f cargo-generate.toml ]; then
+            echo "template=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "template=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: Lint
+    needs: detect
+    if: needs.detect.outputs.template == 'false'
     runs-on: ubuntu-24.04
 
     env:
@@ -49,6 +75,8 @@ jobs:
 
   deps:
     name: Dependencies
+    needs: detect
+    if: needs.detect.outputs.template == 'false'
     runs-on: ubuntu-24.04
 
     steps:
@@ -74,6 +102,8 @@ jobs:
 
   test:
     name: Test
+    needs: detect
+    if: needs.detect.outputs.template == 'false'
     runs-on: ubuntu-24.04
 
     env:

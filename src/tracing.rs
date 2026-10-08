@@ -26,40 +26,7 @@ fn default_log_format(env: Env) -> LogFormat {
     }
 }
 
-#[cfg(not(feature = "sentry"))]
-pub fn init_tracing_with_format(_env: Env, format: LogFormat) {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-
-    match format {
-        LogFormat::Pretty => {
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(tracing_subscriber::fmt::layer().pretty())
-                .init();
-        }
-        LogFormat::Json => {
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(tracing_subscriber::fmt::layer().json())
-                .init();
-        }
-        LogFormat::Full => {
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(tracing_subscriber::fmt::layer())
-                .init();
-        }
-        LogFormat::Compact => {
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(tracing_subscriber::fmt::layer().compact())
-                .init();
-        }
-    }
-}
-
-#[cfg(feature = "sentry")]
+{% if sentry %}#[cfg(feature = "sentry")]
 fn sentry_layer<S>() -> sentry_tracing::SentryLayer<S>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
@@ -127,4 +94,36 @@ pub fn init_sentry(dsn: Option<&secrecy::SecretString>) -> Option<sentry::Client
     options.dsn = Some(parsed);
 
     Some(sentry::init(options))
+}
+{% endif %}{% if sentry %}#[cfg(not(feature = "sentry"))]
+{% endif %}pub fn init_tracing_with_format(_env: Env, format: LogFormat) {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    match format {
+        LogFormat::Pretty => {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().pretty())
+                .init();
+        }
+        LogFormat::Json => {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().json())
+                .init();
+        }
+        LogFormat::Full => {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer())
+                .init();
+        }
+        LogFormat::Compact => {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().compact())
+                .init();
+        }
+    }
 }

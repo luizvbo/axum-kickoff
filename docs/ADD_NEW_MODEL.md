@@ -61,7 +61,7 @@ pub use post::Post;  // Add this line
 Run the Toasty code generator to create the database access code:
 
 ```bash
-cargo run --bin toasty
+cargo run --bin {{project-name}} -- migrate migration generate
 ```
 
 This will generate the necessary database query methods for your model.
@@ -195,7 +195,7 @@ impl Post {
 use axum::extract::State;
 use crate::app::AppState;
 use crate::models::Post;
-use crate::util::errors::{bad_request, server_error, AppResult};
+use crate::util::errors::{db_error, unauthorized, AppResult};
 
 pub async fn create_post(
     State(state): State<AppState>,
@@ -219,7 +219,7 @@ pub async fn create_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(db_error)?;
 
     Ok(Json(post))
 }
@@ -232,7 +232,7 @@ pub async fn list_posts(
     let posts = Post::all()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(Json(posts))
 }

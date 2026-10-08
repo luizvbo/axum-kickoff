@@ -1,10 +1,10 @@
 # Rate Limiting
 
-This document describes the rate limiting system in axum-kickoff, including in-memory, database-backed, and Redis implementations.
+This document describes the rate limiting system in {{project-name}}, including in-memory, database-backed, and Redis implementations.
 
 ## Overview
 
-Rate limiting protects your application from abuse by throttling requests based on action types. axum-kickoff supports multiple backends:
+Rate limiting protects your application from abuse by throttling requests based on action types. {{project-name}} supports multiple backends:
 
 - **In-Memory**: Default for single-instance deployments
 - **Database-Backed**: For distributed systems (SQLite/PostgreSQL)
@@ -38,6 +38,7 @@ Rate limiting is configured per action type:
 | `PasswordReset` | Password reset requests | 1 request/60sec | 3 requests |
 | `FileUpload` | File upload requests | 1 request/10sec | 5 requests |
 | `FormSubmission` | Form submissions | 1 request/30sec | 10 requests |
+| `PublicApiRead` | Public read-only API requests | 1 request/sec | 60 requests |
 
 ## In-Memory Rate Limiting
 
@@ -63,6 +64,9 @@ RATE_LIMITER_FILE_UPLOAD_BURST=5
 
 RATE_LIMITER_FORM_SUBMISSION_RATE_SECONDS=30
 RATE_LIMITER_FORM_SUBMISSION_BURST=10
+
+RATE_LIMITER_PUBLIC_API_READ_RATE_SECONDS=1
+RATE_LIMITER_PUBLIC_API_READ_BURST=60
 ```
 
 ### Pros

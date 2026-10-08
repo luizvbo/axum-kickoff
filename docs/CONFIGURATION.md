@@ -1,6 +1,6 @@
 # Configuration
 
-This document provides a complete reference for configuring axum-kickoff.
+This document provides a complete reference for configuring {{project-name}}.
 
 ## Overview
 
@@ -17,7 +17,7 @@ Configuration is managed through environment variables. The application reads th
 
 3. Start the application:
    ```bash
-   cargo run --bin server
+   cargo run --bin {{project-name}} -- server
    ```
 
 ## Required Configuration
@@ -25,7 +25,7 @@ Configuration is managed through environment variables. The application reads th
 ### Database
 
 ```bash
-DATABASE_URL=sqlite:./axum_kickoff.db
+DATABASE_URL=sqlite:./{{crate_name}}.db
 ```
 
 **Options:**
@@ -33,7 +33,7 @@ DATABASE_URL=sqlite:./axum_kickoff.db
 - SQLite in-memory: `sqlite::memory:`
 - PostgreSQL: `postgresql://user:password@host:port/database`
 
-**Default:** `sqlite:./axum_kickoff.db`
+**Default:** `sqlite:./{{crate_name}}.db`
 
 ### Session Key
 
@@ -92,23 +92,42 @@ The IP address to bind to.
 
 **Default:** `127.0.0.1`
 
-### Worker Threads
+### Async Worker Threads
 
 ```bash
-SERVER_THREADS=4
+SERVER_CORE_THREADS=4
 ```
 
-Number of worker threads for the Tokio runtime. Leave unset for default (number of CPU cores).
+Number of async worker threads for the Tokio runtime (`worker_threads`).
+
+**Default:** the number of available CPU cores (Tokio's built-in default).
 
 ### Max Blocking Threads
 
 ```bash
-MAX_BLOCKING_THREADS=512
+SERVER_THREADS=512
 ```
 
-Maximum number of blocking threads for blocking operations (e.g., file I/O). Leave unset for default.
+Maximum number of blocking threads for `spawn_blocking` work (e.g., file I/O).
+Despite the name, `SERVER_THREADS` does *not* configure async worker threads —
+use `SERVER_CORE_THREADS` for that.
+
+**Default:** `512` (Tokio's built-in default).
 
 ## Environment Detection
+
+### Application Environment
+
+```bash
+APP_ENV=development
+```
+
+One of `development`, `test`, or `production`.
+
+**Default:** `production` (secure-by-default — an unset variable never enables
+development behavior). Set `APP_ENV=development` for local work to enable the
+`/debug` route, non-Secure cookies, and pretty logs. Set `APP_ENV=test` when
+running the application against the `TEST_DATABASE_URL` database.
 
 ### Heroku
 
@@ -116,7 +135,9 @@ Maximum number of blocking threads for blocking operations (e.g., file I/O). Lea
 HEROKU=1
 ```
 
-Set to any value to indicate running on Heroku. This sets the environment to `Production`.
+Set to any value to indicate running on Heroku. This adjusts the bind address
+and Postgres `sslmode`; it does not select the environment — `APP_ENV` does,
+and already defaults to `production`.
 
 ### Docker
 
@@ -220,6 +241,33 @@ RATE_LIMITER_FORM_SUBMISSION_RATE_SECONDS=30
 RATE_LIMITER_FORM_SUBMISSION_BURST=10
 ```
 
+### Public API Read Rate Limiting
+
+```bash
+RATE_LIMITER_PUBLIC_API_READ_RATE_SECONDS=1
+RATE_LIMITER_PUBLIC_API_READ_BURST=60
+```
+
+Applies to anonymous/authenticated reads on the public API (`GET /api/v1/posts`,
+`GET /api/v1/posts/{id}`). Anonymous buckets are keyed by client IP.
+
+### Client IP and Anonymous Buckets
+
+Anonymous rate-limit buckets are keyed on the client IP address resolved by the
+`real_ip` middleware, which honors forwarding headers (`X-Forwarded-For`,
+`X-Real-Ip`) only when the direct peer is listed in `TRUSTED_PROXIES`:
+
+```bash
+TRUSTED_PROXIES=127.0.0.1/32,::1/128,10.0.0.0/8
+```
+
+**Warning:** if `TRUSTED_PROXIES` does not cover your reverse proxy or CDN —
+or, conversely, trusts a range too broad — every anonymous client collapses
+into a single shared bucket (either the proxy's IP or a spoofed address). Once
+that bucket is exhausted, *all* anonymous traffic gets `429 Too Many Requests`.
+Verify that the logged `network.client.ip` matches real client addresses when
+deploying behind a proxy.
+
 ## Security Configuration
 
 ### Blocked IPs
@@ -236,7 +284,10 @@ Comma-separated list of blocked IP addresses.
 BLOCKED_ROUTES=/api/admin,/api/internal
 ```
 
-Comma-separated list of blocked route patterns.
+Comma-separated list of blocked route patterns. Entries are compared against
+axum route templates (`MatchedPath`), not literal request paths — write
+`/api/v1/posts/{id}` to block every post id; `/api/v1/posts/1` would never
+match. Blocked routes return `503 Service Unavailable`.
 
 ### Blocked Traffic by Headers
 
@@ -347,7 +398,7 @@ Set the logging level using the `RUST_LOG` environment variable.
 ### Module-Specific Logging
 
 ```bash
-RUST_LOG=axum_kickoff=debug,tower_http=info
+RUST_LOG={{crate_name}}=debug,tower_http=info
 ```
 
 Set different log levels for specific modules.
@@ -367,10 +418,19 @@ Database URL for tests. Defaults to in-memory SQLite if not set.
 ### Metrics
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
-Enable Prometheus metrics endpoint at `/metrics`.
+Enable Prometheus metrics endpoint at `/metrics` (and `/api/private/metrics`).
+
+```bash
+METRICS_TOKEN=<bearer-token>
+```
+
+**Warning:** when `METRICS_TOKEN` is unset, the metrics endpoints are
+**publicly readable** — they run outside the session/auth middleware subtree
+by design. In production, either set `METRICS_TOKEN` (requests then need
+`Authorization: Bearer <token>`) or restrict `/metrics` at your reverse proxy.
 
 ## Configuration Files
 
@@ -406,7 +466,7 @@ For production deployment, ensure you have:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://user:password@db.example.com:5432/axum_kickoff
+DATABASE_URL=postgresql://user:password@db.example.com:5432/{{crate_name}}
 
 # Session
 SESSION_KEY=<generate-secure-64-byte-key>
@@ -425,7 +485,7 @@ GH_REDIRECT_URI=https://example.com/api/v1/auth/github/callback
 WEB_ALLOWED_ORIGINS=https://example.com
 
 # Storage
-STORAGE_PATH=/var/lib/axum-kickoff/uploads
+STORAGE_PATH=/var/lib/{{project-name}}/uploads
 CDN_PREFIX=cdn.example.com
 
 # Security
@@ -453,7 +513,7 @@ RUST_LOG=info
 
 ```bash
 # Database
-DATABASE_URL=sqlite:./axum_kickoff.db
+DATABASE_URL=sqlite:./{{crate_name}}.db
 
 # Session
 SESSION_KEY=dev-session-key-for-local-development-only

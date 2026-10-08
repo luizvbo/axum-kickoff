@@ -1,8 +1,12 @@
 //! Base configuration options
 //!
 //! - `APP_ENV`: The environment the application is running in. May be
-//!   `development`, `test`, or `production`.
-//! - `HEROKU`: Legacy fallback that sets `production` when any value is present.
+//!   `development`, `test`, or `production`. Defaults to `production` when
+//!   unset so that a deployment missing the variable fails secure — set
+//!   `APP_ENV=development` for local development.
+//! - `HEROKU`: Legacy hint still read elsewhere (bind address, Postgres
+//!   `sslmode`); it no longer affects env detection since `production` is
+//!   the default.
 
 use crate::Env;
 
@@ -20,10 +24,10 @@ impl Base {
                 "production" => Env::Production,
                 _ => anyhow::bail!("APP_ENV must be `development`, `test`, or `production`"),
             },
-            None => match crate::config::env::var("HEROKU")? {
-                Some(_) => Env::Production,
-                None => Env::Development,
-            },
+            // Secure-by-default: an unset APP_ENV must not silently enable
+            // development behavior (debug routes, non-Secure cookies, no
+            // HSTS, pretty logs).
+            None => Env::Production,
         };
 
         Ok(Self { env })
@@ -57,14 +61,14 @@ mod tests {
     }
 
     #[test]
-    fn test_from_environment_development() {
+    fn test_from_environment_defaults_to_production() {
         let _guard = ENV_LOCK.lock();
         let original_app_env = std::env::var("APP_ENV").ok();
         let original_heroku = std::env::var("HEROKU").ok();
         remove_app_env_and_heroku();
 
         let base = Base::from_environment().expect("Failed to create Base config");
-        assert_eq!(base.env, Env::Development);
+        assert_eq!(base.env, Env::Production);
 
         restore_app_env_and_heroku(original_app_env, original_heroku);
     }

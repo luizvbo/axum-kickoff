@@ -1,6 +1,6 @@
 # Development
 
-This guide covers development workflow, coding standards, and contribution guidelines for axum-kickoff.
+This guide covers development workflow, coding standards, and contribution guidelines for {{project-name}}.
 
 ## Development Environment
 
@@ -15,8 +15,8 @@ This guide covers development workflow, coding standards, and contribution guide
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/luizvbo/axum-kickoff.git
-   cd axum-kickoff
+   git clone https://github.com/your-org/{{project-name}}.git
+   cd {{project-name}}
    ```
 
 2. Install dependencies:
@@ -32,16 +32,16 @@ This guide covers development workflow, coding standards, and contribution guide
 
 4. Run the server:
    ```bash
-   cargo run --bin server
+   cargo run --bin {{project-name}} -- server
    ```
 
 ## Project Structure
 
 ```
-axum-kickoff/
+{{project-name}}/
 ├── src/
 │   ├── bin/              # Binary entry points
-│   │   └── server.rs     # Main server binary
+│   │   └── main.rs       # Binary entry point (server, background-worker, migrate)
 │   ├── controllers/      # HTTP request handlers
 │   │   ├── auth.rs      # Authentication endpoints
 │   │   └── token.rs     # API token management
@@ -215,7 +215,7 @@ cargo insta accept
 Use the test infrastructure in `src/tests/`:
 
 ```rust
-use axum_kickoff::tests::{TestApp, AnonymousUser};
+use {{crate_name}}::tests::{TestApp, AnonymousUser};
 use http::StatusCode;
 
 #[tokio::test]
@@ -240,7 +240,7 @@ Database models are defined in `src/models/` using Toasty macros. The schema is 
 
 ```bash
 # Generate models from schema
-cargo run --bin toasty
+cargo run --bin {{project-name}} -- migrate migration generate
 ```
 
 ### Manual Database Changes
@@ -332,7 +332,7 @@ Use profiling tools to identify bottlenecks:
 cargo install flamegraph
 
 # Generate flamegraph
-cargo flamegraph --bin server
+cargo flamegraph --bin {{project-name}} -- server
 ```
 
 ### Database Optimization
@@ -407,7 +407,7 @@ pub async fn my_handler(State(app): State<AppState>) -> AppResult<()> {
 cargo build
 
 # Run with debug logging
-RUST_LOG=debug cargo run --bin server
+RUST_LOG=debug cargo run --bin {{project-name}} -- server
 ```
 
 ### Common Issues
@@ -473,6 +473,43 @@ The project uses GitHub Actions for CI. See `.github/workflows/ci.yml` for confi
 - Follow coding standards
 - Write clear commit messages
 - Be responsive to code review feedback
+
+## Working on this template
+
+> This section applies to the **template repository** itself, not to projects
+> generated from it. Generated projects can ignore it.
+
+This repository is a cargo-generate template. Two consequences matter for
+development:
+
+1. **The source tree does not compile.** `Cargo.toml` and several `src/` files
+   contain Liquid placeholders and conditionals, so `cargo` and `rustfmt`
+   cannot parse the checkout. This is intentional — all verification happens on
+   *rendered* output. The workflow is: edit source → render → verify the
+   rendered project:
+   ```bash
+   cargo generate --path . --name test-app \
+     --destination /tmp/render --vcs none --silent
+   cd /tmp/render/test-app && cargo check && cargo test && cargo fmt --check
+   ```
+   `.github/workflows/template-ci.yml` automates this for the option matrix and
+   is the source of truth for "the template works".
+2. **The exclude boundary is strict.** Files under `exclude` in
+   `cargo-generate.toml` are copied byte-for-byte with no Liquid processing —
+   `templates/` (Askama uses the same delimiters), `.github/` (Actions
+   expressions), `static/` (vendored JS), and the docs showing literal template
+   syntax. Process *nothing* that doesn't need a substitution; if a file needs
+   no placeholders it belongs in `exclude` or ships raw Liquid for no reason.
+
+Because the checkout doesn't parse, the pre-commit hooks that invoke cargo
+(`rustfmt`, `clippy`, `doc`, `deny`, `machete` in `prek.toml`) cannot run in
+the template repository — `SKIP` them when committing template changes and rely
+on the render CI. `cargo fmt`/`clippy`/`doc`/`test`/`deny`/`machete`/`audit`
+all run against rendered output in `template-ci.yml`.
+
+For the full mechanism reference — placeholder list, tag-placement rules,
+conditional-file handling — see [docs/TEMPLATE.md](TEMPLATE.md) (template
+repository only; not shipped to generated projects).
 
 ## Resources
 

@@ -1,35 +1,34 @@
-# axum-kickoff
+# {{project-name}}
 
-A production-ready Rust web application starter template built on [Axum](https://github.com/tokio-rs/axum), following best practices from the [crates.io](https://github.com/rust-lang/crates.io) backend implementation.
+A production-ready Rust web application built on [Axum](https://github.com/tokio-rs/axum), following best practices from the [crates.io](https://github.com/rust-lang/crates.io) backend implementation.
+
+> Generated with [cargo-generate](https://github.com/cargo-generate/cargo-generate) from
+> [axum-kickoff](https://github.com/luizvbo/axum-kickoff).
 
 ## Features
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
-- **Database**: Toasty ORM with SQLite (zero-setup) with PostgreSQL migration path
+- **Database**: Toasty ORM with SQLite (zero-setup) or PostgreSQL
 - **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens
 - **Frontend**: Server-side rendering with Askama, HTMX, and Alpine.js
-- **Security**: Comprehensive middleware (security headers, rate limiting, etc.)
-- **Observability**: Structured logging with tracing
+- **Security**: Comprehensive middleware (security headers, rate limiting, CSRF, etc.)
 - **Testing**: Integration test infrastructure with snapshot testing
 - **Storage**: Local filesystem storage (pluggable architecture for future backends)
-- **Cost-Conscious**: Designed for self-hosting with minimal external dependencies
+- **Background Jobs**: Built-in worker for async job processing
+- **API Docs**: OpenAPI/Swagger UI out of the box (utoipa)
+- **Optional subsystems** (selected at generation time): Prometheus metrics, Sentry error reporting, jemalloc allocator
 
 ## Quick Start
 
 ### Prerequisites
 
 - Rust (see `rust-toolchain.toml` for pinned version)
-- SQLite (for development)
 - [just](https://github.com/casey/just) (for running setup and other commands)
 - Node.js and npm (for vendoring frontend dependencies)
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/luizvbo/axum-kickoff.git
-cd axum-kickoff
-
 # Install dependencies and vendor JS libraries (HTMX, Alpine.js)
 just setup
 
@@ -38,9 +37,11 @@ cp .env.sample .env
 
 # Edit .env with your configuration
 # Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY, WEB_ALLOWED_ORIGINS
+# For local development also keep APP_ENV=development (the default when unset
+# is production, which enables Secure cookies, JSON logs, and disables /debug)
 
 # Run the server
-cargo run --bin server
+cargo run --bin {{project-name}} -- server
 ```
 
 The server will start on `http://localhost:8888` by default.
@@ -50,12 +51,15 @@ The server will start on `http://localhost:8888` by default.
 Set the following environment variables in `.env`:
 
 ```bash
+# Environment (defaults to production when unset)
+APP_ENV=development
+
 # Server
 PORT=8888
 DOMAIN_NAME=localhost
 
 # Database
-DATABASE_URL=sqlite:axum-kickoff.db
+DATABASE_URL=sqlite:./{{crate_name}}.db
 
 # Session
 SESSION_KEY=your-secret-key-min-64-bytes
@@ -73,6 +77,47 @@ STORAGE_PATH=./local_uploads
 ```
 
 See [Configuration Documentation](docs/CONFIGURATION.md) for all available options.
+
+## Using this repository as a template
+
+This repository is a [cargo-generate](https://github.com/cargo-generate/cargo-generate) template:
+
+```bash
+cargo install cargo-generate
+cargo generate --git https://github.com/luizvbo/axum-kickoff --name my-app
+```
+
+You'll be prompted for the options below (or pass `-d <key>=<value>` to skip prompts):
+
+| Option | Values | Default | Effect |
+| ------ | ------ | ------- | ------ |
+| `project-name` | any crate-safe name | asked once | Package name, binary name, session cookie (`<crate_name>_session`), default SQLite file (`<crate_name>.db`), PostgreSQL `application_name`, API title, user-agent strings, and the on-page application branding |
+| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way — the test suite uses in-memory SQLite regardless |
+| `metrics` | `true` / `false` | `false` | Adds the `prometheus` dependency, a `metrics` feature in `default`, the `/metrics` endpoint, and request instrumentation middleware |
+| `sentry` | `true` / `false` | `false` | Adds `sentry` + `sentry-tracing` dependencies and feature, error-event capture via the tracing layer, and `SENTRY_DSN` support |
+| `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |
+
+The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
+unconditional parts of the application — they are not template options.
+
+> **PostgreSQL note**: the checked-in migrations under `migrations/` are written
+> in SQLite dialect (`AUTOINCREMENT`). When `database=postgresql` is selected
+> the Postgres driver is compiled in and `DATABASE_URL` defaults to Postgres,
+> but the migration SQL must be adapted for PostgreSQL before `migrate` will
+> run against a real Postgres database. The test suite is unaffected — it runs
+> on in-memory SQLite.
+
+### Non-interactive generation
+
+```bash
+cargo generate --git https://github.com/luizvbo/axum-kickoff \
+  --name my-app --silent \
+  -d database=postgresql -d metrics=true -d sentry=true -d jemalloc=true
+```
+
+See the "Working on this template" section in
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how the template itself is
+developed and verified.
 
 ## Documentation
 
@@ -95,7 +140,7 @@ See [Configuration Documentation](docs/CONFIGURATION.md) for all available optio
 ## Project Structure
 
 ```
-axum-kickoff/
+{{project-name}}/
 ├── src/
 │   ├── bin/           # Binary entry points
 │   ├── controllers/   # HTTP request handlers
@@ -111,65 +156,6 @@ axum-kickoff/
 └── Cargo.toml        # Dependencies
 ```
 
-## Key Components
-
-### Authentication System
-
-- **GitHub OAuth**: Seamless integration with GitHub authentication
-- **Session Management**: Secure cookie-based sessions with signed cookies
-- **API Tokens**: Scoped API tokens with fine-grained permissions (read, create, update, delete, admin)
-- **Token Scopes**: Resource-level and endpoint-level access control
-
-See [Authentication Documentation](docs/AUTHENTICATION.md) for details.
-
-### Rate Limiting
-
-- **In-Memory**: Token bucket algorithm for single-instance deployments
-- **Database-Backed**: Optional SQLite/PostgreSQL backend for distributed systems
-- **Redis Upgrade Path**: Optional Redis backend for high-throughput scenarios
-- **Per-Action Limits**: Different limits for API requests, login attempts, file uploads, etc.
-
-See [Rate Limiting Documentation](docs/RATE_LIMITING.md) for details.
-
-### Storage Abstraction
-
-- **Local Filesystem**: Default for development
-- **S3 Compatible**: AWS S3, MinIO, DigitalOcean Spaces, etc.
-- **In-Memory**: For testing
-- **Pluggable**: Easy to add custom backends
-
-See [Storage Documentation](docs/STORAGE.md) for details.
-
-### Middleware Stack
-
-| Component                      | Description                                                          | Status                                                                                |
-| ------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| GitHub OAuth                   | Authenticate users via GitHub OAuth                                  | Implemented                                                                           |
-| Session Management             | Secure cookie-based sessions for user authentication                 | Implemented                                                                           |
-| Security Headers               | HTTP security headers (CSP, HSTS, X-Frame-Options, etc.)             | Implemented                                                                           |
-| Request Logging                | Structured logging of all HTTP requests                              | Implemented                                                                           |
-| Error Handling                 | Centralized error handling and response formatting                   | Implemented                                                                           |
-| Real IP Extraction             | Extract client IP from headers (X-Forwarded-For, etc.)               | Implemented                                                                           |
-| User Agent Validation          | Validate User-Agent header to block malicious bots                   | Implemented                                                                           |
-| API Token Creation/List/Revoke | Manage scoped API tokens for programmatic access                     | Implemented                                                                           |
-| API Token Auth Middleware      | Authenticate requests via Bearer tokens with scope validation        | Implemented (with CurrentUser/CurrentAuth extractors)                                 |
-| Rate Limiting                  | Limit request rate to prevent abuse and DoS attacks                  | Core implemented / not applied globally                                               |
-| Traffic Blocking               | Block requests from malicious IPs or patterns                        | Infrastructure exists / not wired globally                                            |
-| CSRF Protection                | Prevent Cross-Site Request Forgery attacks on forms                  | Implemented (split middleware: csrf_protect, require_session_user, require_api_token) |
-| CORS                           | Cross-Origin Resource Sharing for frontend-backend communication     | Implemented                                                                           |
-| Metrics Endpoint               | Prometheus metrics for monitoring and observability                  | Feature-gated / partial                                                               |
-| S3 Storage                     | Object storage backend for file uploads (AWS S3, MinIO, etc.)        | Planned                                                                               |
-| Redis Rate Limiting            | Distributed rate limiting using Redis for multi-instance deployments | Planned                                                                               |
-| Database-backed Rate Limiting  | Persistent rate limiting using SQLite/PostgreSQL                     | Planned                                                                               |
-| QuickWit Integration           | Self-hosted error tracking and log aggregation                       | Planned                                                                               |
-| OpenAPI                        | Auto-generated API documentation (Swagger/OpenAPI)                   | Planned                                                                               |
-| Background Worker              | Async job processing for tasks like email, webhooks                  | Planned                                                                               |
-| Email System                   | Transactional email sending (SMTP, SendGrid, etc.)                   | Planned                                                                               |
-| Webhooks                       | Webhook delivery for event notifications                             | Planned                                                                               |
-| Read Replicas                  | Database read replicas for scaling read-heavy workloads              | Planned                                                                               |
-
-See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
-
 ## Development
 
 ### Running Tests
@@ -178,58 +164,23 @@ See [Middleware Documentation](docs/MIDDLEWARE.md) for details.
 # Run all tests
 cargo test
 
-# Run integration tests
-cargo test --test '*'
-
 # Accept snapshot changes
 cargo insta accept
 ```
 
-### Code Generation
+### Database Migrations
 
 ```bash
-# Generate database models from Toasty schema
-cargo run --bin toasty
+# Apply pending migrations
+cargo run --bin {{project-name}} -- migrate migration apply
+
+# Generate a new migration after model changes
+cargo run --bin {{project-name}} -- migrate migration generate
 ```
-
-### Feature Flags
-
-- `metrics`: Enable Prometheus metrics endpoint
-
-```bash
-# Run with metrics
-cargo run --bin server --features metrics
-```
-
-## Deployment
-
-### Docker
-
-```dockerfile
-FROM rust:1.70 as builder
-WORKDIR /app
-COPY . .
-RUN cargo build --release
-
-FROM debian:bookworm-slim
-COPY --from=builder /app/target/release/server /usr/local/bin/
-EXPOSE 3000
-CMD ["server"]
-```
-
-### Environment Variables
-
-See [Deployment Documentation](docs/DEPLOYMENT.md) for production deployment guides including:
-
-- Docker deployment
-- Systemd service configuration
-- Nginx reverse proxy setup
-- PostgreSQL migration
-- Production security considerations
 
 ## Philosophy
 
-axum-kickoff is designed with these principles:
+{{project-name}} is designed with these principles:
 
 1. **Simplicity First**: Single-crate architecture with clear module organization
 2. **Zero-Setup Development**: SQLite and local filesystem for instant start
@@ -237,22 +188,6 @@ axum-kickoff is designed with these principles:
 4. **Cost-Conscious**: Self-hostable with minimal external dependencies
 5. **Gradual Complexity**: Start simple, upgrade features as needed
 6. **Type Safety**: Leverage Rust's type system throughout
-
-## Comparison with crates.io
-
-This project adapts crates.io's production-grade patterns while simplifying for general web applications:
-
-- **Single-crate application** vs 25+ crate workspace
-- **Toasty/SQLite** vs Diesel/PostgreSQL (with migration path)
-- **HTMX/Alpine.js** vs SvelteKit SPA
-- **In-memory rate limiting** vs database-backed (with upgrade path)
-- **QuickWit** vs Sentry for error tracking (self-hosted alternative)
-
-See [Roadmap](docs/ROADMAP.md) for detailed comparison and implementation plans.
-
-## Contributing
-
-Contributions are welcome! Please see [Development Documentation](docs/DEVELOPMENT.md) for guidelines.
 
 ## License
 

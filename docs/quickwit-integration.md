@@ -6,10 +6,10 @@ Quickwit is a cloud-native search and analytics engine designed for log analytic
 
 ## Architecture
 
-The recommended architecture for using Quickwit with axum-kickoff:
+The recommended architecture for using Quickwit with {{project-name}}:
 
 ```
-Application (axum-kickoff) → JSON Logs → File/Stdout → Vector/Fluentbit → Quickwit
+Application ({{project-name}}) → JSON Logs → File/Stdout → Vector/Fluentbit → Quickwit
 ```
 
 This approach has several benefits:
@@ -22,7 +22,7 @@ This approach has several benefits:
 
 ### 1. Configure JSON Logging
 
-Update your `src/bin/server.rs` to output JSON logs:
+Update your `src/bin/main.rs` to output JSON logs:
 
 ```rust
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt};
@@ -70,7 +70,7 @@ Example `quickwit-index-config.yaml`:
 
 ```yaml
 version: 0.8
-index_id: axum-kickoff-logs
+index_id: {{project-name}}-logs
 doc_mapping:
   field_mappings:
     - name: timestamp
@@ -104,7 +104,7 @@ Install and configure Vector to collect logs and send them to Quickwit:
 # vector.toml
 [sources.file]
 type = "file"
-include = ["/var/log/axum-kickoff/*.log"]
+include = ["/var/log/{{project-name}}/*.log"]
 read_from = "beginning"
 
 [transforms.parse_json]
@@ -118,7 +118,7 @@ source = """
 [sinks.quickwit]
 type = "http"
 inputs = ["parse_json"]
-uri = "http://localhost:7280/api/v1/indexes/axum-kickoff-logs/ingest"
+uri = "http://localhost:7280/api/v1/indexes/{{project-name}}-logs/ingest"
 encoding.json = true
 compression = "gzip"
 batch.max_events = 100
@@ -133,8 +133,8 @@ quickwit run
 
 # Ingest logs from file
 quickwit index ingest \
-  --index axum-kickoff-logs \
-  --input-file /var/log/axum-kickoff/app.log
+  --index {{project-name}}-logs \
+  --input-file /var/log/{{project-name}}/app.log
 ```
 
 ### 6. Query Logs
@@ -142,17 +142,17 @@ quickwit index ingest \
 ```bash
 # Search for errors
 quickwit index search \
-  --index axum-kickoff-logs \
+  --index {{project-name}}-logs \
   --query "level:ERROR"
 
 # Search for specific endpoint
 quickwit index search \
-  --index axum-kickoff-logs \
+  --index {{project-name}}-logs \
   --query "message:\"POST /api/users\""
 
 # Aggregate by level
 quickwit index search \
-  --index axum-kickoff-logs \
+  --index {{project-name}}-logs \
   --query "*" \
   --aggs "level:terms(level)"
 ```
@@ -169,7 +169,7 @@ export RUST_LOG=info
 export LOG_FORMAT=json
 
 # Log file path (if writing to file)
-export LOG_FILE=/var/log/axum-kickoff/app.log
+export LOG_FILE=/var/log/{{project-name}}/app.log
 ```
 
 ## OpenTelemetry Integration
@@ -182,7 +182,7 @@ opentelemetry = { version = "0.27", features = ["trace"] }
 opentelemetry-jaeger = { version = "0.27", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.27"
 
-// In src/bin/server.rs
+// In src/bin/main.rs
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_jaeger::new_pipeline;
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -190,7 +190,7 @@ use tracing_opentelemetry::OpenTelemetryLayer;
 fn main() -> anyhow::Result<()> {
     // Initialize OpenTelemetry
     let tracer = new_pipeline()
-        .with_service_name("axum-kickoff")
+        .with_service_name("{{project-name}}")
         .install_simple()?;
 
     tracing_subscriber::registry()
@@ -217,10 +217,10 @@ Set up monitoring on your Quickwit instance:
 
 ```bash
 # Check index health
-quickwit index describe --index axum-kickoff-logs
+quickwit index describe --index {{project-name}}-logs
 
 # Monitor ingestion rate
-quickwit index search --index axum-kickoff-logs --query "*" --aggs "timestamp:histogram(timestamp,interval=1h)"
+quickwit index search --index {{project-name}}-logs --query "*" --aggs "timestamp:histogram(timestamp,interval=1h)"
 ```
 
 ## Production Considerations

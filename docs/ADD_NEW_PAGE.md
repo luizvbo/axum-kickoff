@@ -1,6 +1,6 @@
 # Add a New Page
 
-This guide shows you how to add a new page to your axum-kickoff application.
+This guide shows you how to add a new page to your application.
 
 ## Overview
 
@@ -134,7 +134,7 @@ pub struct AboutTemplate {
 Start the server and visit your new page:
 
 ```bash
-cargo run --bin server
+cargo run --bin {{project-name}} -- server
 ```
 
 Navigate to `http://localhost:8888/about` in your browser.
@@ -151,7 +151,7 @@ pub async fn about_page(
 
     // Fetch data using Toasty
     let users = User::all().exec(&mut db).await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(HtmlTemplate(AboutTemplate {
         user_count: users.len(),

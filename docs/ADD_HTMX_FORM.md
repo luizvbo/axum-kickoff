@@ -130,7 +130,7 @@ use serde::Deserialize;
 use crate::app::AppState;
 use crate::middleware::auth::CurrentUser;
 use crate::models::Post;
-use crate::util::errors::{bad_request, server_error, AppResult};
+use crate::util::errors::{db_error, AppResult};
 use crate::templates::HtmlTemplate;
 
 #[derive(Deserialize)]
@@ -186,7 +186,7 @@ pub async fn create_post(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(db_error)?;
 
     // Return success message or redirect
     Ok(Html(r#"

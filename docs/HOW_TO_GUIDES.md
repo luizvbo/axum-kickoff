@@ -1,6 +1,6 @@
 # How-to Guides
 
-This section contains practical guides for common tasks when building with axum-kickoff.
+This section contains practical guides for common tasks when building with {{project-name}}.
 
 ## Guides
 
@@ -19,7 +19,7 @@ This section contains practical guides for common tasks when building with axum-
 
 ### Creating a new feature
 1. Define your model in `src/models/`
-2. Run `cargo run --bin toasty` to generate database code
+2. Run `cargo run --bin {{project-name}} -- migrate migration generate` to generate database code
 3. Create a controller in `src/controllers/`
 4. Add routes in `src/router.rs`
 5. Create templates in `templates/`
@@ -49,7 +49,7 @@ pub async fn list_items(
     let items = Item::all()
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(Json(items))
 }
@@ -69,7 +69,7 @@ pub async fn create_item(
     })
     .exec(&mut db)
     .await
-    .map_err(|e| server_error(e.to_string()))?;
+    .map_err(db_error)?;
 
     Ok(Json(item))
 }

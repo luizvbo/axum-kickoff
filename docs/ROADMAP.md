@@ -1,10 +1,10 @@
 # Roadmap
 
-This document outlines the development roadmap for axum-kickoff, including planned features, improvements, and implementation priorities.
+This document outlines the development roadmap for {{project-name}}, including planned features, improvements, and implementation priorities.
 
 ## Overview
 
-axum-kickoff is a production-ready Rust web application starter template. This roadmap prioritizes features that provide universal value for web applications while maintaining simplicity and cost-consciousness.
+{{project-name}} is a production-ready Rust web application starter template. This roadmap prioritizes features that provide universal value for web applications while maintaining simplicity and cost-consciousness.
 
 ## Philosophy
 
@@ -28,7 +28,9 @@ The roadmap follows these principles:
 - **Testing**: Integration test infrastructure with snapshot testing
 - **Configuration**: Environment-based configuration
 - **Error Handling**: Structured error handling with AppError
-- **Rate Limiting**: In-memory token bucket algorithm
+- **Rate Limiting**: Database-backed token bucket algorithm (SQLite/PostgreSQL), applied to sensitive routes
+- **Background Worker**: Database-backed job queue with retries (`src/worker/`)
+- **OpenAPI**: Auto-generated API documentation via utoipa (`/swagger-ui`)
 
 ## Planned Features
 
@@ -133,7 +135,7 @@ The roadmap follows these principles:
 
 #### 6. Background Worker System
 
-**Status**: Not implemented
+**Status**: Implemented
 
 **What to Implement**:
 - Simple job queue (database-backed or in-memory)
@@ -233,7 +235,7 @@ The roadmap follows these principles:
 
 #### 11. OpenAPI Documentation
 
-**Status**: Not implemented
+**Status**: Implemented
 
 **What to Implement**:
 - Auto-generated OpenAPI spec with utoipa
@@ -360,7 +362,7 @@ The following components from crates.io are domain-specific and should NOT be im
 
 ## Alternative Approaches
 
-These components have cost-conscious alternatives in axum-kickoff:
+These components have cost-conscious alternatives in {{project-name}}:
 
 - **Sentry error tracking**: Use QuickWit instead (documented in `docs/quickwit-integration.md`)
 - **Separate frontend**: Use HTMX + Alpine.js instead of SvelteKit

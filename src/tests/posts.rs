@@ -98,12 +98,14 @@ async fn list_posts_returns_user_posts() {
     cookie_user
         .app()
         .post_builder(user_id, "Post 1")
+        .published(true)
         .build(&mut db)
         .await
         .expect("Failed to create post 1");
     cookie_user
         .app()
         .post_builder(user_id, "Post 2")
+        .published(true)
         .build(&mut db)
         .await
         .expect("Failed to create post 2");
@@ -115,6 +117,71 @@ async fn list_posts_returns_user_posts() {
     let body = response.into_json::<Value>().await;
     let data = body["data"].as_array().expect("data should be an array");
     assert_eq!(data.len(), 2);
+}
+
+#[tokio::test]
+async fn list_posts_excludes_unpublished_drafts() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("draft_author")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    app.post_builder(user.id, "Published Post")
+        .published(true)
+        .build(&mut db)
+        .await
+        .expect("Failed to create published post");
+    app.post_builder(user.id, "Draft Post")
+        .build(&mut db)
+        .await
+        .expect("Failed to create draft post");
+
+    // Anonymous callers hit the same public endpoint — drafts must not leak.
+    let anon = crate::tests::AnonymousUser::new(app);
+    let response = anon.get::<Value>("/api/v1/posts").await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body = response.into_json::<Value>().await;
+    let data = body["data"].as_array().expect("data should be an array");
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["title"], "Published Post");
+}
+
+/// Pagination is only stable if the list has a deterministic order: newest
+/// posts first (created_at DESC, id DESC as tie-breaker).
+#[tokio::test]
+async fn list_posts_returns_newest_first() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("ordering_author")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    for title in ["Oldest", "Middle", "Newest"] {
+        app.post_builder(user.id, title)
+            .published(true)
+            .build(&mut db)
+            .await
+            .expect("Failed to create post");
+    }
+
+    let anon = crate::tests::AnonymousUser::new(app);
+    let response = anon.get::<Value>("/api/v1/posts").await;
+
+    response.assert_status(StatusCode::OK);
+
+    let body = response.into_json::<Value>().await;
+    let data = body["data"].as_array().expect("data should be an array");
+    let titles: Vec<&str> = data.iter().map(|p| p["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["Newest", "Middle", "Oldest"]);
 }
 
 #[tokio::test]
@@ -136,10 +203,12 @@ async fn list_posts_returns_all_posts() {
 
     // Create posts for both users
     app.post_builder(user1.id, "User1 Post")
+        .published(true)
         .build(&mut db)
         .await
         .expect("Failed to create post for user1");
     app.post_builder(user2.id, "User2 Post")
+        .published(true)
         .build(&mut db)
         .await
         .expect("Failed to create post for user2");
@@ -166,6 +235,7 @@ async fn show_post_returns_post_details() {
         .app()
         .post_builder(user_id, "Show Me")
         .content("Detailed content")
+        .published(true)
         .build(&mut db)
         .await
         .expect("Failed to create post");
@@ -204,6 +274,7 @@ async fn show_post_returns_public_post_details() {
 
     let post = app
         .post_builder(user1.id, "Owner's Post")
+        .published(true)
         .build(&mut db)
         .await
         .expect("Failed to create post");
@@ -221,6 +292,34 @@ async fn show_post_returns_public_post_details() {
     let body = response.into_json::<Value>().await;
     let data = &body["data"];
     assert_eq!(data["title"], "Owner's Post");
+}
+
+/// Drafts are private: the public show endpoint must not serve unpublished
+/// posts, even to the author (only the authenticated mutation routes are
+/// owner-scoped).
+#[tokio::test]
+async fn show_post_returns_404_for_unpublished_post() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("draft_owner")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let post = app
+        .post_builder(user.id, "Draft Post")
+        .build(&mut db)
+        .await
+        .expect("Failed to create post");
+
+    let anon = crate::tests::AnonymousUser::new(app);
+    let response = anon
+        .get::<Value>(&format!("/api/v1/posts/{}", post.id))
+        .await;
+
+    response.assert_status(StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

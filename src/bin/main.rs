@@ -1,5 +1,4 @@
 use anyhow::Result;
-use axum_kickoff::{build_handler, App};
 use clap::{Parser, Subcommand};
 use secrecy::ExposeSecret;
 use std::net::SocketAddr;
@@ -8,11 +7,11 @@ use toasty_cli::{Config as ToastyConfig, ToastyCli};
 use tokio::net::TcpListener;
 use tracing::info;
 
-const CORE_THREADS: usize = 4;
+use {{crate_name}}::{build_handler, App};
 
 #[derive(Parser)]
-#[command(name = "axum-kickoff")]
-#[command(about = "axum-kickoff - web server, background worker, and migrations")]
+#[command(name = "{{project-name}}")]
+#[command(about = "{{project-name}} - web server, background worker, and migrations")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -42,35 +41,26 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Server => {
-            let config = axum_kickoff::config::Server::from_environment()?;
-
+            let config = {{crate_name}}::config::Server::from_environment()?;
+{% if sentry %}
             // Initialize Sentry before the middleware stack so panics are
             // captured. The returned guard must be kept alive.
             #[cfg(feature = "sentry")]
-            let _sentry_guard = axum_kickoff::tracing::init_sentry(config.sentry_dsn.as_ref());
-
+            let _sentry_guard = {{crate_name}}::tracing::init_sentry(config.sentry_dsn.as_ref());
+{% endif %}
             // Set up the global tracing subscriber (pretty in dev/test, JSON
             // in production). When Sentry is enabled, this also attaches the
             // Sentry tracing layer. The LOG_FORMAT env var can override the
             // default for the environment.
-            axum_kickoff::tracing::init_tracing_with_format(config.env(), config.log_format);
+            {{crate_name}}::tracing::init_tracing_with_format(config.env(), config.log_format);
 
-            let mut builder = tokio::runtime::Builder::new_multi_thread();
-            builder.enable_all();
-            builder.worker_threads(CORE_THREADS);
-            if let Some(threads) = config.max_blocking_threads {
-                builder.max_blocking_threads(threads);
-            }
-
-            let rt = builder.build()?;
+            let rt = build_runtime(&config)?;
             rt.block_on(run_server(config))?;
         }
         Command::BackgroundWorker => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(CORE_THREADS)
-                .build()?;
-            rt.block_on(run_worker())?;
+            let config = {{crate_name}}::config::Server::from_environment()?;
+            let rt = build_runtime(&config)?;
+            rt.block_on(run_worker(config))?;
         }
         Command::Migrate { args } => {
             let rt = tokio::runtime::Runtime::new()?;
@@ -81,30 +71,47 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_worker() -> Result<()> {
-    let config = axum_kickoff::config::Server::from_environment()?;
+/// Build the multi-threaded Tokio runtime shared by `server` and
+/// `background-worker`.
+///
+/// Tokio already defaults `worker_threads` to the number of available CPU
+/// cores, so async workers are only pinned when `SERVER_CORE_THREADS` is set.
+/// `SERVER_THREADS` instead caps the blocking pool used by `spawn_blocking`
+/// (`max_blocking_threads`).
+fn build_runtime(config: &{{crate_name}}::config::Server) -> Result<tokio::runtime::Runtime> {
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.enable_all();
+    if let Some(threads) = config.core_threads {
+        builder.worker_threads(threads);
+    }
+    if let Some(threads) = config.max_blocking_threads {
+        builder.max_blocking_threads(threads);
+    }
+    Ok(builder.build()?)
+}
 
-    axum_kickoff::tracing::init_tracing_with_format(config.env(), config.log_format);
+async fn run_worker(config: {{crate_name}}::config::Server) -> Result<()> {
+    {{crate_name}}::tracing::init_tracing_with_format(config.env(), config.log_format);
 
-    let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
-    let database = axum_kickoff::db::Database::from_config(&db_config).await?;
+    let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
+    let database = {{crate_name}}::db::Database::from_config(&db_config).await?;
 
     let app = Arc::new(App::new(config, database)?);
 
-    axum_kickoff::worker::Runner::new(app)
+    {{crate_name}}::worker::Runner::new(app)
         .register_default_jobs()
         .run()
         .await
         .map_err(|e| anyhow::anyhow!("Worker error: {}", e))
 }
 
-async fn run_server(config: axum_kickoff::config::Server) -> Result<()> {
+async fn run_server(config: {{crate_name}}::config::Server) -> Result<()> {
     // Load database configuration
-    let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
+    let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
 
     // Initialize database connection
     info!("Connecting to database...");
-    let database = axum_kickoff::db::Database::from_config(&db_config).await?;
+    let database = {{crate_name}}::db::Database::from_config(&db_config).await?;
     info!("Database connected successfully");
 
     // Create the application instance
@@ -141,10 +148,10 @@ async fn run_migrate(args: Vec<String>) -> Result<()> {
     let config = ToastyConfig::load()?;
 
     // Load database configuration from environment
-    let db_config = axum_kickoff::config::DatabaseConfig::from_environment()?;
+    let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
 
     let db = toasty::Db::builder()
-        .models(toasty::models!(axum_kickoff::*))
+        .models(toasty::models!({{crate_name}}::*))
         .connect(db_config.connect_url()?.expose_secret())
         .await?;
 
@@ -199,22 +206,22 @@ async fn shutdown_signal() {
 mod tests {
     #[test]
     fn test_server_config_from_environment_compiles() {
-        let _ = || axum_kickoff::config::Server::from_environment;
+        let _ = || {{crate_name}}::config::Server::from_environment;
     }
 
     #[test]
     fn test_database_config_from_environment_compiles() {
-        let _ = || axum_kickoff::config::DatabaseConfig::from_environment;
+        let _ = || {{crate_name}}::config::DatabaseConfig::from_environment;
     }
 
     #[test]
     fn test_app_new_compiles() {
-        let _ = || axum_kickoff::App::new;
+        let _ = || {{crate_name}}::App::new;
     }
 
     #[test]
     fn test_build_handler_compiles() {
-        let _ = || axum_kickoff::build_handler;
+        let _ = || {{crate_name}}::build_handler;
     }
 
     #[test]

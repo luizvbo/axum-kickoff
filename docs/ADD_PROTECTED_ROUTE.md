@@ -98,7 +98,7 @@ Use the `CurrentUser` extractor in your protected route handler:
 use axum::extract::State;
 use crate::middleware::auth::CurrentUser;
 use crate::app::AppState;
-use crate::util::errors::AppResult;
+use crate::util::errors::{db_error, AppResult};
 use crate::templates::HtmlTemplate;
 
 pub async fn dashboard(
@@ -112,7 +112,7 @@ pub async fn dashboard(
     let posts = Post::filter(Post::fields().user_id().eq(user.id))
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(HtmlTemplate(DashboardTemplate {
         user,
@@ -209,7 +209,7 @@ use axum::extract::State;
 use crate::middleware::auth::CurrentUser;
 use crate::app::AppState;
 use crate::models::Post;
-use crate::util::errors::{server_error, AppResult};
+use crate::util::errors::{db_error, AppResult};
 use crate::templates::HtmlTemplate;
 
 pub async fn dashboard(
@@ -221,7 +221,7 @@ pub async fn dashboard(
     let posts = Post::filter(Post::fields().user_id().eq(user.id))
         .exec(&mut db)
         .await
-        .map_err(|e| server_error(e.to_string()))?;
+        .map_err(db_error)?;
 
     Ok(HtmlTemplate(DashboardTemplate {
         user: user.clone(),

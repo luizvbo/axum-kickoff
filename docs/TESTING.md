@@ -1,10 +1,10 @@
 # Testing
 
-This document covers testing strategies, conventions, and infrastructure for axum-kickoff.
+This document covers testing strategies, conventions, and infrastructure for {{project-name}}.
 
 ## Overview
 
-axum-kickoff uses a comprehensive testing approach including:
+{{project-name}} uses a comprehensive testing approach including:
 
 - **Unit Tests**: Test individual functions and modules
 - **Integration Tests**: Test HTTP endpoints and database interactions
@@ -20,7 +20,7 @@ The test infrastructure is located in `src/tests/` and provides:
 Creates a test-ready application with isolated database:
 
 ```rust
-use axum_kickoff::tests::TestApp;
+use {{crate_name}}::tests::TestApp;
 
 #[tokio::test]
 async fn test_example() {
@@ -40,7 +40,7 @@ async fn test_example() {
 Trait for making HTTP requests in tests:
 
 ```rust
-use axum_kickoff::tests::{TestApp, AnonymousUser};
+use {{crate_name}}::tests::{TestApp, AnonymousUser};
 
 #[tokio::test]
 async fn test_get_endpoint() {
@@ -66,7 +66,7 @@ async fn test_get_endpoint() {
 Wrapper around axum responses with helper methods:
 
 ```rust
-use axum_kickoff::tests::response::TestResponse;
+use {{crate_name}}::tests::response::TestResponse;
 
 let response = anon.get::<()>("/api/endpoint").await;
 
@@ -87,7 +87,7 @@ let content_type = response.content_type();
 Builder pattern for creating test data:
 
 ```rust
-use axum_kickoff::tests::builders::UserBuilder;
+use {{crate_name}}::tests::builders::UserBuilder;
 
 let user = UserBuilder::new()
     .with_github_login("testuser")
@@ -165,7 +165,7 @@ mod tests {
 Integration tests test HTTP endpoints:
 
 ```rust
-use axum_kickoff::tests::{TestApp, AnonymousUser};
+use {{crate_name}}::tests::{TestApp, AnonymousUser};
 use http::StatusCode;
 
 #[tokio::test]
@@ -183,7 +183,7 @@ async fn test_health_check() {
 Test with authenticated user:
 
 ```rust
-use axum_kickoff::tests::{TestApp, CookieUser};
+use {{crate_name}}::tests::{TestApp, CookieUser};
 
 #[tokio::test]
 async fn test_protected_endpoint() {
@@ -200,7 +200,7 @@ async fn test_protected_endpoint() {
 Snapshot tests validate API responses:
 
 ```rust
-use axum_kickoff::tests::{TestApp, AnonymousUser};
+use {{crate_name}}::tests::{TestApp, AnonymousUser};
 use insta::assert_json_snapshot;
 
 #[tokio::test]
@@ -396,7 +396,7 @@ If tests fail with database lock:
 
 ```bash
 # Clean up test databases
-rm -f /tmp/axum_kickoff_test_*.db
+rm -f /tmp/{{crate_name}}_test_*.db
 ```
 
 ### Snapshot Mismatches

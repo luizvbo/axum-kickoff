@@ -71,6 +71,28 @@ async fn github_callback_without_code_returns_error() {
 }
 
 #[tokio::test]
+async fn github_callback_with_error_param_returns_controlled_response() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    // GitHub redirects here without code/state when the user declines
+    // authorization: ?error=access_denied&error_description=...
+    let response = anon
+        .get::<serde_json::Value>(
+            "/api/v1/auth/github/callback?error=access_denied&error_description=denied",
+        )
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+
+    let body = response.into_string().await;
+    assert!(
+        body.contains("GitHub authorization was declined"),
+        "Expected friendly 'declined' message but got: {body}"
+    );
+}
+
+#[tokio::test]
 async fn github_callback_with_invalid_state_returns_error() {
     let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
@@ -105,8 +127,15 @@ async fn github_callback_with_invalid_state_returns_error() {
 #[tokio::test]
 async fn logout_clears_session() {
     let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+    let user = app
+        .user_builder("logout_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
     let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, 42, session_key);
+    let cookie_user = CookieUser::new(app, user.id, session_key);
     let csrf_token = cookie_user.init_csrf().await;
 
     let headers = cookie_user.headers_with_csrf(&csrf_token);
@@ -206,10 +235,10 @@ async fn forged_unsigned_session_cookie_is_rejected() {
     let encoded = crate::middleware::session::encode(&map);
 
     // Create an UNSIGNED cookie (no signature)
-    let cookie = cookie::Cookie::build(("axum_kickoff_session", encoded))
+    let cookie = cookie::Cookie::build((crate::middleware::session::COOKIE_NAME, encoded))
         .path("/")
         .http_only(true)
-        .same_site(cookie::SameSite::Strict)
+        .same_site(cookie::SameSite::Lax)
         .max_age(cookie::time::Duration::days(90))
         .build();
 
@@ -249,8 +278,8 @@ async fn session_cookie_has_required_security_flags_in_production() {
         "Expected Secure: {set_cookie}"
     );
     assert!(
-        set_cookie.contains("SameSite=Strict"),
-        "Expected SameSite=Strict: {set_cookie}"
+        set_cookie.contains("SameSite=Lax"),
+        "Expected SameSite=Lax: {set_cookie}"
     );
     assert!(
         set_cookie.contains("Max-Age=7776000"),
@@ -282,8 +311,8 @@ async fn session_cookie_omits_secure_in_development() {
         "Should not contain Secure in development: {set_cookie}"
     );
     assert!(
-        set_cookie.contains("SameSite=Strict"),
-        "Expected SameSite=Strict: {set_cookie}"
+        set_cookie.contains("SameSite=Lax"),
+        "Expected SameSite=Lax: {set_cookie}"
     );
     assert!(
         set_cookie.contains("Max-Age=7776000"),

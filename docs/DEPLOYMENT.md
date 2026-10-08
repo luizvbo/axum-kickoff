@@ -1,10 +1,10 @@
 # Deployment
 
-This guide covers deploying axum-kickoff to production environments.
+This guide covers deploying {{project-name}} to production environments.
 
 ## Overview
 
-axum-kickoff is designed for easy deployment with minimal dependencies. It can be deployed using:
+{{project-name}} is designed for easy deployment with minimal dependencies. It can be deployed using:
 
 - Docker containers
 - Systemd services
@@ -32,6 +32,9 @@ Before deploying to production:
 Ensure all required environment variables are set in production:
 
 ```bash
+# Environment (unset already defaults to production — set it explicitly)
+APP_ENV=production
+
 # Database
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 
@@ -99,8 +102,8 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 
 # Create dummy main.rs to cache dependencies
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release --bin server
+RUN mkdir -p src/bin && echo "fn main() {}" > src/bin/main.rs
+RUN cargo build --release --bin {{project-name}}
 RUN rm -rf src
 
 # Copy actual source
@@ -109,8 +112,8 @@ COPY templates ./templates
 COPY static ./static
 
 # Build release binary
-RUN touch src/main.rs
-RUN cargo build --release --bin server
+RUN touch src/bin/main.rs
+RUN cargo build --release --bin {{project-name}}
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -122,7 +125,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/server /usr/local/bin/server
+COPY --from=builder /app/target/release/{{project-name}} /usr/local/bin/{{project-name}}
 
 # Copy static assets
 COPY --from=builder /app/static ./static
@@ -135,7 +138,7 @@ RUN mkdir -p /app/uploads
 EXPOSE 3000
 
 # Run the server
-CMD ["server"]
+CMD ["{{project-name}}", "server"]
 ```
 
 ### Docker Compose
@@ -151,7 +154,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/axum_kickoff
+      - DATABASE_URL=postgresql://postgres:password@db:5432/{{crate_name}}
       - SESSION_KEY=${SESSION_KEY}
       - GH_CLIENT_ID=${GH_CLIENT_ID}
       - GH_CLIENT_SECRET=${GH_CLIENT_SECRET}
@@ -174,7 +177,7 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=axum_kickoff
+      - POSTGRES_DB={{crate_name}}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -187,7 +190,7 @@ volumes:
 
 ```bash
 # Build the image
-docker build -t axum-kickoff .
+docker build -t {{project-name}} .
 
 # Run with Docker Compose
 docker-compose up -d
@@ -201,28 +204,28 @@ docker-compose logs -f app
 ### Build Release Binary
 
 ```bash
-cargo build --release --bin server
+cargo build --release --bin {{project-name}}
 ```
 
-The binary will be at `target/release/server`.
+The binary will be at `target/release/{{project-name}}`.
 
 ### Create Systemd Service
 
-Create `/etc/systemd/system/axum-kickoff.service`:
+Create `/etc/systemd/system/{{project-name}}.service`:
 
 ```ini
 [Unit]
-Description=axum-kickoff Web Server
+Description={{project-name}} Web Server
 After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=axum-kickoff
-Group=axum-kickoff
-WorkingDirectory=/opt/axum-kickoff
+User={{project-name}}
+Group={{project-name}}
+WorkingDirectory=/opt/{{project-name}}
 Environment="RUST_LOG=info"
-EnvironmentFile=/opt/axum-kickoff/.env
-ExecStart=/opt/axum-kickoff/server
+EnvironmentFile=/opt/{{project-name}}/.env
+ExecStart=/opt/{{project-name}}/{{project-name}} server
 Restart=always
 RestartSec=10
 
@@ -231,7 +234,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/axum-kickoff/uploads
+ReadWritePaths=/opt/{{project-name}}/uploads
 
 [Install]
 WantedBy=multi-user.target
@@ -241,30 +244,30 @@ WantedBy=multi-user.target
 
 ```bash
 # Create user
-sudo useradd -r -s /bin/false axum-kickoff
+sudo useradd -r -s /bin/false {{project-name}}
 
 # Create directories
-sudo mkdir -p /opt/axum-kickoff
-sudo mkdir -p /opt/axum-kickoff/uploads
-sudo mkdir -p /opt/axum-kickoff/static
-sudo mkdir -p /opt/axum-kickoff/templates
+sudo mkdir -p /opt/{{project-name}}
+sudo mkdir -p /opt/{{project-name}}/uploads
+sudo mkdir -p /opt/{{project-name}}/static
+sudo mkdir -p /opt/{{project-name}}/templates
 
 # Copy files
-sudo cp target/release/server /opt/axum-kickoff/
-sudo cp -r static/* /opt/axum-kickoff/static/
-sudo cp -r templates/* /opt/axum-kickoff/templates/
+sudo cp target/release/{{project-name}} /opt/{{project-name}}/
+sudo cp -r static/* /opt/{{project-name}}/static/
+sudo cp -r templates/* /opt/{{project-name}}/templates/
 
 # Set permissions
-sudo chown -R axum-kickoff:axum-kickoff /opt/axum-kickoff
-sudo chmod 750 /opt/axum-kickoff
+sudo chown -R {{project-name}}:{{project-name}} /opt/{{project-name}}
+sudo chmod 750 /opt/{{project-name}}
 ```
 
 ### Configure Environment
 
-Create `/opt/axum-kickoff/.env`:
+Create `/opt/{{project-name}}/.env`:
 
 ```bash
-DATABASE_URL=postgresql://user:password@localhost:5432/axum_kickoff
+DATABASE_URL=postgresql://user:password@localhost:5432/{{crate_name}}
 SESSION_KEY=<your-secure-key>
 # ... other environment variables
 ```
@@ -272,7 +275,7 @@ SESSION_KEY=<your-secure-key>
 Set secure permissions:
 
 ```bash
-sudo chmod 600 /opt/axum-kickoff/.env
+sudo chmod 600 /opt/{{project-name}}/.env
 ```
 
 ### Start Service
@@ -282,26 +285,26 @@ sudo chmod 600 /opt/axum-kickoff/.env
 sudo systemctl daemon-reload
 
 # Enable service
-sudo systemctl enable axum-kickoff
+sudo systemctl enable {{project-name}}
 
 # Start service
-sudo systemctl start axum-kickoff
+sudo systemctl start {{project-name}}
 
 # Check status
-sudo systemctl status axum-kickoff
+sudo systemctl status {{project-name}}
 
 # View logs
-sudo journalctl -u axum-kickoff -f
+sudo journalctl -u {{project-name}} -f
 ```
 
 ## Nginx Reverse Proxy
 
 ### Nginx Configuration
 
-Create `/etc/nginx/sites-available/axum-kickoff`:
+Create `/etc/nginx/sites-available/{{project-name}}`:
 
 ```nginx
-upstream axum_kickoff {
+upstream {{crate_name}} {
     server 127.0.0.1:3000;
 }
 
@@ -331,7 +334,7 @@ server {
 
     # Proxy Settings
     location / {
-        proxy_pass http://axum_kickoff;
+        proxy_pass http://{{crate_name}};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -347,7 +350,7 @@ server {
     # Note: The application serves precompressed .gz and .br files automatically.
     # For production, you may want Nginx to serve static files directly for better performance.
     location /static/ {
-        alias /opt/axum-kickoff/static/;
+        alias /opt/{{project-name}}/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
 
@@ -361,7 +364,7 @@ server {
 ### Enable Site
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/axum-kickoff /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/{{project-name}} /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -397,9 +400,9 @@ sudo -u postgres psql
 ```
 
 ```sql
-CREATE DATABASE axum_kickoff;
-CREATE USER axum_kickoff_user WITH ENCRYPTED PASSWORD 'secure_password';
-GRANT ALL PRIVILEGES ON DATABASE axum_kickoff TO axum_kickoff_user;
+CREATE DATABASE {{crate_name}};
+CREATE USER {{crate_name}}_user WITH ENCRYPTED PASSWORD 'secure_password';
+GRANT ALL PRIVILEGES ON DATABASE {{crate_name}} TO {{crate_name}}_user;
 \q
 ```
 
@@ -408,7 +411,7 @@ GRANT ALL PRIVILEGES ON DATABASE axum_kickoff TO axum_kickoff_user;
 Update `DATABASE_URL` in environment:
 
 ```bash
-DATABASE_URL=postgresql://axum_kickoff_user:secure_password@localhost:5432/axum_kickoff
+DATABASE_URL=postgresql://{{crate_name}}_user:secure_password@localhost:5432/{{crate_name}}
 ```
 
 ### Database Backups
@@ -421,8 +424,8 @@ cat > /opt/backups/backup-db.sh << 'EOF'
 #!/bin/bash
 BACKUP_DIR="/opt/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
-pg_dump -U axum_kickoff_user axum_kickoff > $BACKUP_DIR/axum_kickoff_$DATE.sql
-find $BACKUP_DIR -name "axum_kickoff_*.sql" -mtime +7 -delete
+pg_dump -U {{crate_name}}_user {{crate_name}} > $BACKUP_DIR/{{crate_name}}_$DATE.sql
+find $BACKUP_DIR -name "{{crate_name}}_*.sql" -mtime +7 -delete
 EOF
 
 chmod +x /opt/backups/backup-db.sh
@@ -451,11 +454,11 @@ Create ECS task definition:
 
 ```json
 {
-  "family": "axum-kickoff",
+  "family": "{{project-name}}",
   "containerDefinitions": [
     {
-      "name": "axum-kickoff",
-      "image": "your-registry/axum-kickoff:latest",
+      "name": "{{project-name}}",
+      "image": "your-registry/{{project-name}}:latest",
       "memory": 512,
       "cpu": 256,
       "essential": true,
@@ -551,10 +554,14 @@ export LOG_FORMAT=json
 Enable Prometheus metrics:
 
 ```bash
-cargo run --bin server --features metrics
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
 Metrics available at `/metrics`.
+
+**Warning:** without `METRICS_TOKEN` set, `/metrics` is publicly readable.
+Set a token (requests then need `Authorization: Bearer <token>`) or restrict
+the endpoint at your reverse proxy before exposing the service.
 
 Set up Prometheus and Grafana for visualization.
 
@@ -616,7 +623,7 @@ SECURITY_FRAME_OPTIONS=deny
 
 Check logs:
 ```bash
-sudo journalctl -u axum-kickoff -n 50
+sudo journalctl -u {{project-name}} -n 50
 ```
 
 Common issues:

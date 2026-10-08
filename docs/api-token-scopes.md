@@ -1,6 +1,6 @@
 # API Token Scopes
 
-This document explains the generic API token scope system used in axum-kickoff.
+This document explains the generic API token scope system used in {{project-name}}.
 
 ## Overview
 

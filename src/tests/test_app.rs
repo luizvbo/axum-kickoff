@@ -80,6 +80,7 @@ impl TestApp {
             ip: IpAddr::from([127, 0, 0, 1]),
             port: 8888,
             max_blocking_threads: None,
+            core_threads: None,
             domain_name: "localhost".to_string(),
             allowed_origins: AllowedOrigins::parse("http://localhost:3000"),
             blocked_ips: Default::default(),
@@ -146,7 +147,10 @@ mod tests {
         let csrf_json = Regex::new(r#""X-CSRF-Token": "[A-Za-z0-9]{32}""#).unwrap();
         let nonce = Regex::new(r#"nonce="[A-Za-z0-9+/=]{20,26}""#).unwrap();
 
-        let html = csrf.replace_all(html, r#"content="[CSRF_TOKEN]""#);
+        // The app name comes from `CARGO_PKG_NAME`, so it differs per
+        // generated project — normalize it like the other dynamic values.
+        let html = html.replace(&crate::router::app_name(), "[APP_NAME]");
+        let html = csrf.replace_all(&html, r#"content="[CSRF_TOKEN]""#);
         let html = csrf_json.replace_all(&html, r#""X-CSRF-Token": "[CSRF_TOKEN]""#);
         nonce
             .replace_all(&html, r#"nonce="[CSP_NONCE]""#)

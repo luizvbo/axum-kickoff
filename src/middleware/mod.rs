@@ -19,10 +19,11 @@ pub mod auth;
 pub mod block_traffic;
 pub mod csrf;
 pub mod error_handler;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 pub mod metrics;
-pub mod normalize_path;
+{% endif %}pub mod normalize_path;
 pub mod real_ip;
+pub mod request_format;
 pub mod request_id;
 pub mod require_user_agent;
 pub mod security_headers;
@@ -32,35 +33,31 @@ pub use api_token::ApiTokenAuth;
 pub use auth::{authenticate, require_auth, require_login, CurrentUserId, OptionalCurrentUserId};
 pub use block_traffic::middleware as block_traffic;
 pub use csrf::{
-    csrf_protect, ensure_token, get_or_create_csrf_token, protect, validate_csrf_token,
-    verify_origin,
+    csrf_protect, get_or_create_csrf_token, protect, validate_csrf_token, verify_origin,
 };
 pub use error_handler::middleware as error_handler;
-#[cfg(feature = "metrics")]
+{% if metrics %}#[cfg(feature = "metrics")]
 pub use metrics::update_metrics;
-pub use real_ip::middleware as real_ip;
+{% endif %}pub use real_ip::middleware as real_ip;
 pub use real_ip::RealIp;
+pub use request_format::middleware as request_format;
 pub use request_id::{middleware as request_id, RequestId};
 pub use require_user_agent::require_user_agent;
 pub use security_headers::{middleware as security_headers, CspNonce};
 pub use session::{middleware as session_middleware, SessionExtension, SessionState};
 
+/// Apply infrastructure middleware to the root router.
+///
+/// These layers run for every route — operational endpoints (`/health`,
+/// `/static`, `/metrics`, `/swagger-ui`, `/api-docs`), application routes, and
+/// the 404 fallback — so they must stay cheap and free of session/auth/CSRF/
+/// rate-limit work. Those application-specific concerns are applied per route
+/// group in `apply_app_middleware` instead, mirroring crates.io's split stack.
+///
+/// `.layer()` calls run inside-out: the last call is the outermost middleware.
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
-    let session_key = state.0.session_key.clone();
-
-    // Determine whether session cookies should have the Secure flag.
-    // Enabled by default in production, and can be toggled via SESSION_COOKIE_SECURE.
-    let session_cookie_secure = match dotenvy::var("SESSION_COOKIE_SECURE").ok().as_deref() {
-        Some(v) if v.trim().eq_ignore_ascii_case("true") || v.trim() == "1" => true,
-        Some(v) if v.trim().eq_ignore_ascii_case("false") || v.trim() == "0" => false,
-        _ => env == Env::Production,
-    };
-    let session_state = self::session::SessionState {
-        key: session_key,
-        secure: session_cookie_secure,
-    };
 
     let security_headers_config = self::security_headers::SecurityHeadersConfig::for_env(env);
 
@@ -78,22 +75,17 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         .allow_headers(Any);
 
     let router = router
-        .layer(cors)
-        .layer(from_fn_with_state(
-            config.allowed_origins.clone(),
-            self::csrf::verify_origin,
-        ))
-        // Core auth + rate limiting stack (innermost first):
-        // rate_limit -> authenticate -> block_traffic -> ensure_token -> session -> log_request
-        // real_ip and request_id run outside this group so they are available to middleware below.
-        .layer(from_fn_with_state(state.clone(), self::rate_limit))
-        .layer(from_fn_with_state(state.clone(), self::authenticate))
+        // Innermost infra layer. Traffic blocking is applied globally (as in
+        // crates.io) so blocked IPs/routes/user agents cannot reach operational
+        // endpoints either; it only reads config, headers, and `RealIp`.
         .layer(from_fn_with_state(state.clone(), self::block_traffic))
-        .layer(from_fn(self::csrf::ensure_token))
-        .layer(from_fn_with_state(session_state, self::session_middleware))
         .layer(from_fn(log_request))
         .layer(from_fn_with_state(state.clone(), self::real_ip::middleware))
+        // `error_handler` is a pure logging layer; `request_format` scopes the
+        // `REQUEST_FORMAT` task-local for everything inside it so error
+        // responses and `HtmlTemplate` can negotiate HTML/HTMX/JSON.
         .layer(from_fn(self::error_handler::middleware))
+        .layer(from_fn(self::request_format::middleware))
         .layer(from_fn(self::request_id::middleware))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
@@ -107,12 +99,16 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         ))
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(30)))
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
-
+{% if metrics %}
     #[cfg(feature = "metrics")]
     let router = router.layer(from_fn_with_state(
         state.clone(),
         self::metrics::update_metrics,
     ));
+{% endif %}
+    // CORS is the outermost layer so preflights are answered before the user
+    // agent check, session middleware, or rate limiting can run.
+    let router = router.layer(cors);
 
     // Optionally print debug information for each request in development
     if env == Env::Development {
@@ -122,7 +118,41 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     }
 }
 
-async fn rate_limit(
+/// Apply application middleware to a router of HTML/API routes.
+///
+/// Session cookies, authentication, and origin verification run only for
+/// these routes. Operational endpoints are registered on the root router (see
+/// `router::build_axum_router`) and never see this stack. Rate limiting and
+/// CSRF validation are applied even more selectively via `route_layer`.
+pub(crate) fn apply_app_middleware(state: AppState, router: Router<AppState>) -> Router<AppState> {
+    let env = state.config.env();
+
+    // Determine whether session cookies should have the Secure flag.
+    // Enabled by default in production, and can be toggled via SESSION_COOKIE_SECURE.
+    let session_cookie_secure = match dotenvy::var("SESSION_COOKIE_SECURE").ok().as_deref() {
+        Some(v) if v.trim().eq_ignore_ascii_case("true") || v.trim() == "1" => true,
+        Some(v) if v.trim().eq_ignore_ascii_case("false") || v.trim() == "0" => false,
+        _ => env == Env::Production,
+    };
+    let session_state = self::session::SessionState {
+        key: state.0.session_key.clone(),
+        secure: session_cookie_secure,
+    };
+
+    // innermost -> outermost: verify_origin -> authenticate -> session.
+    // `session` runs first to populate `SessionExtension`; `authenticate`
+    // resolves the auth context lazily from it; `verify_origin` checks the
+    // Origin header just before the route-specific layers and handler.
+    router
+        .layer(from_fn_with_state(
+            state.config.allowed_origins.clone(),
+            self::csrf::verify_origin,
+        ))
+        .layer(from_fn_with_state(state.clone(), self::authenticate))
+        .layer(from_fn_with_state(session_state, self::session_middleware))
+}
+
+pub(crate) async fn rate_limit(
     State(state): State<AppState>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -173,6 +203,12 @@ fn determine_limited_action(
         (&http::Method::POST, "/examples/contact") => LimitedAction::FormSubmission,
         (&http::Method::POST, "/logout") | (&http::Method::POST, "/api/v1/auth/logout") => {
             LimitedAction::FormSubmission
+        }
+        // Anonymous reads on the public API are throttled per client IP; the
+        // mutating variants below `/api/v1/posts` are protected routes and
+        // keep the generic `ApiRequest` budget.
+        (&http::Method::GET, p) if p == "/api/v1/posts" || p.starts_with("/api/v1/posts/") => {
+            LimitedAction::PublicApiRead
         }
         _ => LimitedAction::ApiRequest,
     }
@@ -247,7 +283,22 @@ async fn debug_requests(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    tracing::debug!("Request: {:?}", req);
+    // Log only selected, non-sensitive headers — `{:?}` on the whole request
+    // would leak Authorization and Cookie values into the logs.
+    const LOGGED_HEADERS: &[header::HeaderName] = &[
+        header::USER_AGENT,
+        header::REFERER,
+        header::CONTENT_TYPE,
+        header::ACCEPT,
+        header::ORIGIN,
+    ];
+
+    let headers: Vec<(&header::HeaderName, &header::HeaderValue)> = LOGGED_HEADERS
+        .iter()
+        .filter_map(|name| req.headers().get(name).map(|value| (name, value)))
+        .collect();
+
+    tracing::debug!(method = %req.method(), uri = %req.uri(), ?headers, "Request");
 
     next.run(req).await
 }

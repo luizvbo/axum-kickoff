@@ -7,7 +7,7 @@
 //! # Example Usage
 //!
 //! ```no_run
-//! use axum_kickoff::storage::{Storage, StorageConfig};
+//! use {{crate_name}}::storage::{Storage, StorageConfig};
 //! use bytes::Bytes;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -136,6 +136,12 @@ impl Storage {
     ///
     /// This function doesn't check for file existence, it only generates the URL.
     /// Normalizes the path by stripping leading slashes and validating it's safe.
+    ///
+    /// Without a `cdn_prefix` this returns a root-relative `/{path}`. No route
+    /// serves stored files out of the box, so such URLs 404 until the
+    /// application wires up a handler — e.g. store files under an `uploads/`
+    /// key prefix and mount `GET /uploads/{*path}` backed by
+    /// [`Storage::download`] (see `docs/STORAGE.md`).
     pub fn public_url(&self, path: &str) -> Result<String, String> {
         let normalized = normalize_path(path)?;
         Ok(apply_cdn_prefix(&self.cdn_prefix, &normalized))

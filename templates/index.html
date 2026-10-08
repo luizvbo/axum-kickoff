@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Axum Kickoff - Rust Web Application Starter{% endblock %}
+{% block title %}{{ ctx.app_name }} - Rust Web Application Starter{% endblock %}
 
 {% block content %}
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -8,14 +8,14 @@
         <div class="nav-container">
             <div class="nav-brand">
                 <span class="logo">🚀</span>
-                <span>Axum Kickoff</span>
+                <span>{{ ctx.app_name }}</span>
             </div>
             <div class="nav-links">
                 <a href="#about">About</a>
                 <a href="#features">Features</a>
                 <a href="#examples">Examples</a>
                 <a href="#getting-started">Getting Started</a>
-                <a href="https://github.com/luizvbo/axum-kickoff" target="_blank">GitHub</a>
+                <a href="/swagger-ui" target="_blank">API Docs</a>
             </div>
         </div>
     </nav>
@@ -34,7 +34,7 @@
         <section id="about" class="section">
             <h2 class="section-title">About</h2>
             <p class="section-text">
-                Axum Kickoff provides a solid foundation for building web applications using
+                {{ ctx.app_name }} provides a solid foundation for building web applications using
                 <strong>Axum</strong>, <strong>Toasty ORM</strong>, and other best-in-class Rust crates.
                 It follows the architectural patterns and best practices from
                 <a href="https://github.com/rust-lang/crates.io">crates.io</a>, the official Rust package registry.
@@ -51,12 +51,12 @@
                 </div>
                 <div class="tech-card">
                     <div class="tech-icon">🗄️</div>
-                    <h3>Toasty 0.7</h3>
+                    <h3>Toasty 0.9</h3>
                     <p>Type-safe ORM with SQLite support</p>
                 </div>
                 <div class="tech-card">
                     <div class="tech-icon">🎨</div>
-                    <h3>Askama 0.15</h3>
+                    <h3>Askama 0.16</h3>
                     <p>Type-safe, compile-time templating</p>
                 </div>
                 <div class="tech-card">
@@ -178,7 +178,7 @@
                     <div class="step-number">1</div>
                     <div class="step-content">
                         <h3>Clone the repository</h3>
-                        <code>git clone https://github.com/luizvbo/axum-kickoff.git</code>
+                        <code>git clone &lt;your-repository-url&gt;</code>
                     </div>
                 </div>
                 <div class="step">
@@ -193,7 +193,7 @@
                     <div class="step-number">3</div>
                     <div class="step-content">
                         <h3>Run the server</h3>
-                        <code>cargo run --bin server</code>
+                        <code>cargo run -- server</code>
                         <p>Server starts on <code>http://localhost:8888</code></p>
                     </div>
                 </div>
@@ -205,6 +205,8 @@
             <div class="code-block">
                 <pre><code>src/
 ├── app.rs           # Application state and components
+├── bin/
+│   └── main.rs      # Binary: server / background-worker / migrate
 ├── config/          # Configuration management
 │   ├── base.rs
 │   ├── database.rs

@@ -36,7 +36,7 @@ pub trait RequestHelper {
         let mut request = Request::builder()
             .method(method)
             .uri(uri)
-            .header(header::USER_AGENT, "axum-kickoff-test")
+            .header(header::USER_AGENT, "{{project-name}}-test")
             .body(Body::empty())
             .expect("Failed to build request");
 
@@ -300,7 +300,7 @@ impl CookieUser {
 
         // Parse the cookie string into an owned Cookie
         let cookie = Cookie::parse(cookie_str.clone()).ok()?;
-        if cookie.name() != "axum_kickoff_session" {
+        if cookie.name() != crate::middleware::session::COOKIE_NAME {
             return None;
         }
 
@@ -310,7 +310,9 @@ impl CookieUser {
             cookie.name().to_string(),
             cookie.value().to_string(),
         ));
-        let verified_cookie = jar.signed(&self.session_key).get("axum_kickoff_session")?;
+        let verified_cookie = jar
+            .signed(&self.session_key)
+            .get(crate::middleware::session::COOKIE_NAME)?;
 
         // Decode the verified cookie value
         let session_data = decode(verified_cookie);
@@ -387,7 +389,7 @@ impl RequestHelper for TokenUser {
 /// The cookie is signed with the session key to match the verification
 /// done by the middleware on every request.
 pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String {
-    let cookie_name = "axum_kickoff_session";
+    let cookie_name = crate::middleware::session::COOKIE_NAME;
 
     // Build session data map
     let mut map = std::collections::HashMap::new();
@@ -401,7 +403,7 @@ pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String 
     let cookie = cookie::Cookie::build((cookie_name, encoded))
         .path("/")
         .http_only(true)
-        .same_site(cookie::SameSite::Strict)
+        .same_site(cookie::SameSite::Lax)
         .max_age(cookie::time::Duration::days(90))
         .build();
 
@@ -424,6 +426,6 @@ mod tests {
     fn test_encode_session_header() {
         let session_key = cookie::Key::generate();
         let cookie = encode_session_header(&session_key, 42);
-        assert!(cookie.contains("axum_kickoff_session="));
+        assert!(cookie.contains(&format!("{}=", crate::middleware::session::COOKIE_NAME)));
     }
 }

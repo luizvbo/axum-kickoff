@@ -1,0 +1,99 @@
+# cargo-generate template configuration.
+#
+# This repository is a *pure* cargo-generate template: `cargo generate --git
+# <repo>` renders it into a new project. Liquid delimiters (`{{ }}`, `{% %}`)
+# are NOT configurable, so the boundary below is strict:
+#
+#   - `exclude`: copied verbatim, never touched by Liquid. Everything with
+#     syntax that collides with `{{`/`{%` lives here: Askama templates,
+#     GitHub Actions (`${{ }}`), vendored JS, and docs containing Askama
+#     examples.
+#   - `ignore`: not copied into the generated project at all.
+#   - Everything else is processed with Liquid (`{{project-name}}`,
+#     `{{crate_name}}`, `{% if ... %}`).
+#
+# Branding is rendered at *runtime* instead: `PageContext.app_name` derives a
+# display name from `CARGO_PKG_NAME`, so generated projects show their own
+# name without any Liquid inside `templates/`.
+#
+# Follow-up (not yet done): worker, storage and swagger/utoipa remain
+# unconditional subsystems — they have no Cargo features today, so there is
+# nothing to conditionally render. Feature-gate them first before offering
+# include/exclude options here.
+
+[template]
+cargo_generate_version = ">=0.19.0"
+
+exclude = [
+    # Askama templates collide with Liquid on both `{{ }}` and `{% %}`.
+    "templates",
+    # GitHub Actions `${{ }}` expressions collide with Liquid `{{ }}`.
+    ".github",
+    # Vendored JS bundles contain `{{ }}` sequences (e.g. alpine.js).
+    "static",
+    # Docs that show literal Askama syntax (`{% block %}`, `{{ ctx.* }}`).
+    "docs/ADD_HTMX_FORM.md",
+    "docs/ADD_NEW_PAGE.md",
+    "docs/ADD_PROTECTED_ROUTE.md",
+    "docs/CSRF_PROTECTION.md",
+    "docs/HTMX_ASKAMA_PATTERNS.md",
+    # Template-authoring docs: shows literal Liquid syntax on purpose.
+    "docs/TEMPLATE.md",
+]
+
+ignore = [
+    # Not part of a generated project. Its absence in rendered output is also
+    # what `.github/workflows/ci.yml` uses to tell generated projects from the
+    # template repo itself (every job is skipped while it exists).
+    "cargo-generate.toml",
+    # Template-repo CI (renders + verifies the template itself). Generated
+    # projects get `.github/workflows/ci.yml` instead, copied verbatim.
+    ".github/workflows/template-ci.yml",
+    # Template-authoring documentation; irrelevant to generated projects.
+    "docs/TEMPLATE.md",
+    # Local-only artifacts, defensive for `cargo generate --path` renders.
+    ".devin",
+    "docs/local",
+    "target",
+    "node_modules",
+    "test_uploads",
+    ".env",
+    "axum_kickoff.db",
+]
+
+[placeholders.database]
+type = "string"
+prompt = "Which database backend?"
+choices = ["sqlite", "postgresql"]
+default = "sqlite"
+
+[placeholders.metrics]
+type = "bool"
+prompt = "Include the Prometheus metrics endpoint?"
+default = false
+
+[placeholders.sentry]
+type = "bool"
+prompt = "Include Sentry error reporting?"
+default = false
+
+[placeholders.jemalloc]
+type = "bool"
+prompt = "Use jemalloc as the global allocator?"
+default = false
+
+# Without `metrics`, drop the now-unused feature-gated sources so generated
+# projects ship no dead code. The `#[cfg(feature = "metrics")]` declarations
+# in `lib.rs`/`middleware/mod.rs`/`tests/mod.rs`/`router.rs` are inert either
+# way (the feature no longer exists when the option is off).
+#
+# NOTE: `ignore` is matched against source paths verbatim (no globs, before
+# filename substitution), so the snapshot entry intentionally spells the
+# literal `{{crate_name}}` filename.
+[conditional.'!metrics']
+ignore = [
+    "src/metrics.rs",
+    "src/middleware/metrics.rs",
+    "src/tests/metrics.rs",
+    "src/tests/snapshots/{{crate_name}}__tests__metrics__metrics_snapshot.snap",
+]

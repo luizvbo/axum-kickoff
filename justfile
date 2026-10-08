@@ -1,4 +1,4 @@
-# Justfile for axum-kickoff
+# Justfile for {{project-name}}
 #
 # Install just: cargo install just
 # Run commands: just <command>
@@ -23,11 +23,11 @@ setup:
 
 [doc("Run the development server")]
 run:
-    cargo run --bin axum-kickoff -- server
+    cargo run --bin {{project-name}} -- server
 
 [doc("Run the development server with auto-reload (requires cargo-watch)")]
 dev:
-    cargo watch -x 'run --bin axum-kickoff -- server'
+    cargo watch -x 'run --bin {{project-name}} -- server'
 
 [doc("Run tests with nextest faster test runner (requires cargo-nextest)")]
 test:
@@ -60,7 +60,7 @@ test-verbose:
 [doc("Run test coverage (add '--html' to generate an HTML report)")]
 test-cov args='':
     @echo "🧪 Running test coverage (skipping test errors)..."
-    APP_ENV=TST cargo llvm-cov nextest --ignore-run-fail {{ if args != '' { args } else { "" } }}
+    APP_ENV=TEST cargo llvm-cov nextest --ignore-run-fail {% raw %}{{ if args != '' { args } else { "" } }}{% endraw %}
 
 # ============================================================================
 # Database Commands
@@ -68,27 +68,27 @@ test-cov args='':
 
 [doc("Generate a new migration based on model changes")]
 migration-generate:
-    cargo run --bin axum-kickoff -- migrate migration generate
+    cargo run --bin {{project-name}} -- migrate migration generate
 
 [doc("Apply pending migrations to the database")]
 migration-apply:
-    cargo run --bin axum-kickoff -- migrate migration apply
+    cargo run --bin {{project-name}} -- migrate migration apply
 
 [doc("Create a schema snapshot for future migration generation")]
 migration-snapshot:
-    cargo run --bin axum-kickoff -- migrate migration snapshot
+    cargo run --bin {{project-name}} -- migrate migration snapshot
 
 [doc("Drop the last migration file")]
 migration-drop:
-    cargo run --bin axum-kickoff -- migrate migration drop
+    cargo run --bin {{project-name}} -- migrate migration drop
 
 [doc("Reset the database - WARNING: This will delete all data")]
 migration-reset:
-    cargo run --bin axum-kickoff -- migrate migration reset
+    cargo run --bin {{project-name}} -- migrate migration reset
 
 [doc("Inspect the current database schema as SQL")]
 migration-inspect:
-    cargo run --bin axum-kickoff -- migrate migration inspect
+    cargo run --bin {{project-name}} -- migrate migration inspect
 
 # ============================================================================
 # Code Quality Commands
@@ -155,7 +155,7 @@ clean-build:
 
 [doc("Remove the SQLite database file - WARNING: This will delete all data")]
 clean-db:
-    rm -f axum_kickoff.db
+    rm -f {{crate_name}}.db
 
 [doc("Full cleanup (build artifacts + database)")]
 clean-all: clean clean-db

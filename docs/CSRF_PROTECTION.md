@@ -1,6 +1,6 @@
 # CSRF Protection
 
-This document describes the CSRF (Cross-Site Request Forgery) protection implementation in axum-kickoff.
+This document describes the CSRF (Cross-Site Request Forgery) protection implementation in this application.
 
 ## Overview
 
@@ -76,15 +76,20 @@ async fn my_handler(
 
 ## Middleware
 
-Two middleware functions are provided:
+### Token creation
 
-### `ensure_token`
+CSRF tokens are created lazily via `get_or_create_csrf_token` — `PageContext`
+calls it when rendering pages, but only when the session carries state worth
+protecting (a `user_id` or an existing token). Anonymous, sessionless page
+requests render an empty token and do not emit `Set-Cookie`; the token is
+minted automatically on the first page a user loads after logging in.
 
-Automatically ensures a CSRF token exists in the session. This is applied globally in the middleware stack, so every session will have a CSRF token available.
+### `csrf_protect`
 
-### `protect`
-
-Validates CSRF tokens for unsafe HTTP methods. This is applied to specific routes that process form submissions or state-changing requests.
+Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE). It
+is applied as a `route_layer` to the protected route group in
+`src/router.rs` — token-authenticated (Bearer) requests bypass it, and
+sessions with a `user_id` but no token are rejected rather than skipped.
 
 ## Configuration
 
