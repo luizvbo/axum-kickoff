@@ -33,7 +33,9 @@ async fn operational_routes_are_never_rate_limited() {
         let response = anon.get::<()>("/health").await;
         response.assert_status(StatusCode::OK);
 
-        let response = anon.get::<()>("/static/vendor/htmx.min.js").await;
+        // style.css is tracked in git, unlike the npm-vendored assets under
+        // static/vendor/, so this stays hermetic on a fresh checkout.
+        let response = anon.get::<()>("/static/css/style.css").await;
         response.assert_status(StatusCode::OK);
     }
 }
@@ -53,7 +55,9 @@ async fn anonymous_requests_do_not_set_cookies() {
         "anonymous GET / must not emit Set-Cookie"
     );
 
-    let response = anon.get::<()>("/static/vendor/htmx.min.js").await;
+    // style.css is tracked in git, unlike the npm-vendored assets under
+    // static/vendor/, so this stays hermetic on a fresh checkout.
+    let response = anon.get::<()>("/static/css/style.css").await;
     response.assert_status(StatusCode::OK);
     assert!(
         response.headers().get("set-cookie").is_none(),

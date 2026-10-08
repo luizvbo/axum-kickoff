@@ -479,8 +479,8 @@ The project uses GitHub Actions for CI. See `.github/workflows/ci.yml` for confi
 
 ## Working on this template
 
-> This section applies to the **axum-kickoff template repository** itself, not
-> to projects generated from it. Generated projects can ignore it.
+> This section applies to the **template repository** itself, not to projects
+> generated from it. Generated projects can ignore it.
 
 This repository is a cargo-generate template. Two consequences matter for
 development:

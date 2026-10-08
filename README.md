@@ -2,7 +2,8 @@
 
 A production-ready Rust web application built on [Axum](https://github.com/tokio-rs/axum), following best practices from the [crates.io](https://github.com/rust-lang/crates.io) backend implementation.
 
-> Generated with [cargo-generate](https://github.com/cargo-generate/cargo-generate) from [axum-kickoff](https://github.com/luizvbo/axum-kickoff).
+> Generated with [cargo-generate](https://github.com/cargo-generate/cargo-generate) from
+> [axum-kickoff](https://github.com/luizvbo/axum-kickoff).
 
 ## Features
 
