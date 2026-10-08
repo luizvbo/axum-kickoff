@@ -142,10 +142,10 @@ pub async fn middleware(State(state): State<SessionState>, req: Request, next: N
         // and disabled in development by default.
         //
         // `SameSite=Lax` (not `Strict`) is required for the OAuth flow: the
-        // redirect back from github.com to the callback endpoint is a
+        // redirect back from the provider to the callback endpoint is a
         // cross-site top-level navigation, and browsers withhold `Strict`
-        // cookies on it — the `github_oauth_state`/`github_pkce_verifier`
-        // session entries would be missing and every login would fail.
+        // cookies on it — the `oauth_state`/`oauth_pkce_verifier` session
+        // entries would be missing and every login would fail.
         // `Lax` still withholds the cookie on cross-site POSTs, so CSRF
         // posture is unchanged (token CSRF + `verify_origin` remain as
         // defense-in-depth).

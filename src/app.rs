@@ -30,7 +30,7 @@ pub struct App {
     pub session_key: cookie::Key,
     /// Rate limiter for API request throttling
     pub rate_limiter: RateLimiter,
-    /// Shared HTTP client for outbound requests (OAuth, GitHub API)
+    /// Shared HTTP client for outbound requests (OAuth providers)
     pub http_client: reqwest::Client,
 }
 

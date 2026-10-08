@@ -150,9 +150,10 @@ pub struct User {
     #[pk]
     pub id: Id<User>,
 
-    pub github_id: i64,
-    pub github_login: String,
-    pub avatar_url: String,
+    pub provider: String,
+    pub provider_user_id: String,
+    pub login: String,
+    pub avatar_url: Option<String>,
 
     pub created_at: DateTime,
 }
@@ -163,13 +164,14 @@ pub struct User {
 Document public APIs with Rustdoc:
 
 ```rust
-/// Creates a new user with the given GitHub information.
+/// Creates a new user with the given OAuth identity.
 ///
 /// # Arguments
 ///
 /// * `db` - Database connection
-/// * `github_id` - GitHub user ID
-/// * `github_login` - GitHub username
+/// * `provider` - OAuth provider slug (`"github"`, `"google"`, `"facebook"`)
+/// * `provider_user_id` - User ID assigned by the provider
+/// * `login` - Username/handle from the provider profile
 ///
 /// # Returns
 ///
@@ -182,8 +184,9 @@ Document public APIs with Rustdoc:
 /// - User already exists
 pub async fn create_user(
     db: &Database,
-    github_id: i64,
-    github_login: String,
+    provider: String,
+    provider_user_id: String,
+    login: String,
 ) -> AppResult<User> {
     // Implementation
 }

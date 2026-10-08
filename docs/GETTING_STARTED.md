@@ -63,10 +63,19 @@ DATABASE_URL=sqlite:{{project-name}}.db
 # Session Key (generate a secure random key)
 SESSION_KEY=your-secret-key-minimum-64-bytes-long
 
-# GitHub OAuth (required for authentication)
+{% if oauth_github %}# GitHub OAuth (enabled when both ID and secret are set)
 GH_CLIENT_ID=your_github_client_id
 GH_CLIENT_SECRET=your_github_client_secret
 GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}# Google OAuth
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REDIRECT_URI=http://localhost:8888/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}# Facebook OAuth
+FACEBOOK_CLIENT_ID=your_facebook_app_id
+FACEBOOK_CLIENT_SECRET=your_facebook_app_secret
+FACEBOOK_REDIRECT_URI=http://localhost:8888/api/v1/auth/facebook/callback
+{% endif %}
 
 # CORS (required)
 WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
@@ -75,9 +84,14 @@ WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
 STORAGE_PATH=./local_uploads
 ```
 
-### 3. Generate GitHub OAuth Credentials
+### 3. Generate OAuth Credentials
 
-To enable GitHub OAuth authentication:
+{% if oauth_github or oauth_google or oauth_facebook %}Each provider compiled into this project is enabled when both its client ID
+and secret are set. Configure the ones you want to offer on the login page:
+
+{% else %}No OAuth providers were selected at generation time — skip this section.
+
+{% endif %}{% if oauth_github %}#### GitHub
 
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Click "New OAuth App"
@@ -87,7 +101,26 @@ To enable GitHub OAuth authentication:
    - **Authorization callback URL**: `http://localhost:8888/api/v1/auth/github/callback`
 4. Click "Register application"
 5. Copy the **Client ID** and generate a **Client Secret**
-6. Add these to your `.env` file
+6. Add them to your `.env` as `GH_CLIENT_ID`/`GH_CLIENT_SECRET`
+
+{% endif %}{% if oauth_google %}#### Google
+
+1. Go to the [Google Cloud Console credentials page](https://console.cloud.google.com/apis/credentials)
+2. Create an OAuth client ID of type "Web application"
+3. Add `http://localhost:8888/api/v1/auth/google/callback` to the "Authorized redirect URIs"
+4. Copy the **Client ID** and **Client Secret** into `.env` as
+   `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`
+
+{% endif %}{% if oauth_facebook %}#### Facebook
+
+1. Create an app at the [Meta for Developers portal](https://developers.facebook.com/apps)
+   and add the "Facebook Login" product
+2. Add `http://localhost:8888/api/v1/auth/facebook/callback` under
+   "Valid OAuth Redirect URIs" in the Facebook Login settings
+3. Copy the **App ID** and **App Secret** into `.env` as
+   `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`
+
+{% endif %}
 
 ### 4. Generate a Secure Session Key
 
@@ -135,9 +168,9 @@ http://localhost:8888
 
 ### 1. Test Authentication
 
-Click "Login with GitHub" to authenticate via OAuth. This will:
+Click a "Sign in with …" button on `/login` to authenticate via OAuth. This will:
 
-- Redirect you to GitHub
+- Redirect you to the provider
 - Ask for authorization
 - Redirect back to your application
 - Create a user account
@@ -286,13 +319,14 @@ DATABASE_URL=sqlite:{{project-name}}.db
 DATABASE_URL=sqlite::memory:
 ```
 
-### GitHub OAuth Errors
+### OAuth Errors
 
 Common issues:
 
-- **Redirect URI mismatch**: Ensure `GITHUB_REDIRECT_URI` matches exactly what you configured in GitHub
-- **Client ID/Secret incorrect**: Double-check your GitHub OAuth app settings
-- **HTTP vs HTTPS**: GitHub requires HTTPS for production OAuth callbacks
+- **Redirect URI mismatch**: Ensure the provider's `*_REDIRECT_URI` matches exactly what you configured in its app settings
+- **Client ID/Secret incorrect**: Double-check the provider's app settings; setting only one of the pair is a startup error
+- **HTTP vs HTTPS**: Providers require HTTPS for production OAuth callbacks
+- **"Unknown or unconfigured OAuth provider"**: the provider wasn't selected at generation time, or its credentials aren't set
 
 ### Session Key Errors
 

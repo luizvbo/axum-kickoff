@@ -9,7 +9,7 @@ A production-ready Rust web application built on [Axum](https://github.com/tokio
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
 - **Database**: Toasty ORM with SQLite (zero-setup) or PostgreSQL
-- **Authentication**: GitHub OAuth, session-based auth, and scoped API tokens
+- **Authentication**: OAuth sign-in (GitHub, Google, Facebook — selectable at generation), session-based auth, and scoped API tokens
 - **Frontend**: Server-side rendering with Askama, HTMX, and Alpine.js
 - **Security**: Comprehensive middleware (security headers, rate limiting, CSRF, etc.)
 - **Testing**: Integration test infrastructure with snapshot testing
@@ -36,7 +36,8 @@ just setup
 cp .env.sample .env
 
 # Edit .env with your configuration
-# Required: GH_CLIENT_ID, GH_CLIENT_SECRET, SESSION_KEY, WEB_ALLOWED_ORIGINS
+# Required: SESSION_KEY, WEB_ALLOWED_ORIGINS, and the client credentials for
+# each OAuth provider you want to enable (e.g. GH_CLIENT_ID/GH_CLIENT_SECRET).
 # For local development also keep APP_ENV=development (the default when unset
 # is production, which enables Secure cookies, JSON logs, and disables /debug)
 
@@ -64,10 +65,21 @@ DATABASE_URL=sqlite:./{{crate_name}}.db
 # Session
 SESSION_KEY=your-secret-key-min-64-bytes
 
-# GitHub OAuth
+# OAuth providers — each is enabled when both its credentials are set.
+# Which providers exist is chosen at generation time (oauth_* options).
+{% if oauth_github %}# GitHub
 GH_CLIENT_ID=your-github-client-id
 GH_CLIENT_SECRET=your-github-client-secret
 GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
+{% endif %}{% if oauth_google %}# Google
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8888/api/v1/auth/google/callback
+{% endif %}{% if oauth_facebook %}# Facebook
+FACEBOOK_CLIENT_ID=your-facebook-app-id
+FACEBOOK_CLIENT_SECRET=your-facebook-app-secret
+FACEBOOK_REDIRECT_URI=http://localhost:8888/api/v1/auth/facebook/callback
+{% endif %}
 
 # CORS
 WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
@@ -93,6 +105,9 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | ------ | ------ | ------- | ------ |
 | `project-name` | any crate-safe name | asked once | Package name, binary name, session cookie (`<crate_name>_session`), default SQLite file (`<crate_name>.db`), PostgreSQL `application_name`, API title, user-agent strings, and the on-page application branding |
 | `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way — the test suite uses in-memory SQLite regardless |
+| `oauth_github` | `true` / `false` | `true` | Compiles in the GitHub OAuth provider; enabled at runtime when `GH_CLIENT_ID`/`GH_CLIENT_SECRET` are set |
+| `oauth_google` | `true` / `false` | `false` | Same for Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) |
+| `oauth_facebook` | `true` / `false` | `false` | Same for Facebook (`FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`) |
 | `metrics` | `true` / `false` | `false` | Adds the `prometheus` dependency, a `metrics` feature in `default`, the `/metrics` endpoint, and request instrumentation middleware |
 | `sentry` | `true` / `false` | `false` | Adds `sentry` + `sentry-tracing` dependencies and feature, error-event capture via the tracing layer, and `SENTRY_DSN` support |
 | `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |

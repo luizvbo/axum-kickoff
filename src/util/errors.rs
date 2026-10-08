@@ -161,6 +161,7 @@ fn build_error_response(
             csrf_token: String::new(),
             csp_nonce: current_csp_nonce(),
             app_name: crate::router::app_name(),
+            oauth_providers: Vec::new(),
         };
         let html = HtmlError {
             ctx,

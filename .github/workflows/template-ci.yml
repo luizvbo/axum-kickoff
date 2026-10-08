@@ -50,6 +50,19 @@ jobs:
               -d metrics=true
               -d sentry=true
               -d jemalloc=true
+          # All OAuth providers compiled in — exercises the multi-provider
+          # tests (e.g. cross-provider state replay rejection).
+          - name: oauth-all-providers
+            project: smoke-oauth-all
+            defines: >-
+              -d oauth_google=true
+              -d oauth_facebook=true
+          # No OAuth providers — the registry/handlers must still compile and
+          # the OAuth tests must skip gracefully.
+          - name: oauth-none
+            project: smoke-oauth-none
+            defines: >-
+              -d oauth_github=false
 
     env:
       RUSTFLAGS: '-D warnings'

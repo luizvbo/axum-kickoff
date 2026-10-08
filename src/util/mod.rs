@@ -2,8 +2,8 @@
 
 pub mod auth;
 pub mod errors;
-pub mod gh_token_encryption;
 pub mod oauth;
+pub mod oauth_token_encryption;
 pub mod response;
 pub mod token;
 
@@ -16,7 +16,7 @@ pub use errors::{
     validation_out_of_range, AppError, AppResult, AuthError, NotFoundError, RateLimitAppError,
     ValidationError,
 };
-pub use gh_token_encryption::GitHubTokenEncryption;
 pub use oauth::ReqwestClient;
+pub use oauth_token_encryption::OAuthTokenEncryption;
 pub use response::{response, ApiResponse};
 pub use token::{HashedToken, InvalidTokenError, PlainToken};

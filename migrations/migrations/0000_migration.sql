@@ -32,11 +32,12 @@ CREATE TABLE "rate_limit_buckets" (
 -- #[toasty::breakpoint]
 CREATE TABLE "users" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "gh_id" BIGINT NOT NULL,
-    "gh_login" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "provider_user_id" TEXT NOT NULL,
+    "login" TEXT NOT NULL,
     "name" TEXT,
     "email" TEXT,
-    "gh_avatar" TEXT,
+    "avatar_url" TEXT,
     "is_active" BOOLEAN NOT NULL,
     "account_lock_reason" TEXT,
     "account_lock_until" TEXT,
@@ -44,4 +45,4 @@ CREATE TABLE "users" (
     "updated_at" TEXT NOT NULL
 );
 -- #[toasty::breakpoint]
-CREATE UNIQUE INDEX "index_users_by_gh_id" ON "users" ("gh_id");
+CREATE UNIQUE INDEX "index_users_by_provider_and_provider_user_id" ON "users" ("provider", "provider_user_id");

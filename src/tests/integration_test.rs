@@ -95,7 +95,7 @@ async fn test_builders_and_database() {
         .await
         .expect("Failed to insert user");
 
-    assert_eq!(user.gh_login, "mona_lisa");
+    assert_eq!(user.login, "mona_lisa");
 
     // 2. Build and insert a token for the user
     let (token, plain_token) = app

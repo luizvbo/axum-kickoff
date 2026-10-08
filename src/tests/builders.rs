@@ -8,36 +8,45 @@ use crate::util::PlainToken;
 use secrecy::ExposeSecret;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-static NEXT_GH_ID: AtomicI64 = AtomicI64::new(1000);
+static NEXT_PROVIDER_USER_ID: AtomicI64 = AtomicI64::new(1000);
 
 /// Builder for User models
 pub struct UserBuilder {
-    gh_id: i64,
-    gh_login: String,
+    provider: String,
+    provider_user_id: String,
+    login: String,
     name: Option<String>,
     email: Option<String>,
-    gh_avatar: Option<String>,
+    avatar_url: Option<String>,
     is_active: bool,
     account_lock_reason: Option<String>,
     account_lock_until: Option<jiff::Timestamp>,
 }
 
 impl UserBuilder {
-    pub fn new(gh_login: &str) -> Self {
+    pub fn new(login: &str) -> Self {
         Self {
-            gh_id: NEXT_GH_ID.fetch_add(1, Ordering::SeqCst),
-            gh_login: gh_login.to_string(),
+            provider: "github".to_string(),
+            provider_user_id: NEXT_PROVIDER_USER_ID
+                .fetch_add(1, Ordering::SeqCst)
+                .to_string(),
+            login: login.to_string(),
             name: None,
             email: None,
-            gh_avatar: None,
+            avatar_url: None,
             is_active: true,
             account_lock_reason: None,
             account_lock_until: None,
         }
     }
 
-    pub fn gh_id(mut self, gh_id: i64) -> Self {
-        self.gh_id = gh_id;
+    pub fn provider(mut self, provider: &str) -> Self {
+        self.provider = provider.to_string();
+        self
+    }
+
+    pub fn provider_user_id(mut self, provider_user_id: i64) -> Self {
+        self.provider_user_id = provider_user_id.to_string();
         self
     }
 
@@ -65,11 +74,12 @@ impl UserBuilder {
     /// Build and insert the user into the database using Toasty ORM
     pub async fn build(self, db: &mut toasty::Db) -> anyhow::Result<User> {
         let user = toasty::create!(User {
-            gh_id: self.gh_id,
-            gh_login: self.gh_login,
+            provider: self.provider,
+            provider_user_id: self.provider_user_id,
+            login: self.login,
             name: self.name,
             email: self.email,
-            gh_avatar: self.gh_avatar,
+            avatar_url: self.avatar_url,
             is_active: self.is_active,
             account_lock_reason: self.account_lock_reason,
             account_lock_until: self.account_lock_until,
@@ -209,7 +219,8 @@ mod tests {
     #[test]
     fn test_user_builder_defaults() {
         let builder = UserBuilder::new("test_user");
-        assert_eq!(builder.gh_login, "test_user");
+        assert_eq!(builder.provider, "github");
+        assert_eq!(builder.login, "test_user");
         assert!(builder.is_active);
         assert!(builder.name.is_none());
     }

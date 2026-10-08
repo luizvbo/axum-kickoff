@@ -313,7 +313,7 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
 
 /// Require login middleware
 ///
-/// Redirects to the GitHub OAuth login page if the user is not authenticated.
+/// Redirects to the login page if the user is not authenticated.
 /// Use this for routes that require authentication but should redirect to login
 /// instead of returning a 401 error.
 ///
@@ -336,10 +336,7 @@ pub async fn require_login(
         Ok(()) => next.run(req).await,
         Err(response) => {
             if response.status() == StatusCode::UNAUTHORIZED {
-                let redirect_url = format!(
-                    "/api/v1/auth/github/authorize?redirect_to={}",
-                    req.uri().path()
-                );
+                let redirect_url = format!("/login?redirect_to={}", req.uri().path());
                 return Redirect::to(&redirect_url).into_response();
             }
             response

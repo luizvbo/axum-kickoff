@@ -5,4 +5,4 @@ pub mod server;
 
 pub use base::Base;
 pub use database::DatabaseConfig;
-pub use server::{AllowedOrigins, LogFormat, Server};
+pub use server::{AllowedOrigins, LogFormat, OAuthProviderConfig, Server};

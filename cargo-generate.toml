@@ -67,6 +67,21 @@ prompt = "Which database backend?"
 choices = ["sqlite", "postgresql"]
 default = "sqlite"
 
+[placeholders.oauth_github]
+type = "bool"
+prompt = "Include GitHub OAuth sign-in?"
+default = true
+
+[placeholders.oauth_google]
+type = "bool"
+prompt = "Include Google OAuth sign-in?"
+default = false
+
+[placeholders.oauth_facebook]
+type = "bool"
+prompt = "Include Facebook OAuth sign-in?"
+default = false
+
 [placeholders.metrics]
 type = "bool"
 prompt = "Include the Prometheus metrics endpoint?"

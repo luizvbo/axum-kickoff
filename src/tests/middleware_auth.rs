@@ -207,9 +207,20 @@ async fn public_route_without_session_succeeds() {
 #[tokio::test]
 async fn oauth_authorize_without_session_succeeds() {
     let app = TestApp::new().await;
+    let Some(slug) = app
+        .config
+        .oauth_providers
+        .first()
+        .map(|provider| provider.spec.slug)
+    else {
+        // No OAuth providers were compiled in — nothing to exercise.
+        return;
+    };
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/auth/github/authorize").await;
+    let response = anon
+        .get::<()>(&format!("/api/v1/auth/{slug}/authorize"))
+        .await;
 
     response.assert_status(StatusCode::SEE_OTHER);
 }

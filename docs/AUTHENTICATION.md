@@ -1,23 +1,29 @@
 # Authentication
 
-This document describes the authentication system in {{project-name}}, including GitHub OAuth, session management, and API tokens.
+This document describes the authentication system in {{project-name}}, including OAuth sign-in, session management, and API tokens.
 
 ## Overview
 
 {{project-name}} supports multiple authentication methods:
 
-- **GitHub OAuth**: OAuth 2.0 flow with GitHub
-- **Session-Based**: Signed cookie sessions for web users
+{% if oauth_github or oauth_google or oauth_facebook %}- **OAuth sign-in**: OAuth 2.0 flow with {% if oauth_github %}GitHub{% endif %}{% if oauth_google %}{% if oauth_github %}, {% endif %}Google{% endif %}{% if oauth_facebook %}{% if oauth_github or oauth_google %}, {% endif %}Facebook{% endif %} (providers were selected when this project was generated)
+{% endif %}- **Session-Based**: Signed cookie sessions for web users
 - **API Tokens**: Scoped tokens for programmatic access
 
-## GitHub OAuth
+{% if oauth_github or oauth_google or oauth_facebook %}## OAuth Sign-In
 
-### Setup
+Each compiled-in provider is enabled at runtime when **both** its client ID
+and client secret are set in the environment; setting only one is a startup
+error. The login page (`/login`) lists a sign-in button per enabled provider.
+
+### Provider Setup
+
+{% if oauth_github %}#### GitHub
 
 1. Create a GitHub OAuth App:
    - Go to [GitHub Developer Settings](https://github.com/settings/developers)
    - Click "New OAuth App"
-   - Set the authorization callback URL to: `https://your-domain.com/auth/github/callback`
+   - Set the authorization callback URL to: `https://your-domain.com/api/v1/auth/github/callback`
 
 2. Configure environment variables:
    ```bash
@@ -26,48 +32,95 @@ This document describes the authentication system in {{project-name}}, including
    GH_REDIRECT_URI=https://your-domain.com/api/v1/auth/github/callback
    ```
 
-### OAuth Flow
+{% endif %}{% if oauth_google %}#### Google
+
+1. Create an OAuth client at the
+   [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   (type "Web application").
+2. Add `https://your-domain.com/api/v1/auth/google/callback` to the
+   "Authorized redirect URIs".
+3. Configure environment variables:
+   ```bash
+   GOOGLE_CLIENT_ID=your_client_id
+   GOOGLE_CLIENT_SECRET=your_client_secret
+   GOOGLE_REDIRECT_URI=https://your-domain.com/api/v1/auth/google/callback
+   ```
+
+{% endif %}{% if oauth_facebook %}#### Facebook
+
+1. Create an app at the [Meta for Developers portal](https://developers.facebook.com/apps)
+   and add the "Facebook Login" product.
+2. Add `https://your-domain.com/api/v1/auth/facebook/callback` under
+   "Valid OAuth Redirect URIs" in the Facebook Login settings.
+3. Configure environment variables (the app ID doubles as the client ID):
+   ```bash
+   FACEBOOK_CLIENT_ID=your_app_id
+   FACEBOOK_CLIENT_SECRET=your_app_secret
+   FACEBOOK_REDIRECT_URI=https://your-domain.com/api/v1/auth/facebook/callback
+   ```
+
+{% endif %}### OAuth Flow
 
 ```
-1. User clicks "Login with GitHub"
-2. Redirect to GitHub authorize endpoint
-3. User authorizes application
-4. GitHub redirects to callback endpoint with authorization code
-5. Server exchanges code for access token
-6. Server fetches user profile from GitHub
-7. Server creates/updates user in database
-8. Server creates session cookie
-9. Redirect to dashboard
+1. User clicks a "Sign in with <provider>" button on /login
+2. Redirect to the provider's authorization endpoint
+3. User authorizes the application
+4. Provider redirects to /api/v1/auth/<provider>/callback with an
+   authorization code
+5. Server verifies the CSRF state and that the flow was started for this
+   provider, then exchanges the code for an access token (with PKCE)
+6. Server fetches the user profile from the provider
+7. Server creates/updates the user in the database (keyed by
+   provider + provider user ID)
+8. Server creates a session cookie
+9. Redirect to the originally requested page
 ```
 
 ### Endpoints
 
-- `GET /auth/github` - Initiate OAuth flow
-- `GET /auth/github/callback` - OAuth callback
-- `GET /auth/logout` - Logout and clear session
+- `GET /login` - Sign-in page listing the enabled providers
+- `GET /api/v1/auth/{provider}/authorize` - Initiate the OAuth flow
+- `GET /api/v1/auth/{provider}/callback` - OAuth callback
+- `POST /api/v1/auth/logout` / `POST /logout` - Logout and clear session
+
+Unknown or unconfigured providers return a controlled `400 Bad Request`.
 
 ### Implementation
 
-The OAuth flow is implemented in `src/controllers/auth.rs`:
+The OAuth flow is implemented in `src/controllers/auth.rs` as a single pair
+of provider-generic handlers; provider endpoints, scopes, and profile-field
+mappings live in the registry in `src/oauth.rs`:
 
 ```rust
-pub async fn github_authorize(
+pub async fn oauth_authorize(
+    Path(provider): Path<String>,
     State(app): State<AppState>,
 ) -> Result<Redirect, AppError> {
-    // Generate OAuth URL and redirect
+    // Resolve provider, generate OAuth URL, redirect
 }
 
-pub async fn github_callback(
-    Query(params): Query<CallbackParams>,
+pub async fn oauth_callback(
+    Path(provider): Path<String>,
+    Query(params): Query<CallbackQuery>,
     State(app): State<AppState>,
 ) -> Result<Redirect, AppError> {
-    // Exchange code for token
+    // Verify state + provider match
+    // Exchange code for token (PKCE)
     // Fetch user profile
     // Create/update user
     // Create session
     // Redirect
 }
 ```
+
+### Account Linking
+
+Users are identified by the composite key `(provider, provider_user_id)` —
+e.g. `("github", "583231")`. Accounts are **not** linked across providers by
+email: several providers can return absent or unverified email addresses, so
+email-based auto-linking would be an account-takeover risk. Signing in with a
+different provider creates a separate account.
+{% endif %}
 
 ## Session Management
 
@@ -95,7 +148,7 @@ Sessions store:
 
 - User ID and login (`user_id`, `user_login`)
 - CSRF token (`csrf_token`)
-- Transient OAuth state (`github_oauth_state`, `github_pkce_verifier`, `redirect_to`)
+- Transient OAuth state (`oauth_state`, `oauth_pkce_verifier`, `oauth_provider`, `redirect_to`)
 
 ### Session Middleware
 
@@ -266,8 +319,9 @@ let check = AuthCheck::default()
 
 The user model (`src/models/user.rs`) stores:
 
-- **GitHub ID**: Unique GitHub user ID
-- **GitHub Login**: GitHub username
+- **Provider**: OAuth provider slug (`github`, `google`, `facebook`)
+- **Provider User ID**: Unique user ID assigned by the provider
+- **Login**: Username/handle from the provider profile
 - **Avatar URL**: Profile picture URL
 - **Created At**: Account creation timestamp
 - **Account Lock Reason**: Optional reason for account lock
@@ -289,9 +343,10 @@ Locked accounts cannot authenticate until the lock expires.
 ### For OAuth
 
 1. **Use HTTPS**: OAuth requires HTTPS in production
-2. **Validate Redirect URI**: Ensure redirect URI matches exactly
-3. **Scope Limitation**: Request minimum required scopes from GitHub
+2. **Validate Redirect URI**: Ensure the redirect URI matches the provider's app settings exactly
+3. **Scope Limitation**: Request minimum required scopes from each provider
 4. **State Parameter**: Use state parameter to prevent CSRF (implemented)
+5. **No Email-Based Linking**: Never auto-link accounts across providers by email alone (unverified emails are an account-takeover vector)
 
 ### For Sessions
 
@@ -322,9 +377,10 @@ Locked accounts cannot authenticate until the lock expires.
 
 ### OAuth Callback Fails
 
-- Check `GH_REDIRECT_URI` matches GitHub OAuth app settings exactly
+- Check the provider's `*_REDIRECT_URI` matches its app settings exactly
 - Ensure HTTPS is used in production
-- Verify `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are correct
+- Verify the provider's `*_CLIENT_ID` and `*_CLIENT_SECRET` are correct — setting only one is a startup error
+- A `400` on `/api/v1/auth/{provider}/...` means the provider isn't enabled: either it wasn't compiled in at generation time, or its credentials aren't set
 
 ### Session Not Persisting
 
@@ -348,9 +404,9 @@ Locked accounts cannot authenticate until the lock expires.
 
 ## Implementation Details
 
-### GitHub OAuth Implementation
+### OAuth Implementation
 
-The OAuth flow uses the `oauth2` crate:
+The OAuth flow uses the `oauth2` crate (authorization-code flow with PKCE):
 
 ```rust
 use oauth2::{

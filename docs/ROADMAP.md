@@ -22,7 +22,7 @@ The roadmap follows these principles:
 
 - **Core Infrastructure**: Axum server with Tokio runtime
 - **Database**: Toasty ORM with SQLite support
-- **Authentication**: GitHub OAuth, session management, API tokens
+- **Authentication**: OAuth sign-in (GitHub, Google, Facebook — selectable at generation), session management, API tokens
 - **Middleware Stack**: Security headers, CORS, rate limiting, logging
 - **Storage**: Local filesystem storage abstraction
 - **Testing**: Integration test infrastructure with snapshot testing

@@ -17,9 +17,14 @@
 //! - `BLOCKED_IPS`: Comma-separated list of blocked IP addresses (optional).
 //! - `BLOCKED_ROUTES`: Comma-separated list of blocked route patterns (optional).
 //! - `BLOCKED_TRAFFIC`: Comma-separated list of header=value pairs for blocking traffic (optional).
-//! - `GH_CLIENT_ID`: GitHub OAuth client ID (required for OAuth).
-//! - `GH_CLIENT_SECRET`: GitHub OAuth client secret (required for OAuth).
-//! - `GH_REDIRECT_URI`: GitHub OAuth redirect URI (defaults to "https://`<domain>`:`<port>`/api/v1/auth/github/callback" in production, "http://" in development).
+//! - OAuth provider credentials: for each compiled-in provider
+//!   (`crate::oauth::provider_specs`), setting both `<PREFIX>_CLIENT_ID` and
+//!   `<PREFIX>_CLIENT_SECRET` enables sign-in with that provider (e.g.
+//!   `GH_CLIENT_ID`/`GH_CLIENT_SECRET` for GitHub, `GOOGLE_*` for Google,
+//!   `FACEBOOK_*` for Facebook). Setting only one of the pair is a startup
+//!   error. `<PREFIX>_REDIRECT_URI` optionally overrides the callback URL,
+//!   which defaults to "https://`<domain>`:`<port>`/api/v1/auth/`<provider>`/callback"
+//!   in production, "http://" in development.
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 //! - `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs/CIDR ranges (defaults to "127.0.0.1,::1").
@@ -94,9 +99,9 @@ pub struct Server {
     pub blocked_traffic: Vec<(String, Vec<BlockCriteria>)>,
     pub session_key: SecretString,
     pub trusted_proxies: Vec<ipnet::IpNet>,
-    pub gh_client_id: String,
-    pub gh_client_secret: SecretString,
-    pub gh_redirect_uri: String,
+    /// OAuth providers enabled by present credentials — see
+    /// [`Self::oauth_provider`].
+    pub oauth_providers: Vec<OAuthProviderConfig>,
     pub storage_config: StorageConfig,
     pub rate_limiter_config: HashMap<LimitedAction, RateLimiterConfig>,
     pub metrics_token: Option<SecretString>,
@@ -158,20 +163,43 @@ impl Server {
             anyhow::bail!("SESSION_KEY must be at least 64 bytes when APP_ENV=production");
         }
 
-        // Load GitHub OAuth credentials
-        let gh_client_id = env::required_var("GH_CLIENT_ID")?;
-        let gh_client_secret = SecretString::from(env::required_var("GH_CLIENT_SECRET")?);
-        let gh_redirect_uri = env::var("GH_REDIRECT_URI")?.unwrap_or_else(|| {
-            let scheme = if base.env == Env::Production {
-                "https"
-            } else {
-                "http"
-            };
-            format!(
-                "{}://{}:{}/api/v1/auth/github/callback",
-                scheme, domain_name, port
-            )
-        });
+        // Load OAuth provider credentials. A compiled-in provider is enabled
+        // when both its client ID and secret are set; supplying only one is a
+        // configuration error (fail fast instead of silently disabling
+        // sign-in).
+        let mut oauth_providers = Vec::new();
+        for spec in crate::oauth::provider_specs() {
+            let client_id = env::var(spec.client_id_env)?;
+            let client_secret = env::var(spec.client_secret_env)?;
+
+            match (client_id, client_secret) {
+                (Some(client_id), Some(client_secret)) => {
+                    let redirect_uri = env::var(spec.redirect_uri_env)?.unwrap_or_else(|| {
+                        let scheme = if base.env == Env::Production {
+                            "https"
+                        } else {
+                            "http"
+                        };
+                        format!(
+                            "{}://{}:{}/api/v1/auth/{}/callback",
+                            scheme, domain_name, port, spec.slug
+                        )
+                    });
+                    oauth_providers.push(OAuthProviderConfig {
+                        spec,
+                        client_id,
+                        client_secret: SecretString::from(client_secret),
+                        redirect_uri,
+                    });
+                }
+                (None, None) => {}
+                _ => anyhow::bail!(
+                    "{} and {} must be set together",
+                    spec.client_id_env,
+                    spec.client_secret_env
+                ),
+            }
+        }
 
         // Load storage configuration
         let storage_config = StorageConfig::from_environment();
@@ -205,9 +233,7 @@ impl Server {
             blocked_traffic,
             session_key,
             trusted_proxies,
-            gh_client_id,
-            gh_client_secret,
-            gh_redirect_uri,
+            oauth_providers,
             storage_config,
             rate_limiter_config,
             metrics_token,
@@ -227,6 +253,31 @@ impl Server {
     pub fn sentry_enabled(&self) -> bool {
         self.sentry_dsn.is_some() && self.base.env == Env::Production
     }
+
+    /// Returns the configured OAuth provider matching `slug`
+    /// (`"github"`, `"google"`, `"facebook"`), if it was compiled in *and* has
+    /// credentials in the environment.
+    pub fn oauth_provider(&self, slug: &str) -> Option<&OAuthProviderConfig> {
+        self.oauth_providers
+            .iter()
+            .find(|provider| provider.spec.slug == slug)
+    }
+}
+
+/// Runtime credentials for one OAuth provider.
+///
+/// The provider's endpoints, scopes, and env-var names live in its
+/// [`crate::oauth::OAuthProviderSpec`]; a config entry exists only when both
+/// credentials were present at startup.
+#[derive(Clone)]
+pub struct OAuthProviderConfig {
+    /// The compiled-in provider description this config belongs to.
+    pub spec: &'static crate::oauth::OAuthProviderSpec,
+    pub client_id: String,
+    pub client_secret: SecretString,
+    /// The callback URL registered with the provider
+    /// (`/api/v1/auth/<slug>/callback` by default).
+    pub redirect_uri: String,
 }
 
 /// Parse TRUSTED_PROXIES environment variable
