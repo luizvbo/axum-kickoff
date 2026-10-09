@@ -50,7 +50,15 @@ source paths before file-name substitution.
 
 `{{project-name}}` (kebab-case as typed) lands in `Cargo.toml`
 `[package].name`/`[[bin]].name`/`default-run`, the README, user-agent strings,
-and the OpenAPI title. `{{crate_name}}` (the snake_case form) lands in `use`
+and the OpenAPI title.
+
+The README is split in two: the repository's own `README.md` at the root
+(shown on the GitHub homepage) is `ignore`d and never ships, while the
+generated project's readme lives in `{{"README"}}.md`. Liquid runs on file
+names too, so the literal `{{"README"}}` renders to `README.md` in the output —
+that indirection is what lets the two files coexist under one name.
+
+`{{crate_name}}` (the snake_case form) lands in `use`
 paths, the session cookie name (`<crate_name>_session` in
 `src/middleware/session.rs`), the default SQLite file name, the Postgres
 `application_name`, and `src/tests/snapshots/` **file names** — insta derives
