@@ -46,6 +46,9 @@ ignore = [
     # what `.github/workflows/ci.yml` uses to tell generated projects from the
     # template repo itself (every job is skipped while it exists).
     "cargo-generate.toml",
+    # This repository's own README — the generated project's README lives in
+    # '{{"README"}}.md' (Liquid filenames render too, so it ships as README.md).
+    "README.md",
     # Template-repo CI (renders + verifies the template itself). Generated
     # projects get `.github/workflows/ci.yml` instead, copied verbatim.
     ".github/workflows/template-ci.yml",

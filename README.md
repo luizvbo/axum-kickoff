@@ -1,11 +1,10 @@
-# {{project-name}}
+# axum-kickoff
 
-A production-ready Rust web application built on [Axum](https://github.com/tokio-rs/axum), following best practices from the [crates.io](https://github.com/rust-lang/crates.io) backend implementation.
+A [cargo-generate](https://github.com/cargo-generate/cargo-generate) template for production-ready Rust web applications built on [Axum](https://github.com/tokio-rs/axum), following best practices from the [crates.io](https://github.com/rust-lang/crates.io) backend implementation.
 
-> Generated with [cargo-generate](https://github.com/cargo-generate/cargo-generate) from
-> [axum-kickoff](https://github.com/luizvbo/axum-kickoff).
+This repository **is** the template — its sources contain Liquid placeholders and do not compile as-is. Generating a project renders them into a fully working application.
 
-## Features
+## What you get
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
 - **Database**: Toasty ORM with SQLite (zero-setup) or PostgreSQL
@@ -18,81 +17,7 @@ A production-ready Rust web application built on [Axum](https://github.com/tokio
 - **API Docs**: OpenAPI/Swagger UI out of the box (utoipa)
 - **Optional subsystems** (selected at generation time): Prometheus metrics, Sentry error reporting, jemalloc allocator
 
-## Quick Start
-
-### Prerequisites
-
-- Rust (see `rust-toolchain.toml` for pinned version)
-- [just](https://github.com/casey/just) (for running setup and other commands)
-- Node.js and npm (for vendoring frontend dependencies)
-
-### Installation
-
-```bash
-# Install dependencies and vendor JS libraries (HTMX, Alpine.js)
-just setup
-
-# Copy environment variables
-cp .env.sample .env
-
-# Edit .env with your configuration
-# Required: SESSION_KEY, WEB_ALLOWED_ORIGINS, and the client credentials for
-# each OAuth provider you want to enable (e.g. GH_CLIENT_ID/GH_CLIENT_SECRET).
-# For local development also keep APP_ENV=development (the default when unset
-# is production, which enables Secure cookies, JSON logs, and disables /debug)
-
-# Run the server
-cargo run --bin {{project-name}} -- server
-```
-
-The server will start on `http://localhost:8888` by default.
-
-### Configuration
-
-Set the following environment variables in `.env`:
-
-```bash
-# Environment (defaults to production when unset)
-APP_ENV=development
-
-# Server
-PORT=8888
-DOMAIN_NAME=localhost
-
-# Database
-DATABASE_URL=sqlite:./{{crate_name}}.db
-
-# Session
-SESSION_KEY=your-secret-key-min-64-bytes
-
-# OAuth providers — each is enabled when both its credentials are set.
-# Which providers exist is chosen at generation time (oauth_* options).
-{% if oauth_github %}# GitHub
-GH_CLIENT_ID=your-github-client-id
-GH_CLIENT_SECRET=your-github-client-secret
-GH_REDIRECT_URI=http://localhost:8888/api/v1/auth/github/callback
-{% endif %}{% if oauth_google %}# Google
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:8888/api/v1/auth/google/callback
-{% endif %}{% if oauth_facebook %}# Facebook
-FACEBOOK_CLIENT_ID=your-facebook-app-id
-FACEBOOK_CLIENT_SECRET=your-facebook-app-secret
-FACEBOOK_REDIRECT_URI=http://localhost:8888/api/v1/auth/facebook/callback
-{% endif %}
-
-# CORS
-WEB_ALLOWED_ORIGINS=http://localhost:8888,http://127.0.0.1:8888
-
-# Storage
-STORAGE_PATH=./local_uploads
-```
-
-See [Configuration Documentation](docs/CONFIGURATION.md) for all available options.
-
-## Using this repository as a template
-
-This repository is a [cargo-generate](https://github.com/cargo-generate/cargo-generate) template:
+## Generate a project
 
 ```bash
 cargo install cargo-generate
@@ -113,16 +38,9 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |
 
 The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
-unconditional parts of the application — they are not template options.
+unconditional parts of the generated application — they are not options.
 
-> **PostgreSQL note**: the checked-in migrations under `migrations/` are written
-> in SQLite dialect (`AUTOINCREMENT`). When `database=postgresql` is selected
-> the Postgres driver is compiled in and `DATABASE_URL` defaults to Postgres,
-> but the migration SQL must be adapted for PostgreSQL before `migrate` will
-> run against a real Postgres database. The test suite is unaffected — it runs
-> on in-memory SQLite.
-
-### Non-interactive generation
+Non-interactive generation:
 
 ```bash
 cargo generate --git https://github.com/luizvbo/axum-kickoff \
@@ -130,79 +48,46 @@ cargo generate --git https://github.com/luizvbo/axum-kickoff \
   -d database=postgresql -d metrics=true -d sentry=true -d jemalloc=true
 ```
 
-See the "Working on this template" section in
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how the template itself is
-developed and verified.
+> **PostgreSQL note**: the checked-in migrations are written in SQLite dialect
+> (`AUTOINCREMENT`). When `database=postgresql` is selected the Postgres driver
+> is compiled in and `DATABASE_URL` defaults to Postgres, but the migration SQL
+> must be adapted for PostgreSQL before `migrate` will run against a real
+> Postgres database. The test suite is unaffected — it runs on in-memory
+> SQLite.
+
+## After generation
+
+```bash
+cd my-app
+just setup        # npm install + vendor JS libraries (HTMX, Alpine.js)
+cp .env.sample .env  # then edit; required: SESSION_KEY, WEB_ALLOWED_ORIGINS,
+                     # and credentials for each OAuth provider you enable
+cargo run -- server  # http://localhost:8888
+```
 
 ## Documentation
 
-- **[Getting Started Guide](docs/GETTING_STARTED.md)** - Detailed setup and first steps
-- **[Database Guide](docs/DATABASE.md)** - Toasty ORM usage, migrations, and querying
-- **[HTMX + Askama Patterns](docs/HTMX_ASKAMA_PATTERNS.md)** - Frontend patterns with live examples
-- **[How-to Guides](docs/HOW_TO_GUIDES.md)** - Common tasks and patterns
-- **[Architecture](docs/ARCHITECTURE.md)** - System architecture and design decisions
-- **[Authentication](docs/AUTHENTICATION.md)** - Authentication system overview
-- **[Configuration](docs/CONFIGURATION.md)** - Complete configuration reference
-- **[Deployment](docs/DEPLOYMENT.md)** - Deployment guide for production
-- **[Production Checklist](docs/PRODUCTION_CHECKLIST.md)** - Production deployment checklist
-- **[Development](docs/DEVELOPMENT.md)** - Development workflow and contributing
-- **[Testing](docs/TESTING.md)** - Testing guide and conventions
-- **[Storage](docs/STORAGE.md)** - Storage abstraction guide
-- **[Middleware](docs/MIDDLEWARE.md)** - Middleware documentation
-- **[API Token Scopes](docs/api-token-scopes.md)** - API token permission system
-- **[Roadmap](docs/ROADMAP.md)** - Future development plans
+The generated project ships its own docs under `docs/` — start with
+[Getting Started](docs/GETTING_STARTED.md) and the
+[Configuration reference](docs/CONFIGURATION.md). They are Liquid-rendered at
+generation time and describe your project, not this repository.
 
-## Project Structure
+## Working on this template
 
-```
-{{project-name}}/
-├── src/
-│   ├── bin/           # Binary entry points
-│   ├── controllers/   # HTTP request handlers
-│   ├── middleware/    # Axum middleware
-│   ├── models/        # Database models (Toasty)
-│   ├── config/        # Configuration management
-│   ├── util/          # Utility functions
-│   ├── tests/         # Integration test infrastructure
-│   └── ...
-├── templates/         # Askama templates
-├── static/           # Static assets
-├── docs/             # Documentation
-└── Cargo.toml        # Dependencies
-```
+The checkout does not compile — `Cargo.toml` and several `src/` files contain
+Liquid placeholders and conditionals. Verification happens on rendered output:
+edit source → render → check the rendered project. `.github/workflows/template-ci.yml`
+runs this over the option matrix and is the source of truth.
 
-## Development
+The README split: `README.md` (this file) is the repository's own readme and is
+`ignore`d by cargo-generate. The readme shipped into generated projects lives in
+`{{"README"}}.md` — cargo-generate renders Liquid in filenames too, so it lands
+as `README.md` in the output.
 
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Accept snapshot changes
-cargo insta accept
-```
-
-### Database Migrations
-
-```bash
-# Apply pending migrations
-cargo run --bin {{project-name}} -- migrate migration apply
-
-# Generate a new migration after model changes
-cargo run --bin {{project-name}} -- migrate migration generate
-```
-
-## Philosophy
-
-{{project-name}} is designed with these principles:
-
-1. **Simplicity First**: Single-crate architecture with clear module organization
-2. **Zero-Setup Development**: SQLite and local filesystem for instant start
-3. **Production-Ready Patterns**: Based on crates.io's battle-tested implementation
-4. **Cost-Conscious**: Self-hostable with minimal external dependencies
-5. **Gradual Complexity**: Start simple, upgrade features as needed
-6. **Type Safety**: Leverage Rust's type system throughout
+See [docs/TEMPLATE.md](docs/TEMPLATE.md) for the full authoring reference
+(placeholders, tag-placement rules, conditional files) and the "Working on this
+template" section of [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the
+day-to-day workflow.
 
 ## License
 
