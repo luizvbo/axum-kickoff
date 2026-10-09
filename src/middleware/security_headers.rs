@@ -202,7 +202,12 @@ impl SecurityHeadersConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(FrameOptions::Deny);
 
-        let frame_ancestors = dotenvy::var("SECURITY_FRAME_ANCESTORS").ok();
+        // An empty value would emit a bare `frame-ancestors` directive
+        // (effectively `frame-ancestors ''`), which is neither valid nor the
+        // intended "no override" — treat it as unset.
+        let frame_ancestors = dotenvy::var("SECURITY_FRAME_ANCESTORS")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
 
         let referrer_policy = dotenvy::var("SECURITY_REFERRER_POLICY")
             .ok()
@@ -243,10 +248,15 @@ impl std::str::FromStr for CspMode {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
+        let lower = s.to_lowercase();
+        match lower.as_str() {
             "strict" => Ok(CspMode::Strict),
             "permissive" => Ok(CspMode::Permissive),
-            custom if custom.starts_with("custom:") => Ok(CspMode::Custom(custom[7..].to_string())),
+            _ if lower.starts_with("custom:") && !s[7..].trim().is_empty() => {
+                // Slice the original `s`: CSP tokens such as `sha256-…` hashes
+                // and nonces are case-sensitive and must not be lowercased.
+                Ok(CspMode::Custom(s[7..].to_string()))
+            }
             _ => Err(format!("Invalid CSP mode: {}", s)),
         }
     }
@@ -267,11 +277,13 @@ impl std::str::FromStr for FrameOptions {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
+        let lower = s.to_lowercase();
+        match lower.as_str() {
             "deny" => Ok(FrameOptions::Deny),
             "sameorigin" => Ok(FrameOptions::SameOrigin),
-            allow_from if allow_from.starts_with("allow-from:") => {
-                Ok(FrameOptions::AllowFrom(allow_from[11..].to_string()))
+            _ if lower.starts_with("allow-from:") && !s[11..].trim().is_empty() => {
+                // Slice the original `s` to preserve the origin's case.
+                Ok(FrameOptions::AllowFrom(s[11..].to_string()))
             }
             _ => Err(format!("Invalid frame options: {}", s)),
         }
@@ -329,11 +341,13 @@ impl std::str::FromStr for PermissionsPolicy {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
+        let lower = s.to_lowercase();
+        match lower.as_str() {
             "restrictive" => Ok(PermissionsPolicy::Restrictive),
             "permissive" => Ok(PermissionsPolicy::Permissive),
-            custom if custom.starts_with("custom:") => {
-                Ok(PermissionsPolicy::Custom(custom[7..].to_string()))
+            _ if lower.starts_with("custom:") && !s[7..].trim().is_empty() => {
+                // Slice the original `s` to preserve case-sensitive values.
+                Ok(PermissionsPolicy::Custom(s[7..].to_string()))
             }
             _ => Err(format!("Invalid permissions policy: {}", s)),
         }
@@ -344,7 +358,14 @@ impl std::str::FromStr for PermissionsPolicy {
 fn generate_csp(config: &SecurityHeadersConfig, nonce: &str) -> String {
     match &config.csp_mode {
         CspMode::Strict => {
-            let mut directives = vec![
+            // A repeated directive is ignored by browsers (the first
+            // occurrence wins), so the configured ancestors must *replace*
+            // `'none'` — not be appended as a second directive.
+            let frame_ancestors = match &config.frame_ancestors {
+                Some(ancestors) => format!("frame-ancestors {}", ancestors),
+                None => "frame-ancestors 'none'".to_string(),
+            };
+            let directives = vec![
                 "default-src 'self'".to_string(),
                 format!("script-src 'self' 'nonce-{}'", nonce),
                 format!("style-src 'self' 'nonce-{}'", nonce),
@@ -353,12 +374,8 @@ fn generate_csp(config: &SecurityHeadersConfig, nonce: &str) -> String {
                 "object-src 'none'".to_string(),
                 "base-uri 'self'".to_string(),
                 "form-action 'self'".to_string(),
-                "frame-ancestors 'none'".to_string(),
+                frame_ancestors,
             ];
-
-            if let Some(ancestors) = &config.frame_ancestors {
-                directives.push(format!("frame-ancestors {}", ancestors));
-            }
 
             directives.join("; ")
         }
@@ -729,6 +746,42 @@ mod tests {
         };
         let csp = generate_csp(&config, "test-nonce");
         assert!(csp.contains("frame-ancestors https://trusted.com"));
+        // Exactly one frame-ancestors directive: a repeated directive is
+        // ignored by browsers (first occurrence wins), so the configured
+        // value must replace `'none'` rather than follow it.
+        assert_eq!(csp.matches("frame-ancestors").count(), 1);
+        assert!(!csp.contains("frame-ancestors 'none'"));
+    }
+
+    #[test]
+    fn test_custom_modes_preserve_case() {
+        // `sha256-…` hashes and nonces are case-sensitive — the `custom:`
+        // payload must be sliced from the original string, not the lowercased
+        // copy used for keyword detection.
+        let mode = CspMode::from_str("custom:script-src 'sha256-AbCdEf123+/='").unwrap();
+        assert_eq!(
+            mode,
+            CspMode::Custom("script-src 'sha256-AbCdEf123+/='".to_string())
+        );
+
+        let mode = CspMode::from_str("CUSTOM:default-src 'Self'").unwrap();
+        assert_eq!(mode, CspMode::Custom("default-src 'Self'".to_string()));
+
+        let policy =
+            PermissionsPolicy::from_str("custom:camera=(self \"HTTPS://EXAMPLE.com\")").unwrap();
+        assert_eq!(
+            policy,
+            PermissionsPolicy::Custom("camera=(self \"HTTPS://EXAMPLE.com\")".to_string())
+        );
+    }
+
+    #[test]
+    fn test_custom_modes_reject_empty_payload() {
+        assert!(CspMode::from_str("custom:").is_err());
+        assert!(CspMode::from_str("custom:   ").is_err());
+        assert!(PermissionsPolicy::from_str("custom:").is_err());
+        assert!(FrameOptions::from_str("allow-from:").is_err());
+        assert!(FrameOptions::from_str("allow-from:  ").is_err());
     }
 
     #[test]

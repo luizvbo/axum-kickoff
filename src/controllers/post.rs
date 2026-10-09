@@ -73,13 +73,9 @@ pub struct ListPostsResponse {
         ListPostsParams
     ),
     responses(
-        (status = 200, description = "Paginated list of posts", body = ListPostsResponse),
-        (status = 401, description = "Unauthorized")
+        (status = 200, description = "Paginated list of posts", body = ListPostsResponse)
     ),
-    tag = "Posts",
-    security(
-        ("bearer_auth" = [])
-    )
+    tag = "Posts"
 )]
 pub async fn list_posts(
     State(state): State<AppState>,
@@ -90,7 +86,7 @@ pub async fn list_posts(
         .per_page
         .map(|p| (p as usize).min(MAX_PER_PAGE))
         .unwrap_or(DEFAULT_PER_PAGE);
-    let offset = ((page - 1) as usize) * per_page;
+    let offset = ((page - 1) as usize).saturating_mul(per_page);
 
     let mut db = state.0.database.db_clone();
 
@@ -135,13 +131,9 @@ pub async fn list_posts(
     ),
     responses(
         (status = 200, description = "Post details", body = PostResponse),
-        (status = 401, description = "Unauthorized"),
         (status = 404, description = "Post not found")
     ),
-    tag = "Posts",
-    security(
-        ("bearer_auth" = [])
-    )
+    tag = "Posts"
 )]
 pub async fn show_post(
     Path(id): Path<u64>,

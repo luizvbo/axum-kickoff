@@ -381,7 +381,11 @@ impl Runner {
                         "Job exhausted retries; marked dead"
                     );
                 } else {
-                    let next_run = compute_retry_time(now, job.retries);
+                    // Anchor the backoff to *now* — not to the `now` captured
+                    // before the handler ran. A job that executes longer than
+                    // its computed delay would otherwise get a `run_at` in the
+                    // past and retry in a hot loop.
+                    let next_run = compute_retry_time(jiff::Timestamp::now(), job.retries);
                     update_job(
                         &mut finalize_tx,
                         placeholder,
@@ -593,9 +597,14 @@ async fn mark_job_dead(
 }
 
 fn compute_retry_time(now: jiff::Timestamp, retries: i32) -> jiff::Timestamp {
-    let delay = 2_i64.checked_pow(retries as u32).unwrap_or(i64::MAX);
+    let delay = 2_i64
+        .checked_pow(retries.unsigned_abs().min(62))
+        .unwrap_or(i64::MAX);
+    // On overflow the delay is hundreds of millions of years — pinning to
+    // Timestamp::MAX keeps the job parked instead of retrying immediately
+    // (the old `unwrap_or(now)` fallback produced a hot retry loop).
     now.checked_add(jiff::SignedDuration::from_secs(delay))
-        .unwrap_or(now)
+        .unwrap_or(jiff::Timestamp::MAX)
 }
 
 #[cfg(unix)]
@@ -997,6 +1006,30 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(jobs.len(), 1);
+    }
+
+    #[test]
+    fn test_compute_retry_time_exponential_backoff() {
+        let now = jiff::Timestamp::now();
+        assert_eq!(
+            compute_retry_time(now, 0),
+            now + jiff::SignedDuration::from_secs(1)
+        );
+        assert_eq!(
+            compute_retry_time(now, 4),
+            now + jiff::SignedDuration::from_secs(16)
+        );
+    }
+
+    #[test]
+    fn test_compute_retry_time_overflow_pins_to_max() {
+        let now = jiff::Timestamp::now();
+        // 2^62 seconds far exceeds Timestamp range — the job is pinned to
+        // MAX rather than rescheduled for *now* (the old fallback produced a
+        // hot retry loop). Extreme retry counts saturate identically.
+        assert_eq!(compute_retry_time(now, 62), jiff::Timestamp::MAX);
+        assert_eq!(compute_retry_time(now, i32::MAX), jiff::Timestamp::MAX);
+        assert_eq!(compute_retry_time(now, i32::MIN), jiff::Timestamp::MAX);
     }
 
     #[tokio::test]

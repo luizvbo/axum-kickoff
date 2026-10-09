@@ -83,7 +83,9 @@ impl ApiToken {
         }
 
         if let Some(expired_at) = self.expired_at {
-            if expired_at < jiff::Timestamp::now() {
+            // `<=`: a token whose expiry is the current instant has already
+            // expired — the previous `<` left it valid for its final instant.
+            if expired_at <= jiff::Timestamp::now() {
                 return false;
             }
         }
@@ -91,18 +93,24 @@ impl ApiToken {
         true
     }
 
-    /// Parse resource scopes from JSON
+    /// Parse resource scopes from JSON.
+    ///
+    /// `None` means the column is `NULL` (unscoped legacy token). A present
+    /// but unparseable value fails *closed* — returned as `Some([])` so the
+    /// token matches nothing rather than silently becoming unrestricted.
     pub fn parse_resource_scopes(&self) -> Option<Vec<ResourceScope>> {
         self.resource_scopes
             .as_ref()
-            .and_then(|json| serde_json::from_str(json).ok())
+            .map(|json| serde_json::from_str(json).unwrap_or_default())
     }
 
-    /// Parse action scopes from JSON
+    /// Parse action scopes from JSON.
+    ///
+    /// Same fail-closed contract as [`Self::parse_resource_scopes`].
     pub fn parse_action_scopes(&self) -> Option<Vec<ActionScope>> {
         self.action_scopes
             .as_ref()
-            .and_then(|json| serde_json::from_str(json).ok())
+            .map(|json| serde_json::from_str(json).unwrap_or_default())
     }
 }
 
@@ -401,6 +409,62 @@ mod tests {
         let scope = ResourceScope::new("foo*".to_string()).unwrap();
         let json = serde_json::to_string(&scope).unwrap();
         assert_eq!(json, "\"foo*\"");
+    }
+
+    fn token_with_expiry(expired_at: Option<jiff::Timestamp>) -> ApiToken {
+        ApiToken::new(
+            1,
+            "test".to_string(),
+            crate::util::PlainToken::generate().hashed(),
+            None,
+            None,
+            expired_at,
+        )
+    }
+
+    #[test]
+    fn test_is_valid_expiry_boundary() {
+        // A token expiring at the current instant is already expired.
+        let token = token_with_expiry(Some(jiff::Timestamp::now()));
+        assert!(!token.is_valid());
+
+        let past = jiff::Timestamp::now()
+            .checked_sub(jiff::SignedDuration::from_secs(1))
+            .unwrap();
+        assert!(!token_with_expiry(Some(past)).is_valid());
+
+        let future = jiff::Timestamp::now()
+            .checked_add(jiff::SignedDuration::from_secs(60))
+            .unwrap();
+        assert!(token_with_expiry(Some(future)).is_valid());
+        assert!(token_with_expiry(None).is_valid());
+    }
+
+    #[test]
+    fn test_is_valid_revoked() {
+        let mut token = token_with_expiry(None);
+        assert!(token.is_valid());
+        token.revoked = true;
+        assert!(!token.is_valid());
+    }
+
+    #[test]
+    fn test_parse_scopes_fail_closed_on_corrupt_json() {
+        // A corrupted scope column must deny rather than silently widening
+        // the token to "unrestricted".
+        let mut token = token_with_expiry(None);
+        token.resource_scopes = Some("not json".to_string());
+        token.action_scopes = Some("{".to_string());
+
+        assert_eq!(token.parse_resource_scopes(), Some(vec![]));
+        assert_eq!(token.parse_action_scopes(), Some(vec![]));
+    }
+
+    #[test]
+    fn test_parse_scopes_none_stays_none() {
+        let token = token_with_expiry(None);
+        assert_eq!(token.parse_resource_scopes(), None);
+        assert_eq!(token.parse_action_scopes(), None);
     }
 
     #[test]

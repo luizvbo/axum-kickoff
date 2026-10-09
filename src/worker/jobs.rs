@@ -62,10 +62,20 @@ async fn cleanup_old_rate_limit_buckets(
     database: &Database,
     max_age_days: u64,
 ) -> anyhow::Result<()> {
-    let max_age = jiff::SignedDuration::from_secs(max_age_days as i64 * 86400);
+    // `max_age_days as i64 * 86400` wraps or overflows for pathological
+    // values — a wrapped negative turns the `checked_sub` into an addition,
+    // and the old `unwrap_or(now)` fallback then made the cutoff *now*,
+    // deleting every bucket instead of none. Saturate the multiplication and
+    // pin the cutoff to the UNIX epoch so an unrepresentable retention window
+    // deletes nothing.
+    let max_age = jiff::SignedDuration::from_secs(
+        i64::try_from(max_age_days)
+            .unwrap_or(i64::MAX)
+            .saturating_mul(86400),
+    );
     let cutoff = jiff::Timestamp::now()
         .checked_sub(max_age)
-        .unwrap_or(jiff::Timestamp::now());
+        .unwrap_or(jiff::Timestamp::UNIX_EPOCH);
 
     let mut db = database.db_clone();
     let cap = db.capability();
@@ -91,5 +101,104 @@ fn build_delete_sql(cap: &Capability) -> &'static str {
             "DELETE FROM rate_limit_buckets WHERE last_refill < ?1"
         }
         None => panic!("raw SQL cleanup requires a SQL backend"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::RateLimitBucket;
+    use crate::tests::test_app::TestApp;
+
+    /// A `max_age_days` that overflows `i64 * 86400` must not delete anything:
+    /// before the fix the wrapped/negated duration turned the cutoff into a
+    /// *future* timestamp, wiping live buckets.
+    #[tokio::test]
+    async fn test_cleanup_with_huge_max_age_deletes_nothing() {
+        let test_app = TestApp::new().await;
+        let database = test_app.state.0.database.clone();
+
+        let mut db = database.db_clone();
+        toasty::create!(RateLimitBucket {
+            bucket_key: "api_request:1.2.3.4".to_string(),
+            action: "api_request".to_string(),
+            bucket_id: "1.2.3.4".to_string(),
+            tokens: 3,
+            last_refill: jiff::Timestamp::now(),
+        })
+        .exec(&mut db)
+        .await
+        .unwrap();
+
+        cleanup_old_rate_limit_buckets(&database, u64::MAX)
+            .await
+            .unwrap();
+
+        let found = RateLimitBucket::filter(
+            RateLimitBucket::fields()
+                .bucket_key()
+                .eq("api_request:1.2.3.4".to_string()),
+        )
+        .first()
+        .exec(&mut db)
+        .await
+        .unwrap();
+        assert!(found.is_some(), "bucket must survive a huge max_age_days");
+    }
+
+    /// Sensible values still prune: a bucket older than `max_age_days` is
+    /// deleted, a fresh one survives.
+    #[tokio::test]
+    async fn test_cleanup_deletes_only_stale_buckets() {
+        let test_app = TestApp::new().await;
+        let database = test_app.state.0.database.clone();
+
+        let mut db = database.db_clone();
+        let old = jiff::Timestamp::now()
+            .checked_sub(jiff::SignedDuration::from_secs(86400 * 10))
+            .unwrap();
+        toasty::create!(RateLimitBucket {
+            bucket_key: "api_request:stale".to_string(),
+            action: "api_request".to_string(),
+            bucket_id: "stale".to_string(),
+            tokens: 0,
+            last_refill: old,
+        })
+        .exec(&mut db)
+        .await
+        .unwrap();
+        toasty::create!(RateLimitBucket {
+            bucket_key: "api_request:fresh".to_string(),
+            action: "api_request".to_string(),
+            bucket_id: "fresh".to_string(),
+            tokens: 0,
+            last_refill: jiff::Timestamp::now(),
+        })
+        .exec(&mut db)
+        .await
+        .unwrap();
+
+        cleanup_old_rate_limit_buckets(&database, 5).await.unwrap();
+
+        let stale = RateLimitBucket::filter(
+            RateLimitBucket::fields()
+                .bucket_key()
+                .eq("api_request:stale".to_string()),
+        )
+        .first()
+        .exec(&mut db)
+        .await
+        .unwrap();
+        let fresh = RateLimitBucket::filter(
+            RateLimitBucket::fields()
+                .bucket_key()
+                .eq("api_request:fresh".to_string()),
+        )
+        .first()
+        .exec(&mut db)
+        .await
+        .unwrap();
+        assert!(stale.is_none());
+        assert!(fresh.is_some());
     }
 }
