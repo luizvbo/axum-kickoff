@@ -73,12 +73,14 @@ impl CreateTokenRequest {
             .transpose()
             .map_err(|e| format!("Invalid action scope: {}", e))?;
 
-        // Validate expiration date
+        // Validate expiration date. Accept any RFC 3339 / ISO 8601 timestamp
+        // (fractional seconds, numeric offsets) — not just the literal
+        // `YYYY-MM-DDTHH:MM:SSZ` shape the strptime pattern used to require.
         let expires_at = if let Some(s) = self.expires_at {
-            let timestamp = jiff::Timestamp::strptime("%Y-%m-%dT%H:%M:%SZ", &s).map_err(|_| {
+            let timestamp = s.parse::<jiff::Timestamp>().map_err(|_| {
                 "Invalid expires_at format. Use ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ".to_string()
             })?;
-            if timestamp < jiff::Timestamp::now() {
+            if timestamp <= jiff::Timestamp::now() {
                 return Err("Expiration date cannot be in the past".to_string());
             }
             Some(timestamp)
@@ -290,7 +292,7 @@ pub async fn list_tokens(
         .per_page
         .map(|p| (p as usize).min(MAX_TOKEN_PER_PAGE))
         .unwrap_or(DEFAULT_TOKEN_PER_PAGE);
-    let offset = ((page - 1) as usize) * per_page;
+    let offset = ((page - 1) as usize).saturating_mul(per_page);
 
     let mut db = state.0.database.db_clone();
 
@@ -395,5 +397,49 @@ mod tests {
         let json = r#"{"resource_scopes": ["crate1"]}"#;
         let req: Result<CreateTokenRequest, _> = serde_json::from_str(json);
         assert!(req.is_err());
+    }
+
+    fn request_with_expiry(expires_at: &str) -> CreateTokenRequest {
+        CreateTokenRequest {
+            name: "test".to_string(),
+            resource_scopes: None,
+            action_scopes: None,
+            expires_at: Some(expires_at.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_expires_at_accepts_rfc3339_variants() {
+        // The documented "ISO 8601" contract accepts fractional seconds and
+        // numeric offsets, not only the strict `...Z` shape.
+        let future = jiff::Timestamp::now()
+            .checked_add(jiff::SignedDuration::from_hours(1))
+            .unwrap()
+            .to_string();
+        assert!(request_with_expiry(&future).validate().is_ok());
+
+        assert!(request_with_expiry("2999-01-01T00:00:00.123Z")
+            .validate()
+            .is_ok());
+        assert!(request_with_expiry("2999-01-01T02:00:00+02:00")
+            .validate()
+            .is_ok());
+        assert!(request_with_expiry("2999-01-01T00:00:00Z")
+            .validate()
+            .is_ok());
+    }
+
+    #[test]
+    fn test_expires_at_rejects_invalid_and_past() {
+        assert!(request_with_expiry("not-a-date").validate().is_err());
+        assert!(request_with_expiry("2999-13-01T00:00:00Z")
+            .validate()
+            .is_err());
+        assert!(request_with_expiry("2000-01-01T00:00:00Z")
+            .validate()
+            .is_err());
+        // An expiry equal to the current instant is already useless.
+        let now = jiff::Timestamp::now().to_string();
+        assert!(request_with_expiry(&now).validate().is_err());
     }
 }

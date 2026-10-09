@@ -135,15 +135,12 @@ impl Server {
 
         let allowed_origins = AllowedOrigins::from_default_env()?;
 
-        // Parse blocked IPs
-        let blocked_ips: HashSet<IpAddr> = env::var("BLOCKED_IPS")?
-            .and_then(|s| {
-                s.split(',')
-                    .map(|ip| ip.trim().parse::<IpAddr>())
-                    .collect::<Result<HashSet<_>, _>>()
-                    .ok()
-            })
-            .unwrap_or_default();
+        // Parse blocked IPs. A malformed entry is a startup error: the
+        // previous `.ok()` discarded the *entire* list on any parse failure,
+        // silently disabling IP blocking while the operator believed it was
+        // active (fail-open). Fail fast instead, like TRUSTED_PROXIES and
+        // BLOCKED_TRAFFIC do.
+        let blocked_ips = parse_blocked_ips(env::var("BLOCKED_IPS")?)?;
 
         // Parse blocked routes
         let blocked_routes: HashSet<String> = env::var("BLOCKED_ROUTES")?
@@ -159,8 +156,20 @@ impl Server {
         // `cookie::Key::derive_from` accepts keys of any length, so enforce
         // the documented 64-byte minimum explicitly in production rather
         // than letting a weak key sign real sessions.
-        if base.env == Env::Production && session_key.expose_secret().len() < 64 {
-            anyhow::bail!("SESSION_KEY must be at least 64 bytes when APP_ENV=production");
+        if base.env == Env::Production {
+            let key = session_key.expose_secret();
+            if key.len() < 64 {
+                anyhow::bail!("SESSION_KEY must be at least 64 bytes when APP_ENV=production");
+            }
+            // The `.env.sample` placeholder is long enough to pass the length
+            // check but is publicly known — a verbatim copy to `.env` would
+            // let anyone forge session cookies.
+            if key == SAMPLE_SESSION_KEY {
+                anyhow::bail!(
+                    "SESSION_KEY still contains the .env.sample placeholder; \
+                     generate a random key (e.g. `openssl rand -base64 48`)"
+                );
+            }
         }
 
         // Load OAuth provider credentials. A compiled-in provider is enabled
@@ -169,8 +178,11 @@ impl Server {
         // sign-in).
         let mut oauth_providers = Vec::new();
         for spec in crate::oauth::provider_specs() {
-            let client_id = env::var(spec.client_id_env)?;
-            let client_secret = env::var(spec.client_secret_env)?;
+            // Empty/whitespace values count as unset: `VAR=` would otherwise
+            // enable the provider with empty credentials and only fail at
+            // the first real OAuth exchange.
+            let client_id = env::var(spec.client_id_env)?.filter(|v| !v.trim().is_empty());
+            let client_secret = env::var(spec.client_secret_env)?.filter(|v| !v.trim().is_empty());
 
             match (client_id, client_secret) {
                 (Some(client_id), Some(client_secret)) => {
@@ -210,13 +222,22 @@ impl Server {
         // Parse rate limiter configuration from environment
         let rate_limiter_config = parse_rate_limiter_config()?;
 
-        let metrics_token = env::var("METRICS_TOKEN")?.map(SecretString::from);
-        let sentry_dsn = env::var("SENTRY_DSN")?.map(SecretString::from);
+        // An empty `METRICS_TOKEN` would require the literal header
+        // `Authorization: Bearer ` — a sham protection that appears
+        // configured but lets anyone through.
+        let metrics_token = env::var("METRICS_TOKEN")?
+            .map(|t| require_non_empty("METRICS_TOKEN", t))
+            .transpose()?
+            .map(SecretString::from);
+        let sentry_dsn = env::var("SENTRY_DSN")?
+            .map(|t| require_non_empty("SENTRY_DSN", t))
+            .transpose()?
+            .map(SecretString::from);
 
+        // Fail fast on a typo like `LOG_FORMAT=jsno` instead of silently
+        // falling back — consistent with every other parsed variable.
         let log_format = match env::var("LOG_FORMAT")? {
-            Some(value) => value
-                .parse()
-                .unwrap_or_else(|_| default_log_format(base.env)),
+            Some(value) => value.parse().map_err(anyhow::Error::msg)?,
             None => default_log_format(base.env),
         };
 
@@ -278,6 +299,43 @@ pub struct OAuthProviderConfig {
     /// The callback URL registered with the provider
     /// (`/api/v1/auth/<slug>/callback` by default).
     pub redirect_uri: String,
+}
+
+/// The `SESSION_KEY` placeholder shipped in `.env.sample`. It is 67 bytes —
+/// long enough to pass the production length check — so it needs an explicit
+/// denylist entry to prevent a verbatim copy from signing real sessions.
+const SAMPLE_SESSION_KEY: &str =
+    "use-a-session-key-with-64-bytes-or-more-here-and-store-it-securely";
+
+/// Reject environment variables that are set but empty (or whitespace-only).
+fn require_non_empty(key: &str, value: String) -> anyhow::Result<String> {
+    if value.trim().is_empty() {
+        anyhow::bail!("{key} must not be empty when set");
+    }
+    Ok(value)
+}
+
+/// Parse a `BLOCKED_IPS` value into a set of addresses.
+///
+/// Empty entries (e.g. a trailing comma) are skipped; malformed entries are
+/// an error — this is a security control and must fail closed.
+fn parse_blocked_ips(raw: Option<String>) -> anyhow::Result<HashSet<IpAddr>> {
+    let mut result = HashSet::new();
+    let Some(s) = raw else { return Ok(result) };
+
+    for entry in s.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        result.insert(
+            entry
+                .parse::<IpAddr>()
+                .with_context(|| format!("Invalid BLOCKED_IPS entry '{entry}'"))?,
+        );
+    }
+
+    Ok(result)
 }
 
 /// Parse TRUSTED_PROXIES environment variable
@@ -373,7 +431,12 @@ where
             return Err(anyhow::anyhow!("Invalid BLOCKED_TRAFFIC format: {pair}"));
         }
 
-        let header_name = parts[0].trim().to_string();
+        let header_name = parts[0].trim();
+        // Validate the name eagerly: `HeaderMap::get_all` on an invalid name
+        // yields an empty iterator, which would silently disable the rule.
+        http::header::HeaderName::from_str(header_name)
+            .with_context(|| format!("Invalid BLOCKED_TRAFFIC header name '{header_name}'"))?;
+        let header_name = header_name.to_string();
         let env_var_name = parts[1].trim();
 
         let env_value = getenv(env_var_name)?
@@ -636,5 +699,202 @@ mod tests {
         assert_eq!(slice.len(), 1);
         // Verify we get a reference, not ownership
         let _ = &slice[0];
+    }
+
+    #[test]
+    fn test_parse_blocked_ips_valid() {
+        let result = parse_blocked_ips(Some("192.168.1.1, 10.0.0.5 ,::1".to_string())).unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result.contains(&"192.168.1.1".parse::<IpAddr>().unwrap()));
+        assert!(result.contains(&"10.0.0.5".parse::<IpAddr>().unwrap()));
+        assert!(result.contains(&"::1".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_blocked_ips_skips_empty_entries() {
+        let result = parse_blocked_ips(Some("10.0.0.1,,10.0.0.2,".to_string())).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_blocked_ips_fails_closed_on_bad_entry() {
+        // A single typo must abort startup instead of silently dropping the
+        // whole blocklist (the old `.ok()` discarded everything).
+        let result = parse_blocked_ips(Some("10.0.0.1,not-an-ip,10.0.0.2".to_string()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not-an-ip"));
+    }
+
+    #[test]
+    fn test_parse_blocked_ips_none_and_empty() {
+        assert!(parse_blocked_ips(None).unwrap().is_empty());
+        assert!(parse_blocked_ips(Some(String::new())).unwrap().is_empty());
+        assert!(parse_blocked_ips(Some(" , ".to_string()))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn test_parse_blocked_traffic_invalid_header_name() {
+        let mut values = HashMap::new();
+        values.insert("BLOCKED", "bot");
+        // A header name that can never match a real header would otherwise
+        // silently disable the rule at request time.
+        let result = parse_blocked_traffic(Some("Not A Header!=BLOCKED"), getenv_stub(&values));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_require_non_empty() {
+        assert!(require_non_empty("X", "value".to_string()).is_ok());
+        assert!(require_non_empty("X", String::new()).is_err());
+        assert!(require_non_empty("X", "   ".to_string()).is_err());
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Snapshot, override, and restore environment variables around `f`.
+    /// `None` removes the variable.
+    fn with_env(vars: Vec<(&str, Option<&str>)>, f: impl FnOnce()) {
+        let originals: Vec<(String, Option<String>)> = vars
+            .iter()
+            .map(|(k, _)| (k.to_string(), std::env::var(k).ok()))
+            .collect();
+        for (k, v) in &vars {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        f();
+        for (k, v) in originals {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+    }
+
+    /// The minimal environment `Server::from_environment` needs, plus every
+    /// variable the new tests mutate, reset to a clean state.
+    fn base_env() -> Vec<(&'static str, Option<&'static str>)> {
+        let mut vars: Vec<(&'static str, Option<&'static str>)> = vec![
+            ("APP_ENV", Some("test")),
+            ("HEROKU", None),
+            ("DEV_DOCKER", None),
+            ("SESSION_KEY", Some("test-session-key")),
+            ("WEB_ALLOWED_ORIGINS", Some("http://localhost:3000")),
+            ("BLOCKED_IPS", None),
+            ("BLOCKED_ROUTES", None),
+            ("BLOCKED_TRAFFIC", None),
+            ("TRUSTED_PROXIES", None),
+            ("METRICS_TOKEN", None),
+            ("SENTRY_DSN", None),
+            ("LOG_FORMAT", None),
+        ];
+        for spec in crate::oauth::provider_specs() {
+            vars.push((spec.client_id_env, None));
+            vars.push((spec.client_secret_env, None));
+            vars.push((spec.redirect_uri_env, None));
+        }
+        vars
+    }
+
+    #[test]
+    fn test_from_environment_rejects_sample_session_key_in_production() {
+        let _guard = ENV_LOCK.lock();
+        let mut vars = base_env();
+        vars.retain(|(k, _)| *k != "APP_ENV");
+        vars.push(("APP_ENV", Some("production")));
+        vars.retain(|(k, _)| *k != "SESSION_KEY");
+        vars.push(("SESSION_KEY", Some(SAMPLE_SESSION_KEY)));
+        with_env(vars, || {
+            // The .env.sample placeholder is 67 bytes — long enough to pass
+            // the length check — but publicly known, so production must
+            // reject it outright.
+            let err = Server::from_environment().err().unwrap();
+            assert!(err.to_string().contains("placeholder"));
+        });
+    }
+
+    #[test]
+    fn test_from_environment_rejects_short_session_key_in_production() {
+        let _guard = ENV_LOCK.lock();
+        let mut vars = base_env();
+        vars.retain(|(k, _)| *k != "APP_ENV");
+        vars.push(("APP_ENV", Some("production")));
+        vars.retain(|(k, _)| *k != "SESSION_KEY");
+        vars.push(("SESSION_KEY", Some("short")));
+        with_env(vars, || {
+            assert!(Server::from_environment().is_err());
+        });
+    }
+
+    #[test]
+    fn test_from_environment_rejects_empty_metrics_token() {
+        let _guard = ENV_LOCK.lock();
+        let mut vars = base_env();
+        vars.push(("METRICS_TOKEN", Some("")));
+        with_env(vars, || {
+            // `METRICS_TOKEN=` must abort startup, not produce a sham
+            // `Authorization: Bearer ` requirement.
+            assert!(Server::from_environment().is_err());
+        });
+    }
+
+    #[test]
+    fn test_from_environment_rejects_invalid_log_format() {
+        let _guard = ENV_LOCK.lock();
+        let mut vars = base_env();
+        vars.push(("LOG_FORMAT", Some("jsno")));
+        with_env(vars, || {
+            assert!(Server::from_environment().is_err());
+        });
+    }
+
+    #[test]
+    fn test_from_environment_empty_oauth_credentials_not_enabled() {
+        let _guard = ENV_LOCK.lock();
+        let specs = crate::oauth::provider_specs();
+        if specs.is_empty() {
+            return;
+        }
+        let mut vars = base_env();
+        // `VAR=` counts as unset: an empty client id + secret must not
+        // enable the provider.
+        for spec in &specs {
+            vars.push((spec.client_id_env, Some("")));
+            vars.push((spec.client_secret_env, Some("  ")));
+        }
+        with_env(vars, || {
+            let config = Server::from_environment().unwrap();
+            assert!(config.oauth_providers.is_empty());
+        });
+    }
+
+    #[test]
+    fn test_from_environment_rejects_partial_oauth_credentials() {
+        let _guard = ENV_LOCK.lock();
+        let specs = crate::oauth::provider_specs();
+        let Some(spec) = specs.first() else { return };
+        let mut vars = base_env();
+        // Empty id is filtered to None; a present secret alone must bail.
+        vars.retain(|(k, _)| *k != spec.client_id_env && *k != spec.client_secret_env);
+        vars.push((spec.client_id_env, Some("")));
+        vars.push((spec.client_secret_env, Some("secret")));
+        with_env(vars, || {
+            assert!(Server::from_environment().is_err());
+        });
+    }
+
+    #[test]
+    fn test_from_environment_rejects_bad_blocked_ips() {
+        let _guard = ENV_LOCK.lock();
+        let mut vars = base_env();
+        vars.retain(|(k, _)| *k != "BLOCKED_IPS");
+        vars.push(("BLOCKED_IPS", Some("10.0.0.1,not-an-ip")));
+        with_env(vars, || {
+            assert!(Server::from_environment().is_err());
+        });
     }
 }

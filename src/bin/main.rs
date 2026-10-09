@@ -59,6 +59,13 @@ fn main() -> Result<()> {
         }
         Command::BackgroundWorker => {
             let config = {{crate_name}}::config::Server::from_environment()?;
+{% if sentry %}
+            // Mirror the server path: initialize Sentry before the tracing
+            // subscriber so `tracing::error!` events from the worker loop are
+            // captured. The guard must stay alive for the worker's lifetime.
+            #[cfg(feature = "sentry")]
+            let _sentry_guard = {{crate_name}}::tracing::init_sentry(config.sentry_dsn.as_ref());
+{% endif %}
             let rt = build_runtime(&config)?;
             rt.block_on(run_worker(config))?;
         }

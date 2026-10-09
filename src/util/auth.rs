@@ -244,14 +244,13 @@ impl AuthCheck {
     /// Check if the token's resource scopes match the required resource
     fn resource_scope_matches(&self, token_scopes: Option<&[ResourceScope]>) -> bool {
         match (&token_scopes, &self.crate_name) {
-            // The token is a legacy token (no scopes)
+            // The token is a legacy token (no scopes column)
             (None, _) => true,
 
-            // The token does not have any resource scopes
-            (Some([]), _) => true,
-
             // The token has resource scopes, but the endpoint does not deal with specific resources
-            // However, if allow_any_crate_scope is set, we allow it (caller handles filtering)
+            // However, if allow_any_crate_scope is set, we allow it (caller handles filtering).
+            // An explicitly empty list also denies here — consistent with
+            // action scopes, where `Some([])` grants nothing.
             (Some(_), None) => self.allow_any_crate_scope,
 
             // The token is NOT a legacy token, and the endpoint requires a specific resource
@@ -406,6 +405,48 @@ mod tests {
             token_id: 1,
             api_token: token,
         };
+        assert!(check.check(&auth).is_err());
+    }
+
+    #[test]
+    fn test_empty_crate_scope_list_denies() {
+        // An explicitly empty resource-scope list grants nothing — consistent
+        // with action scopes. Previously `Some([])` was treated as
+        // unrestricted, which also let corrupted JSON widen access.
+        let check = AuthCheck::new().for_crate("posts");
+        let token = create_test_token(None, Some(vec![]));
+        let auth = Authentication::Token {
+            user_id: 1,
+            token_id: 1,
+            api_token: token,
+        };
+        assert!(check.check(&auth).is_err());
+    }
+
+    #[test]
+    fn test_corrupt_scope_column_denies() {
+        // `parse_*_scopes` fails closed on unparseable JSON: `Some("…")` →
+        // `Some([])` → the token matches no scope.
+        let token = Arc::new(ApiToken {
+            id: 1,
+            user_id: 1,
+            name: "test".to_string(),
+            token: vec![],
+            created_at: Timestamp::now(),
+            last_used_at: None,
+            revoked: false,
+            resource_scopes: Some("not json".to_string()),
+            action_scopes: Some("{".to_string()),
+            expired_at: None,
+        });
+        let auth = Authentication::Token {
+            user_id: 1,
+            token_id: 1,
+            api_token: token,
+        };
+        let check = AuthCheck::new()
+            .with_action_scope(ActionScope::Read)
+            .for_crate("posts");
         assert!(check.check(&auth).is_err());
     }
 
