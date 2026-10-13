@@ -42,15 +42,13 @@ exclude = [
 ]
 
 ignore = [
-    # Not part of a generated project. Its absence in rendered output is also
-    # what `.github/workflows/ci.yml` uses to tell generated projects from the
-    # template repo itself (every job is skipped while it exists).
+    # Not part of a generated project.
     "cargo-generate.toml",
     # This repository's own README — the generated project's README lives in
     # '{{"README"}}.md' (Liquid filenames render too, so it ships as README.md).
     "README.md",
     # Template-repo CI (renders + verifies the template itself). Generated
-    # projects get `.github/workflows/ci.yml` instead, copied verbatim.
+    # projects get `.github/workflows/ci.yml`, placed by `post.rhai`.
     ".github/workflows/template-ci.yml",
     # Template-authoring documentation; irrelevant to generated projects.
     "docs/TEMPLATE.md",
@@ -63,6 +61,14 @@ ignore = [
     ".env",
     "axum_kickoff.db",
 ]
+
+# Post-render file shuffling that `exclude`/`ignore` cannot express.
+# `post.rhai` swaps `.github/ci.yml` (the real generated-project CI, inert in
+# this repository because it sits outside `workflows/`) over the inert stub
+# at `.github/workflows/ci.yml`, then deletes itself. Renders therefore ship
+# a clean `ci.yml` with no template-detection machinery.
+[hooks]
+post = ["post.rhai"]
 
 [placeholders.database]
 type = "string"

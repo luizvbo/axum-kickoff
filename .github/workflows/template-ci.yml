@@ -170,5 +170,7 @@ jobs:
       - run: cargo audit --db "$(mktemp -d -p "${RUNNER_TEMP}" cargo-audit-db-XXXXXX)"
         working-directory: ${{ runner.temp }}/render/smoke-deps
 
-      # zizmor lints the template repo's own workflows (both files).
-      - run: zizmor .github/workflows
+      # zizmor lints the template repo's own workflows, plus `.github/ci.yml`
+      # — the real generated-project CI, moved into `workflows/` at render
+      # time by `post.rhai`.
+      - run: zizmor .github/workflows .github/ci.yml
