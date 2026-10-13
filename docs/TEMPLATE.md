@@ -114,11 +114,14 @@ populate the field.
 
 ## CI split
 
-- `.github/workflows/ci.yml`: the **generated project's** CI (fmt, clippy,
-  doc, tests, cargo-deny/machete/audit, zizmor). It is copied verbatim
-  (`exclude`), so in the template repository it must not run: a `detect` job
-  checks for `cargo-generate.toml` (which is `ignore`d from renders) and every
-  cargo job is gated on its absence.
+- `.github/ci.yml`: the **generated project's** CI (fmt, clippy, doc, tests,
+  cargo-deny/machete/audit, zizmor), copied verbatim (`exclude`). It sits
+  outside `workflows/` so the template repository never executes it; the
+  `post.rhai` hook moves it to `.github/workflows/ci.yml` at render time, so
+  generated projects ship a clean workflow with no template machinery.
+- `.github/workflows/ci.yml`: an inert **stub** the hook replaces. It exists
+  so the template repository sees a harmless `CI` workflow and triggers only
+  on `workflow_dispatch`.
 - `.github/workflows/template-ci.yml`: the **template's** CI. Renders the
   option matrix outside the checkout dir and runs cargo checks/tests there. It
   is `ignore`d from renders.
