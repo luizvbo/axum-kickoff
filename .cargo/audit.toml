@@ -1,0 +1,9 @@
+[advisories]
+ignore = [
+    # rsa is pulled into Cargo.lock only as an optional dependency of
+    # `toasty-driver-mysql` (via `sqlx-mysql`). The mysql/mariadb driver
+    # features are never enabled — the only database backends are sqlite
+    # and postgresql — so the crate is never compiled. The Marvin Attack
+    # advisory has no fixed release; revisit if a mysql backend is added.
+    "RUSTSEC-2023-0071",
+]
