@@ -75,18 +75,18 @@ Use this checklist when deploying {{project-name}} to production.
   updated (CI's `deps` job does this for the default render)
 
 **Known advisories in the shipped lockfile.** These are transitive
-dependencies with no safe upgrade available yet — track them upstream and
+dependencies with no safe upgrade available yet. Track them upstream and
 re-check after each `cargo update`:
 
-- `lru` 0.16.4 — RUSTSEC-2026-0253 (unsound: potential use-after-free in
+- `lru` 0.16.4: RUSTSEC-2026-0253 (unsound: potential use-after-free in
   `LruCache::pop()`). Transitive via `toasty-core`/`toasty-cli`. Reported as
-  a warning by `cargo deny`/`cargo audit`; resolution requires a `toasty`
+  a warning by `cargo deny`/`cargo audit`. Resolution requires a `toasty`
   release that bumps `lru`.
-- `mysql_async` 0.37.0 — yanked from crates.io. It is present in the
+- `mysql_async` 0.37.0: yanked from crates.io. It is present in the
   lockfile via `toasty-driver-mysql`, but no database option in this
   template enables the MySQL driver, so the crate is never compiled into
   the binary. The warning can be treated as cosmetic.
-{% if database == "postgresql" %}- `rustls-pemfile` 2.2.0 — RUSTSEC-2025-0134 (unmaintained, not a known
+{% if database == "postgresql" %}- `rustls-pemfile` 2.2.0: RUSTSEC-2025-0134 (unmaintained, not a known
   vulnerability). Transitive via `toasty-driver-postgresql`, which is only
   included because this project was generated with `database=postgresql`.
   There is no safe upgrade: `toasty` must first migrate to the PEM support
@@ -97,7 +97,7 @@ re-check after each `cargo update`:
   ```toml
   [advisories]
   ignore = [
-      # Unmaintained, not vulnerable — transitive via toasty-driver-postgresql.
+      # Unmaintained, not vulnerable: transitive via toasty-driver-postgresql.
       # Remove once toasty migrates to rustls-pki-types' PemObject.
       "RUSTSEC-2025-0134",
   ]

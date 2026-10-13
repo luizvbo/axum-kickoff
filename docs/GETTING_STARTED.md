@@ -49,7 +49,7 @@ cp .env.sample .env
 Edit `.env` with your configuration. The minimum required variables are:
 
 ```bash
-# Application environment — defaults to `production` when unset, so set this
+# Application environment: defaults to `production` when unset, so set this
 # explicitly for local development
 APP_ENV=development
 
@@ -89,7 +89,7 @@ STORAGE_PATH=./local_uploads
 {% if oauth_github or oauth_google or oauth_facebook %}Each provider compiled into this project is enabled when both its client ID
 and secret are set. Configure the ones you want to offer on the login page:
 
-{% else %}No OAuth providers were selected at generation time — skip this section.
+{% else %}No OAuth providers were selected at generation time. Skip this section.
 
 {% endif %}{% if oauth_github %}#### GitHub
 
@@ -324,7 +324,7 @@ DATABASE_URL=sqlite::memory:
 Common issues:
 
 - **Redirect URI mismatch**: Ensure the provider's `*_REDIRECT_URI` matches exactly what you configured in its app settings
-- **Client ID/Secret incorrect**: Double-check the provider's app settings; setting only one of the pair is a startup error
+- **Client ID/Secret incorrect**: Double-check the provider's app settings. Setting only one of the pair is a startup error
 - **HTTP vs HTTPS**: Providers require HTTPS for production OAuth callbacks
 - **"Unknown or unconfigured OAuth provider"**: the provider wasn't selected at generation time, or its credentials aren't set
 

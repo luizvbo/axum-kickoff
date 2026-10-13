@@ -2,10 +2,10 @@
 
 This document describes how this repository works *as a cargo-generate
 template*. It is excluded from generated projects (via `ignore` in
-`cargo-generate.toml`) — if you are looking at a generated project's checkout,
+`cargo-generate.toml`). If you are looking at a generated project's checkout,
 this file does not exist and none of it applies.
 
-## The source tree does not compile — by design
+## The source tree does not compile by design
 
 `Cargo.toml` and several `src/` files contain Liquid placeholders
 (`{{project-name}}`, `{{crate_name}}`, `{% if metrics %}` …). `cargo`/`rustfmt`
@@ -27,18 +27,18 @@ Workflow:
 Liquid's `{{ }}` / `{% %}` delimiters are **not** configurable in
 cargo-generate, and several file families collide with them:
 
-- `templates/` — Askama uses the same `{{ }}`/`{% %}` syntax. `{{ ctx.x }}`
-  would render silently empty; `{% block %}`/`{% extends %}` are hard parse
+- `templates/`: Askama uses the same `{{ }}`/`{% %}` syntax. `{{ ctx.x }}`
+  would render silently empty. `{% block %}`/`{% extends %}` are hard parse
   errors.
-- `.github/` — GitHub Actions `${{ github.* }}` expressions collide.
-- `static/` — vendored JS bundles contain `{{ }}` sequences.
+- `.github/`: GitHub Actions `${{ github.* }}` expressions collide.
+- `static/`: vendored JS bundles contain `{{ }}` sequences.
 - Docs that show literal Askama syntax (`ADD_HTMX_FORM.md`,
   `ADD_NEW_PAGE.md`, `ADD_PROTECTED_ROUTE.md`, `CSRF_PROTECTION.md`,
   `HTMX_ASKAMA_PATTERNS.md`).
 
-Anything in `exclude` is copied **byte-for-byte** — no substitutions, not even
+Anything in `exclude` is copied **byte-for-byte**: no substitutions, not even
 in file names. The rule: **process nothing that doesn't need a substitution.**
-Adding a file to `exclude` is the mechanism; `{% raw %}`/`{% endraw %}` is only
+Adding a file to `exclude` is the mechanism. `{% raw %}`/`{% endraw %}` is only
 acceptable inside a file that genuinely *needs* Liquid processing (currently a
 single justfile recipe using just's own `{{ }}` interpolation).
 
@@ -55,13 +55,13 @@ and the OpenAPI title.
 The README is split in two: the repository's own `README.md` at the root
 (shown on the GitHub homepage) is `ignore`d and never ships, while the
 generated project's readme lives in `{{"README"}}.md`. Liquid runs on file
-names too, so the literal `{{"README"}}` renders to `README.md` in the output —
-that indirection is what lets the two files coexist under one name.
+names too, so the literal `{{"README"}}` renders to `README.md` in the output.
+That indirection is what lets the two files coexist under one name.
 
 `{{crate_name}}` (the snake_case form) lands in `use`
 paths, the session cookie name (`<crate_name>_session` in
 `src/middleware/session.rs`), the default SQLite file name, the Postgres
-`application_name`, and `src/tests/snapshots/` **file names** — insta derives
+`application_name`, and `src/tests/snapshots/` **file names**: insta derives
 snapshot names from the crate name, so a literal `{{crate_name}}__...snap`
 filename is renamed during generation.
 
@@ -76,10 +76,10 @@ metrics-only files (`src/metrics.rs`, `src/middleware/metrics.rs`,
 `{% if oauth_github %}` / `{% if oauth_google %}` / `{% if oauth_facebook %}`
 gate the provider entries in `src/oauth.rs`, the credential blocks in
 `.env.sample`, and the provider docs. Unlike the feature flags, these only
-control which `OAuthProviderSpec`s are *compiled in* — the generated project
+control which `OAuthProviderSpec`s are *compiled in*. The generated project
 still enables each provider at runtime via its `*_CLIENT_ID`/`*_CLIENT_SECRET`
 pair (setting only one is a startup error). The login page lists enabled
-providers at runtime from `PageContext.oauth_providers` — no Liquid is needed
+providers at runtime from `PageContext.oauth_providers`, so no Liquid is needed
 in `templates/`.
 
 ### Tag placement and whitespace
@@ -95,12 +95,12 @@ pub mod metrics;
 
 `{% if %}` sits at column 0 before the conditional block's first line and
 `{% endif %}` is glued to the following line (with its indentation). Rendering
-`metrics=false` joins the neighbours cleanly; `metrics=true` reproduces the
+`metrics=false` joins the neighbours cleanly. `metrics=true` reproduces the
 original file. For `#[cfg(not(feature = "x"))]` attributes, conditionalize only
-the attribute line — the item itself is needed in both renders.
+the attribute line, since the item itself is needed in both renders.
 
 One known cosmetic artifact: `{% if %}`/`{% endif %}` lines left between items
-emit a single blank line when false — fine between items/statements, but never
+emit a single blank line when false. That is fine between items/statements, but never
 leave a conditional at EOF or immediately after a `{` (rustfmt strips blanks
 there and `fmt --check` diffs).
 
@@ -114,25 +114,25 @@ populate the field.
 
 ## CI split
 
-- `.github/workflows/ci.yml` — the **generated project's** CI (fmt, clippy,
+- `.github/workflows/ci.yml`: the **generated project's** CI (fmt, clippy,
   doc, tests, cargo-deny/machete/audit, zizmor). It is copied verbatim
   (`exclude`), so in the template repository it must not run: a `detect` job
   checks for `cargo-generate.toml` (which is `ignore`d from renders) and every
   cargo job is gated on its absence.
-- `.github/workflows/template-ci.yml` — the **template's** CI. Renders the
-  option matrix outside the checkout dir and runs cargo checks/tests there;
-  `ignore`d from renders.
+- `.github/workflows/template-ci.yml`: the **template's** CI. Renders the
+  option matrix outside the checkout dir and runs cargo checks/tests there. It
+  is `ignore`d from renders.
 
 cargo-deny, cargo-machete and cargo-audit run against a rendered manifest in
-`template-ci.yml` — they cannot parse the Liquid-annotated `Cargo.toml` in
+`template-ci.yml`, since they cannot parse the Liquid-annotated `Cargo.toml` in
 this checkout.
 
 ## Follow-ups not yet done
 
-- worker, storage and swagger/utoipa remain unconditional subsystems — they
+- worker, storage and swagger/utoipa remain unconditional subsystems. They
   have no Cargo features today, so there is nothing to conditionally render.
   Feature-gate them first before offering include/exclude options.
-- `migrations/` SQL is SQLite-dialect (`AUTOINCREMENT`); a `postgresql`
+- `migrations/` SQL is SQLite-dialect (`AUTOINCREMENT`). A `postgresql`
   render compiles and tests fine (tests use in-memory SQLite), but the
   migration SQL needs a Postgres translation before `migrate` works against a
   real Postgres server.

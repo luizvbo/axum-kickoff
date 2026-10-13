@@ -13,7 +13,7 @@ This document describes the authentication system in {{project-name}}, including
 {% if oauth_github or oauth_google or oauth_facebook %}## OAuth Sign-In
 
 Each compiled-in provider is enabled at runtime when **both** its client ID
-and client secret are set in the environment; setting only one is a startup
+and client secret are set in the environment. Setting only one is a startup
 error. The login page (`/login`) lists a sign-in button per enabled provider.
 
 ### Provider Setup
@@ -88,7 +88,7 @@ Unknown or unconfigured providers return a controlled `400 Bad Request`.
 ### Implementation
 
 The OAuth flow is implemented in `src/controllers/auth.rs` as a single pair
-of provider-generic handlers; provider endpoints, scopes, and profile-field
+of provider-generic handlers. Provider endpoints, scopes, and profile-field
 mappings live in the registry in `src/oauth.rs`:
 
 ```rust
@@ -115,7 +115,7 @@ pub async fn oauth_callback(
 
 ### Account Linking
 
-Users are identified by the composite key `(provider, provider_user_id)` —
+Users are identified by the composite key `(provider, provider_user_id)`,
 e.g. `("github", "583231")`. Accounts are **not** linked across providers by
 email: several providers can return absent or unverified email addresses, so
 email-based auto-linking would be an account-takeover risk. Signing in with a
@@ -168,7 +168,7 @@ The session middleware in `src/middleware/session.rs`:
 ### Session Expiration
 
 Session cookies expire via `Max-Age` (90 days). Expiration is enforced by the
-browser, not the server — revoke access by locking the account instead.
+browser, not the server. Revoke access by locking the account instead.
 
 ## API Tokens
 
@@ -379,7 +379,7 @@ Locked accounts cannot authenticate until the lock expires.
 
 - Check the provider's `*_REDIRECT_URI` matches its app settings exactly
 - Ensure HTTPS is used in production
-- Verify the provider's `*_CLIENT_ID` and `*_CLIENT_SECRET` are correct — setting only one is a startup error
+- Verify the provider's `*_CLIENT_ID` and `*_CLIENT_SECRET` are correct. Setting only one is a startup error
 - A `400` on `/api/v1/auth/{provider}/...` means the provider isn't enabled: either it wasn't compiled in at generation time, or its credentials aren't set
 
 ### Session Not Persisting

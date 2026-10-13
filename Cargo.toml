@@ -38,10 +38,10 @@ jiff = { version = "0.2", features = ["serde"] }
 # `sqlite` is always enabled: it powers the zero-setup default `DATABASE_URL`
 # and the in-memory test database. `postgresql` adds the Postgres driver on
 # top (the driver is selected from the `DATABASE_URL` scheme at runtime).
-toasty = { version = "=0.9.0", features = ["sqlite", "jiff"{% if database == "postgresql" %}, "postgresql"{% endif %}] }
-toasty-core = { version = "=0.9.0" }
+toasty = { version = "=0.11.0", features = ["sqlite", "jiff"{% if database == "postgresql" %}, "postgresql"{% endif %}] }
+toasty-core = { version = "=0.11.0" }
 url = "2"
-toasty-cli = "=0.9.0"
+toasty-cli = "=0.11.0"
 tokio = { version = "=1.53.1", features = ["full"] }
 tower = "=0.5.3"
 tower-http = { version = "=0.7.0", features = [

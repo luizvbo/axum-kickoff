@@ -588,7 +588,7 @@ Toasty is a relatively new ORM with some limitations compared to more mature ORM
 
 **Solutions**:
 
-1. SQLite has limited write concurrency; consider PostgreSQL for high-write workloads
+1. SQLite has limited write concurrency, so consider PostgreSQL for high-write workloads
 2. Ensure transactions are short-lived
 3. Use WAL mode: `PRAGMA journal_mode=WAL;`
 
