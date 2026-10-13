@@ -134,7 +134,7 @@ let url = storage.public_url("test.txt");
 ```
 
 > **Important:** without a `CDN_PREFIX`, `public_url` returns a root-relative
-> `/{path}` — but no route serves stored files out of the box, so the
+> `/{path}`, but no route serves stored files out of the box, so the
 > generated URLs will 404 until you wire one up.
 >
 > The convention that composes cleanly is to store files under a key prefix
@@ -173,7 +173,7 @@ let url = storage.public_url("test.txt");
 >
 > Then `storage.upload("uploads/pic.png", bytes)` and
 > `storage.public_url("uploads/pic.png")` -> `"/uploads/pic.png"` resolve
-> end-to-end. Uploaded files are public by definition with this wiring — add
+> end-to-end. Uploaded files are public by definition with this wiring. Add
 > an authorization layer (`require_auth`) if they should be private.
 
 ## S3 Storage (Planned)

@@ -109,8 +109,8 @@ SERVER_THREADS=512
 ```
 
 Maximum number of blocking threads for `spawn_blocking` work (e.g., file I/O).
-Despite the name, `SERVER_THREADS` does *not* configure async worker threads —
-use `SERVER_CORE_THREADS` for that.
+Despite the name, `SERVER_THREADS` does *not* configure async worker threads.
+Use `SERVER_CORE_THREADS` for that.
 
 **Default:** `512` (Tokio's built-in default).
 
@@ -124,7 +124,7 @@ APP_ENV=development
 
 One of `development`, `test`, or `production`.
 
-**Default:** `production` (secure-by-default — an unset variable never enables
+**Default:** `production` (secure-by-default, so an unset variable never enables
 development behavior). Set `APP_ENV=development` for local work to enable the
 `/debug` route, non-Secure cookies, and pretty logs. Set `APP_ENV=test` when
 running the application against the `TEST_DATABASE_URL` database.
@@ -136,7 +136,7 @@ HEROKU=1
 ```
 
 Set to any value to indicate running on Heroku. This adjusts the bind address
-and Postgres `sslmode`; it does not select the environment — `APP_ENV` does,
+and Postgres `sslmode`. It does not select the environment: `APP_ENV` does,
 and already defaults to `production`.
 
 ### Docker
@@ -149,7 +149,7 @@ Set to any value to indicate running in Docker.
 
 {% if oauth_github or oauth_google or oauth_facebook %}## OAuth Provider Configuration
 
-Each OAuth provider compiled in at generation time ({% if oauth_github %}GitHub{% endif %}{% if oauth_google %}{% if oauth_github %}, {% endif %}Google{% endif %}{% if oauth_facebook %}{% if oauth_github or oauth_google %}, {% endif %}Facebook{% endif %}) uses a `CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI` triple under its own prefix. A provider is enabled when **both** its client ID and secret are set; setting only one is a startup error. `REDIRECT_URI` is optional.
+Each OAuth provider compiled in at generation time ({% if oauth_github %}GitHub{% endif %}{% if oauth_google %}{% if oauth_github %}, {% endif %}Google{% endif %}{% if oauth_facebook %}{% if oauth_github or oauth_google %}, {% endif %}Facebook{% endif %}) uses a `CLIENT_ID`/`CLIENT_SECRET`/`REDIRECT_URI` triple under its own prefix. A provider is enabled when **both** its client ID and secret are set. Setting only one is a startup error. `REDIRECT_URI` is optional.
 
 {% if oauth_github %}### GitHub
 
@@ -274,8 +274,8 @@ Anonymous rate-limit buckets are keyed on the client IP address resolved by the
 TRUSTED_PROXIES=127.0.0.1/32,::1/128,10.0.0.0/8
 ```
 
-**Warning:** if `TRUSTED_PROXIES` does not cover your reverse proxy or CDN —
-or, conversely, trusts a range too broad — every anonymous client collapses
+**Warning:** if `TRUSTED_PROXIES` does not cover your reverse proxy or CDN
+(or, conversely, trusts a range too broad), every anonymous client collapses
 into a single shared bucket (either the proxy's IP or a spoofed address). Once
 that bucket is exhausted, *all* anonymous traffic gets `429 Too Many Requests`.
 Verify that the logged `network.client.ip` matches real client addresses when
@@ -298,8 +298,8 @@ BLOCKED_ROUTES=/api/admin,/api/internal
 ```
 
 Comma-separated list of blocked route patterns. Entries are compared against
-axum route templates (`MatchedPath`), not literal request paths — write
-`/api/v1/posts/{id}` to block every post id; `/api/v1/posts/1` would never
+axum route templates (`MatchedPath`), not literal request paths. Write
+`/api/v1/posts/{id}` to block every post id. `/api/v1/posts/1` would never
 match. Blocked routes return `503 Service Unavailable`.
 
 ### Blocked Traffic by Headers
@@ -441,7 +441,7 @@ METRICS_TOKEN=<bearer-token>
 ```
 
 **Warning:** when `METRICS_TOKEN` is unset, the metrics endpoints are
-**publicly readable** — they run outside the session/auth middleware subtree
+**publicly readable**: they run outside the session/auth middleware subtree
 by design. In production, either set `METRICS_TOKEN` (requests then need
 `Authorization: Bearer <token>`) or restrict `/metrics` at your reverse proxy.
 

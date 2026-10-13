@@ -10,7 +10,7 @@ The middleware stack provides cross-cutting concerns for HTTP requests, includin
 
 Path normalization is applied as a top-level service around the router in `src/lib.rs::build_handler` before the remaining middleware stack. The stack is then split in two, mirroring crates.io:
 
-**Infrastructure stack** (`src/middleware/mod.rs::apply_axum_middleware`) — runs for every route, including operational endpoints (`/health`, `/static`, `/metrics`, `/swagger-ui`, `/api-docs`) and the 404 fallback. It stays cheap and free of session/auth/CSRF/rate-limit work:
+**Infrastructure stack** (`src/middleware/mod.rs::apply_axum_middleware`) runs for every route, including operational endpoints (`/health`, `/static`, `/metrics`, `/swagger-ui`, `/api-docs`) and the 404 fallback. It stays cheap and free of session/auth/CSRF/rate-limit work:
 
 1. **Debug Requests** - Development debug logging (conditional)
 2. **CORS** - Answers `OPTIONS` preflights before anything else can reject them
@@ -28,17 +28,17 @@ Path normalization is applied as a top-level service around the router in `src/l
 14. **Request Logging** - Structured logging with tracing
 15. **Traffic Blocking** - Blocked IPs, routes, and header patterns
 
-**Application stack** (`src/middleware/mod.rs::apply_app_middleware`) — runs only for HTML pages and `/api/*` routes:
+**Application stack** (`src/middleware/mod.rs::apply_app_middleware`) runs only for HTML pages and `/api/*` routes:
 
 16. **Session Management** - Signed-cookie session parsing/writing
-17. **Authentication** - Resolves auth context; lazy for cookie sessions (no DB lookup), eager for Bearer tokens
+17. **Authentication** - Resolves auth context: lazy for cookie sessions (no DB lookup), eager for Bearer tokens
 18. **Origin Verification** - `Origin` header check on unsafe methods
 
-**Route layers** (`route_layer` in `src/router.rs::build_axum_router`) — run only when a route matches, applied in this order on protected routes:
+**Route layers** (`route_layer` in `src/router.rs::build_axum_router`) run only when a route matches, applied in this order on protected routes:
 
 19. **`require_auth`** - Enforces authentication: loads the `User`, rejects missing users with 401 and locked accounts with 403
 20. **`csrf_protect`** - CSRF token validation for unsafe methods (skipped for Bearer-token auth)
-21. **`rate_limit`** - Database-backed token bucket; only on sensitive routes (token creation, OAuth flow, form submissions, logout, protected API)
+21. **`rate_limit`** - Database-backed token bucket, only on sensitive routes (token creation, OAuth flow, form submissions, logout, protected API)
 
 ## Individual Middleware
 
@@ -431,12 +431,12 @@ Response: Handler → C → B → A
 14. Real IP Extraction
 15. Request Logging
 16. Traffic Blocking
-17. Session Management — application routes only
-18. Authentication — application routes only
-19. Origin Verification — application routes only
-20. `require_auth` route layer — protected routes only
-21. `csrf_protect` route layer — unsafe methods only
-22. `rate_limit` route layer — sensitive routes only
+17. Session Management (application routes only)
+18. Authentication (application routes only)
+19. Origin Verification (application routes only)
+20. `require_auth` route layer (protected routes only)
+21. `csrf_protect` route layer (unsafe methods only)
+22. `rate_limit` route layer (sensitive routes only)
 
 ## Configuration
 

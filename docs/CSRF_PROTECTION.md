@@ -78,17 +78,17 @@ async fn my_handler(
 
 ### Token creation
 
-CSRF tokens are created lazily via `get_or_create_csrf_token` — `PageContext`
+CSRF tokens are created lazily via `get_or_create_csrf_token`: `PageContext`
 calls it when rendering pages, but only when the session carries state worth
 protecting (a `user_id` or an existing token). Anonymous, sessionless page
-requests render an empty token and do not emit `Set-Cookie`; the token is
+requests render an empty token and do not emit `Set-Cookie`. The token is
 minted automatically on the first page a user loads after logging in.
 
 ### `csrf_protect`
 
 Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE). It
 is applied as a `route_layer` to the protected route group in
-`src/router.rs` — token-authenticated (Bearer) requests bypass it, and
+`src/router.rs`. Token-authenticated (Bearer) requests bypass it, and
 sessions with a `user_id` but no token are rejected rather than skipped.
 
 ## Configuration

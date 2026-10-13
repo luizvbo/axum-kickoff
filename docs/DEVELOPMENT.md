@@ -487,7 +487,7 @@ development:
 
 1. **The source tree does not compile.** `Cargo.toml` and several `src/` files
    contain Liquid placeholders and conditionals, so `cargo` and `rustfmt`
-   cannot parse the checkout. This is intentional — all verification happens on
+   cannot parse the checkout. This is intentional: all verification happens on
    *rendered* output. The workflow is: edit source → render → verify the
    rendered project:
    ```bash
@@ -498,21 +498,21 @@ development:
    `.github/workflows/template-ci.yml` automates this for the option matrix and
    is the source of truth for "the template works".
 2. **The exclude boundary is strict.** Files under `exclude` in
-   `cargo-generate.toml` are copied byte-for-byte with no Liquid processing —
+   `cargo-generate.toml` are copied byte-for-byte with no Liquid processing:
    `templates/` (Askama uses the same delimiters), `.github/` (Actions
    expressions), `static/` (vendored JS), and the docs showing literal template
-   syntax. Process *nothing* that doesn't need a substitution; if a file needs
+   syntax. Process *nothing* that doesn't need a substitution. If a file needs
    no placeholders it belongs in `exclude` or ships raw Liquid for no reason.
 
 Because the checkout doesn't parse, the pre-commit hooks that invoke cargo
 (`rustfmt`, `clippy`, `doc`, `deny`, `machete` in `prek.toml`) cannot run in
-the template repository — `SKIP` them when committing template changes and rely
+the template repository. `SKIP` them when committing template changes and rely
 on the render CI. `cargo fmt`/`clippy`/`doc`/`test`/`deny`/`machete`/`audit`
 all run against rendered output in `template-ci.yml`.
 
-For the full mechanism reference — placeholder list, tag-placement rules,
-conditional-file handling — see [docs/TEMPLATE.md](TEMPLATE.md) (template
-repository only; not shipped to generated projects).
+For the full mechanism reference (placeholder list, tag-placement rules,
+conditional-file handling) see [docs/TEMPLATE.md](TEMPLATE.md), which applies
+to the template repository only and is not shipped to generated projects.
 
 ## Resources
 

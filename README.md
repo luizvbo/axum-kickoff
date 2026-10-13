@@ -2,13 +2,13 @@
 
 A [cargo-generate](https://github.com/cargo-generate/cargo-generate) template for production-ready Rust web applications built on [Axum](https://github.com/tokio-rs/axum), following best practices from the [crates.io](https://github.com/rust-lang/crates.io) backend implementation.
 
-This repository **is** the template — its sources contain Liquid placeholders and do not compile as-is. Generating a project renders them into a fully working application.
+This repository **is** the template. Its sources contain Liquid placeholders and do not compile as-is. Generating a project renders them into a fully working application.
 
 ## What you get
 
 - **Modern Stack**: Axum 0.8 with Tokio async runtime
 - **Database**: Toasty ORM with SQLite (zero-setup) or PostgreSQL
-- **Authentication**: OAuth sign-in (GitHub, Google, Facebook — selectable at generation), session-based auth, and scoped API tokens
+- **Authentication**: OAuth sign-in (GitHub, Google, Facebook, selectable at generation), session-based auth, and scoped API tokens
 - **Frontend**: Server-side rendering with Askama, HTMX, and Alpine.js
 - **Security**: Comprehensive middleware (security headers, rate limiting, CSRF, etc.)
 - **Testing**: Integration test infrastructure with snapshot testing
@@ -29,8 +29,8 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | Option | Values | Default | Effect |
 | ------ | ------ | ------- | ------ |
 | `project-name` | any crate-safe name | asked once | Package name, binary name, session cookie (`<crate_name>_session`), default SQLite file (`<crate_name>.db`), PostgreSQL `application_name`, API title, user-agent strings, and the on-page application branding |
-| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way — the test suite uses in-memory SQLite regardless |
-| `oauth_github` | `true` / `false` | `true` | Compiles in the GitHub OAuth provider; enabled at runtime when `GH_CLIENT_ID`/`GH_CLIENT_SECRET` are set |
+| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way. The test suite uses in-memory SQLite regardless |
+| `oauth_github` | `true` / `false` | `true` | Compiles in the GitHub OAuth provider, enabled at runtime when `GH_CLIENT_ID`/`GH_CLIENT_SECRET` are set |
 | `oauth_google` | `true` / `false` | `false` | Same for Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) |
 | `oauth_facebook` | `true` / `false` | `false` | Same for Facebook (`FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`) |
 | `metrics` | `true` / `false` | `false` | Adds the `prometheus` dependency, a `metrics` feature in `default`, the `/metrics` endpoint, and request instrumentation middleware |
@@ -38,7 +38,7 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |
 
 The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
-unconditional parts of the generated application — they are not options.
+unconditional parts of the generated application, not options.
 
 Non-interactive generation:
 
@@ -52,7 +52,7 @@ cargo generate --git https://github.com/luizvbo/axum-kickoff \
 > (`AUTOINCREMENT`). When `database=postgresql` is selected the Postgres driver
 > is compiled in and `DATABASE_URL` defaults to Postgres, but the migration SQL
 > must be adapted for PostgreSQL before `migrate` will run against a real
-> Postgres database. The test suite is unaffected — it runs on in-memory
+> Postgres database. The test suite is unaffected: it runs on in-memory
 > SQLite.
 
 ## After generation
@@ -67,22 +67,22 @@ cargo run -- server  # http://localhost:8888
 
 ## Documentation
 
-The generated project ships its own docs under `docs/` — start with
+The generated project ships its own docs under `docs/`. Start with
 [Getting Started](docs/GETTING_STARTED.md) and the
 [Configuration reference](docs/CONFIGURATION.md). They are Liquid-rendered at
 generation time and describe your project, not this repository.
 
 ## Working on this template
 
-The checkout does not compile — `Cargo.toml` and several `src/` files contain
+The checkout does not compile: `Cargo.toml` and several `src/` files contain
 Liquid placeholders and conditionals. Verification happens on rendered output:
 edit source → render → check the rendered project. `.github/workflows/template-ci.yml`
 runs this over the option matrix and is the source of truth.
 
 The README split: `README.md` (this file) is the repository's own readme and is
 `ignore`d by cargo-generate. The readme shipped into generated projects lives in
-`{{"README"}}.md` — cargo-generate renders Liquid in filenames too, so it lands
-as `README.md` in the output.
+`{{"README"}}.md`, and since cargo-generate renders Liquid in filenames too, it
+lands as `README.md` in the output.
 
 See [docs/TEMPLATE.md](docs/TEMPLATE.md) for the full authoring reference
 (placeholders, tag-placement rules, conditional files) and the "Working on this

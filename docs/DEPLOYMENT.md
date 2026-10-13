@@ -32,7 +32,7 @@ Before deploying to production:
 Ensure all required environment variables are set in production:
 
 ```bash
-# Environment (unset already defaults to production — set it explicitly)
+# Environment (unset already defaults to production, but set it explicitly)
 APP_ENV=production
 
 # Database
