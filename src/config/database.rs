@@ -108,6 +108,39 @@ impl DatabaseConfig {
 
         Ok(SecretString::from(url.to_string()))
     }
+
+    /// Returns a credential-free description of the resolved connection URL,
+    /// e.g. `postgresql://localhost:5432/mydb` or `sqlite:./dev.db`. Safe to
+    /// include in logs and error messages: userinfo and query parameters
+    /// (which may contain credentials) are never included.
+    pub fn describe(&self) -> String {
+        let Ok(raw) = self.connect_url() else {
+            return "<invalid DATABASE_URL>".to_string();
+        };
+
+        match Url::parse(raw.expose_secret()) {
+            Ok(url) => {
+                let authority = match url.host_str() {
+                    Some(host) => match url.port() {
+                        Some(port) => format!("//{host}:{port}"),
+                        None => format!("//{host}"),
+                    },
+                    None => String::new(),
+                };
+                // For authority-less URLs (no `//`), a typo like
+                // `postgresql:user:pass@host/db` puts the credentials into
+                // the *path* — never echo a path that may contain userinfo.
+                let path = url.path();
+                let path = if url.host_str().is_none() && path.contains('@') {
+                    "<redacted>"
+                } else {
+                    path
+                };
+                format!("{}:{}{}", url.scheme(), authority, path)
+            }
+            Err(_) => "<invalid DATABASE_URL>".to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +290,45 @@ mod tests {
         } else {
             std::env::remove_var("TEST_DATABASE_URL");
         }
+    }
+
+    #[test]
+    fn test_describe_strips_credentials_and_query() {
+        let config = DatabaseConfig {
+            url: "postgresql://user:s3cret@db.example.com:5433/app?sslmode=require"
+                .to_string()
+                .into(),
+        };
+
+        let description = config.describe();
+        assert_eq!(description, "postgresql://db.example.com:5433/app");
+        assert!(!description.contains("s3cret"));
+        assert!(!description.contains("sslmode"));
+    }
+
+    #[test]
+    fn test_describe_sqlite() {
+        let config = DatabaseConfig {
+            url: "sqlite:./data/app.db".to_string().into(),
+        };
+        assert_eq!(config.describe(), "sqlite:./data/app.db");
+
+        let config = DatabaseConfig {
+            url: "sqlite::memory:".to_string().into(),
+        };
+        assert_eq!(config.describe(), "sqlite::memory:");
+    }
+
+    #[test]
+    fn test_describe_redacts_credentials_in_opaque_path() {
+        // Malformed URL missing `//`: Url parses `user:pass@host/db` as an
+        // opaque path — describe() must redact rather than echo credentials.
+        let config = DatabaseConfig {
+            url: "postgresql:user:s3cret@db.example.com/app".to_string().into(),
+        };
+        let description = config.describe();
+        assert!(!description.contains("s3cret"));
+        assert!(!description.contains("db.example.com"));
     }
 
     #[test]

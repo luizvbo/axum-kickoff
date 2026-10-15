@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use secrecy::ExposeSecret;
 use std::net::SocketAddr;
@@ -117,7 +117,7 @@ async fn run_server(config: {{crate_name}}::config::Server) -> Result<()> {
     let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
 
     // Initialize database connection
-    info!("Connecting to database...");
+    info!("Connecting to database at {}...", db_config.describe());
     let database = {{crate_name}}::db::Database::from_config(&db_config).await?;
     info!("Database connected successfully");
 
@@ -160,7 +160,8 @@ async fn run_migrate(args: Vec<String>) -> Result<()> {
     let db = toasty::Db::builder()
         .models(toasty::models!({{crate_name}}::*))
         .connect(db_config.connect_url()?.expose_secret())
-        .await?;
+        .await
+        .with_context(|| format!("failed to connect to database at {}", db_config.describe()))?;
 
     // Default `cargo run -- migrate` to `migration apply`
     let toasty_args = if args.is_empty() {

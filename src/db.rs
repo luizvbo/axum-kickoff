@@ -3,7 +3,7 @@
 //! This module provides database connection management and schema setup.
 
 use crate::config::DatabaseConfig;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,17 +25,13 @@ impl Database {
     /// - pool_health_check_interval: 60 seconds
     /// - pool_pre_ping: true (check connection health before use)
     pub async fn from_config(config: &DatabaseConfig) -> Result<Self> {
-        let db = Db::builder()
-            .models(toasty::models!(crate::*))
-            .max_pool_size(num_cpus::get() * 2)
-            .pool_wait_timeout(Some(Duration::from_secs(5)))
-            .pool_create_timeout(Some(Duration::from_secs(10)))
-            .pool_health_check_interval(Some(Duration::from_secs(60)))
-            .pool_pre_ping(true)
-            .connect(config.connect_url()?.expose_secret())
-            .await?;
-
-        Ok(Self { db: Arc::new(db) })
+        Self::from_config_with_pool(
+            config,
+            num_cpus::get() * 2,
+            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(10)),
+        )
+        .await
     }
 
     /// Create a new database connection from configuration with custom pool settings
@@ -53,7 +49,8 @@ impl Database {
             .pool_health_check_interval(Some(Duration::from_secs(60)))
             .pool_pre_ping(true)
             .connect(config.connect_url()?.expose_secret())
-            .await?;
+            .await
+            .with_context(|| format!("failed to connect to database at {}", config.describe()))?;
 
         Ok(Self { db: Arc::new(db) })
     }
