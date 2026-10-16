@@ -135,7 +135,33 @@ this checkout.
 - worker, storage and swagger/utoipa remain unconditional subsystems. They
   have no Cargo features today, so there is nothing to conditionally render.
   Feature-gate them first before offering include/exclude options.
-- `migrations/` SQL is SQLite-dialect (`AUTOINCREMENT`). A `postgresql`
-  render compiles and tests fine (tests use in-memory SQLite), but the
-  migration SQL needs a Postgres translation before `migrate` works against a
-  real Postgres server.
+
+## Two migration sets
+
+Migration SQL is dialect-specific, so the template ships one set per backend:
+
+- `migrations/` — SQLite (the `sqlite` render)
+- `migrations-postgres/` — PostgreSQL (the `postgresql` render)
+
+`cargo-generate.toml` ignores the unused set per render, and `Toasty.toml`
+renders `migration.path` to point at the kept one. Both dirs have the same
+layout (`migrations/*.sql`, `snapshots/*.toml`, `history.toml`).
+
+Tests never touch these files: `src/tests/test_db.rs` and the rate-limiter
+test helper call `Db::push_schema()`, which creates tables through the
+connected driver — dialect-agnostic, so tests run on SQLite temp files even
+in `postgresql` renders.
+
+When the schema in `src/models/` changes, regenerate **both** sets. For
+each dialect: render a scratch project with the matching `database` choice,
+wipe its migration dir, run `migrate migration generate` against a matching
+`DATABASE_URL` (the database may be empty — `generate` only needs the driver
+to render DDL), then copy the generated dir over the corresponding set here:
+
+```bash
+cargo generate --path . --name tmpgen --destination /tmp --vcs none \
+    -d database=postgresql   # or sqlite
+cd /tmp/tmpgen && rm -rf migrations \
+    && DATABASE_URL="postgresql://…" cargo run -- migrate migration generate
+# copy /tmp/tmpgen/migrations/ over migrations-postgres/ (or migrations/)
+```

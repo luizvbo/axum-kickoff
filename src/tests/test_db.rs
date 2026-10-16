@@ -52,15 +52,22 @@ impl TestDatabase {
         }
     }
 
-    /// Connect to the database and apply migrations.
+    /// Connect to the database and create the schema.
+    ///
+    /// Uses `Db::push_schema` rather than applying the checked-in migration
+    /// files: the migration set is generated for the configured app backend
+    /// (see `database` in `cargo-generate.toml`), while tests may run on a
+    /// different backend (SQLite temp files by default). `push_schema`
+    /// creates tables through the connected driver, so it is dialect-agnostic.
     pub async fn connect_and_migrate(&self) -> Database {
         let db = Database::from_config(&self.config)
             .await
             .expect("Failed to connect to test database");
 
-        db.migrate()
+        db.db_clone()
+            .push_schema()
             .await
-            .expect("Failed to apply test database migrations");
+            .expect("Failed to create test database schema");
 
         db
     }

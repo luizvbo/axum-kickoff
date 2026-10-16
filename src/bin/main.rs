@@ -37,6 +37,10 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    // Load `.env` into the process environment. Does not override vars that
+    // are already set, so real environment configuration always wins.
+    let _ = dotenvy::dotenv();
+
     let cli = Cli::parse();
 
     match cli.command {
