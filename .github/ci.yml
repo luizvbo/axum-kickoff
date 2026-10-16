@@ -16,6 +16,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
   # renovate: datasource=crate depName=cargo-deny versioning=semver
   CARGO_DENY_VERSION: 0.19.8
   # renovate: datasource=crate depName=cargo-machete versioning=semver
@@ -26,6 +27,7 @@ env:
 jobs:
   lint:
     name: Lint
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -51,6 +53,7 @@ jobs:
 
   deps:
     name: Dependencies
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -78,6 +81,7 @@ jobs:
 
   test:
     name: Test
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -86,6 +90,8 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       RUST_BACKTRACE: 1
       RUSTFLAGS: '-D warnings'
+      # `cargo insta test` auto-detects nextest; honor retries for flakes.
+      NEXTEST_RETRIES: 2
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -98,6 +104,6 @@ jobs:
 
       - uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
         with:
-          tool: cargo-insta
+          tool: cargo-insta,nextest
 
-      - run: cargo insta test --all-features
+      - run: cargo insta test --all-features --test-runner nextest
