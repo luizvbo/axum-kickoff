@@ -96,7 +96,7 @@ impl ApiToken {
     /// Parse resource scopes from JSON.
     ///
     /// `None` means the column is `NULL` (unscoped legacy token). A present
-    /// but unparseable value fails *closed* — returned as `Some([])` so the
+    /// but unparsable value fails *closed* — returned as `Some([])` so the
     /// token matches nothing rather than silently becoming unrestricted.
     pub fn parse_resource_scopes(&self) -> Option<Vec<ResourceScope>> {
         self.resource_scopes

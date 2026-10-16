@@ -121,3 +121,14 @@ ignore = [
     "src/tests/metrics.rs",
     "src/tests/snapshots/{{crate_name}}__tests__metrics__metrics_snapshot.snap",
 ]
+
+# Ship only the migration set matching the chosen database backend.
+# `migrations/` is the SQLite set; `migrations-postgres/` is the PostgreSQL
+# set. `Toasty.toml` renders `migration.path` to point at the kept one.
+# Tests don't depend on either — `test_db.rs` builds schema via
+# `Db::push_schema` through the connected driver.
+[conditional.'database == "sqlite"']
+ignore = ["migrations-postgres"]
+
+[conditional.'database == "postgresql"']
+ignore = ["migrations"]

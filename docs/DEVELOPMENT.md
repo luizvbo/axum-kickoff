@@ -246,6 +246,16 @@ Database models are defined in `src/models/` using Toasty macros. The schema is 
 cargo run --bin {{project-name}} -- migrate migration generate
 ```
 
+Migrations are written into the directory configured by `migration.path` in
+`Toasty.toml`, in the dialect of the database backend chosen at
+project-generation time (`sqlite` → `migrations/`, `postgresql` →
+`migrations-postgres/`). `generate` renders SQL through the connected
+driver, so regenerate against the same backend the app runs.
+
+Tests don't use these files: they create schema via `Db::push_schema()` on
+SQLite temp files (or `TEST_DATABASE_URL`), so they work regardless of the
+chosen backend.
+
 ### Manual Database Changes
 
 For manual database changes:
@@ -253,7 +263,6 @@ For manual database changes:
 1. Update model definitions in `src/models/`
 2. Run Toasty to regenerate
 3. Test with SQLite in-memory database
-4. Document migration steps for PostgreSQL
 
 ## Adding New Features
 

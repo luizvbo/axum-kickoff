@@ -22,6 +22,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
   # renovate: datasource=crate depName=cargo-generate versioning=semver
   CARGO_GENERATE_VERSION: 0.25.0
   # renovate: datasource=crate depName=cargo-deny versioning=semver
@@ -34,9 +35,26 @@ env:
 jobs:
   render:
     name: Render + verify (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+
+    # Always provisioned (services can't be scoped per matrix leg); only the
+    # `pg` leg uses it. Cheap — the runner caches the image.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
 
     strategy:
       fail-fast: false
@@ -47,6 +65,11 @@ jobs:
             defines: ''
           - name: postgresql-sentry-metrics-jemalloc
             project: smoke-full
+            # Only leg whose manifest matches the shipped Cargo.lock (the
+            # lock is generated from the full feature set); --locked fails on
+            # smaller renders because cargo prunes unused entries.
+            check_args: --locked
+            pg: true
             defines: >-
               -d database=postgresql
               -d metrics=true
@@ -79,7 +102,7 @@ jobs:
 
       - uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
         with:
-          tool: cargo-generate@${{ env.CARGO_GENERATE_VERSION }}
+          tool: cargo-generate@${{ env.CARGO_GENERATE_VERSION }},nextest
 
       # Renders to $RUNNER_TEMP/render/<project>, outside the checkout —
       # cargo fails on generated code left inside the template checkout
@@ -92,8 +115,15 @@ jobs:
             --destination "${RUNNER_TEMP}/render" \
             --vcs none --silent ${{ matrix.defines }}
 
+      # After the render so the rendered Cargo.lock exists for keying.
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: ${{ runner.temp }}/render/${{ matrix.project }}
+          key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
       - name: Check
-        run: cargo check
+        run: cargo check ${{ matrix.check_args }}
         working-directory: ${{ runner.temp }}/render/${{ matrix.project }}
 
       - name: Clippy
@@ -107,8 +137,18 @@ jobs:
       # SQLite stays compiled in for every render, so the in-memory test
       # suite runs without services on both legs.
       - name: Test
-        run: cargo test
+        run: cargo nextest run --retries 2
         working-directory: ${{ runner.temp }}/render/${{ matrix.project }}
+
+      # The only leg with the postgres driver compiled in — actually run the
+      # checked-in migrations against the service instead of only
+      # compile-checking them. The `postgres` database always exists.
+      - name: Migrate (PostgreSQL smoke)
+        if: matrix.pg == true
+        run: cargo run --bin ${{ matrix.project }} -- migrate
+        working-directory: ${{ runner.temp }}/render/${{ matrix.project }}
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
 
       - name: Doc
         run: cargo doc --no-deps --document-private-items
@@ -133,6 +173,7 @@ jobs:
 
   deps:
     name: Dependencies (rendered)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     permissions:
       contents: read

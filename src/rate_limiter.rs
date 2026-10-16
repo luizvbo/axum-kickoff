@@ -434,10 +434,13 @@ mod tests {
         let database = Database::from_config(&DatabaseConfig { url: db_url.into() })
             .await
             .expect("Failed to create test database");
+        // `push_schema` (not `migrate`): the checked-in migration set is
+        // generated for the app backend only, and tests run on SQLite.
         database
-            .migrate()
+            .db_clone()
+            .push_schema()
             .await
-            .expect("Failed to apply test database migrations");
+            .expect("Failed to create test database schema");
         (db_file, database)
     }
 

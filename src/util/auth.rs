@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_corrupt_scope_column_denies() {
-        // `parse_*_scopes` fails closed on unparseable JSON: `Some("…")` →
+        // `parse_*_scopes` fails closed on unparsable JSON: `Some("…")` →
         // `Some([])` → the token matches no scope.
         let token = Arc::new(ApiToken {
             id: 1,

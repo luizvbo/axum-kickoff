@@ -16,6 +16,8 @@ use secrecy::{ExposeSecret, SecretString};
 use std::collections::HashMap;
 use url::Url;
 
+use super::env;
+
 /// Fallback `DATABASE_URL` used when neither `DATABASE_URL` nor
 /// `TEST_DATABASE_URL` is set. Selected at project-generation time: a local
 /// SQLite file for the `sqlite` backend, a conventional localhost DSN for
@@ -31,12 +33,11 @@ impl DatabaseConfig {
         // `TEST_DATABASE_URL` is honored only in the test environment — a
         // production boot must never silently bind the test database.
         let test_url = match super::base::Base::from_environment()?.env {
-            crate::Env::Test => dotenvy::var("TEST_DATABASE_URL").ok(),
+            crate::Env::Test => env::var("TEST_DATABASE_URL")?,
             _ => None,
         };
 
-        let url = dotenvy::var("DATABASE_URL")
-            .ok()
+        let url = env::var("DATABASE_URL")?
             .or(test_url)
             .unwrap_or_else(|| DEFAULT_DATABASE_URL.to_string());
 
@@ -47,8 +48,7 @@ impl DatabaseConfig {
 
     #[cfg(test)]
     pub fn test_config() -> Result<Self> {
-        let url =
-            dotenvy::var("TEST_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
+        let url = env::var("TEST_DATABASE_URL")?.unwrap_or_else(|| "sqlite::memory:".to_string());
 
         Ok(Self {
             url: SecretString::from(url),
@@ -73,14 +73,14 @@ impl DatabaseConfig {
             }
             "postgresql" | "postgres" => {
                 if !query.contains_key("application_name") {
-                    let application_name = dotenvy::var("DATABASE_APPLICATION_NAME")
-                        .unwrap_or_else(|_| "{{crate_name}}".to_string());
+                    let application_name = env::var("DATABASE_APPLICATION_NAME")?
+                        .unwrap_or_else(|| "{{crate_name}}".to_string());
                     query.insert("application_name".to_string(), application_name);
                 }
 
                 if !query.contains_key("options") {
-                    let statement_timeout = dotenvy::var("DATABASE_STATEMENT_TIMEOUT")
-                        .unwrap_or_else(|_| "30s".to_string());
+                    let statement_timeout = env::var("DATABASE_STATEMENT_TIMEOUT")?
+                        .unwrap_or_else(|| "30s".to_string());
                     query.insert(
                         "options".to_string(),
                         format!("-c statement_timeout={statement_timeout}"),
@@ -88,9 +88,9 @@ impl DatabaseConfig {
                 }
 
                 if !query.contains_key("sslmode") {
-                    if let Ok(sslmode) = dotenvy::var("DATABASE_SSLMODE") {
+                    if let Some(sslmode) = env::var("DATABASE_SSLMODE")? {
                         query.insert("sslmode".to_string(), sslmode);
-                    } else if dotenvy::var("HEROKU").is_ok() {
+                    } else if env::var("HEROKU")?.is_some() {
                         query.insert("sslmode".to_string(), "require".to_string());
                     }
                 }
@@ -107,6 +107,39 @@ impl DatabaseConfig {
         }
 
         Ok(SecretString::from(url.to_string()))
+    }
+
+    /// Returns a credential-free description of the resolved connection URL,
+    /// e.g. `postgresql://localhost:5432/mydb` or `sqlite:./dev.db`. Safe to
+    /// include in logs and error messages: userinfo and query parameters
+    /// (which may contain credentials) are never included.
+    pub fn describe(&self) -> String {
+        let Ok(raw) = self.connect_url() else {
+            return "<invalid DATABASE_URL>".to_string();
+        };
+
+        match Url::parse(raw.expose_secret()) {
+            Ok(url) => {
+                let authority = match url.host_str() {
+                    Some(host) => match url.port() {
+                        Some(port) => format!("//{host}:{port}"),
+                        None => format!("//{host}"),
+                    },
+                    None => String::new(),
+                };
+                // For authority-less URLs (no `//`), a typo like
+                // `postgresql:user:pass@host/db` puts the credentials into
+                // the *path* — never echo a path that may contain userinfo.
+                let path = url.path();
+                let path = if url.host_str().is_none() && path.contains('@') {
+                    "<redacted>"
+                } else {
+                    path
+                };
+                format!("{}:{}{}", url.scheme(), authority, path)
+            }
+            Err(_) => "<invalid DATABASE_URL>".to_string(),
+        }
     }
 }
 
@@ -257,6 +290,47 @@ mod tests {
         } else {
             std::env::remove_var("TEST_DATABASE_URL");
         }
+    }
+
+    #[test]
+    fn test_describe_strips_credentials_and_query() {
+        let config = DatabaseConfig {
+            url: "postgresql://user:s3cret@db.example.com:5433/app?sslmode=require"
+                .to_string()
+                .into(),
+        };
+
+        let description = config.describe();
+        assert_eq!(description, "postgresql://db.example.com:5433/app");
+        assert!(!description.contains("s3cret"));
+        assert!(!description.contains("sslmode"));
+    }
+
+    #[test]
+    fn test_describe_sqlite() {
+        let config = DatabaseConfig {
+            url: "sqlite:./data/app.db".to_string().into(),
+        };
+        assert_eq!(config.describe(), "sqlite:./data/app.db");
+
+        let config = DatabaseConfig {
+            url: "sqlite::memory:".to_string().into(),
+        };
+        assert_eq!(config.describe(), "sqlite::memory:");
+    }
+
+    #[test]
+    fn test_describe_redacts_credentials_in_opaque_path() {
+        // Malformed URL missing `//`: Url parses `user:pass@host/db` as an
+        // opaque path — describe() must redact rather than echo credentials.
+        let config = DatabaseConfig {
+            url: "postgresql:user:s3cret@db.example.com/app"
+                .to_string()
+                .into(),
+        };
+        let description = config.describe();
+        assert!(!description.contains("s3cret"));
+        assert!(!description.contains("db.example.com"));
     }
 
     #[test]
