@@ -324,7 +324,9 @@ mod tests {
         // Malformed URL missing `//`: Url parses `user:pass@host/db` as an
         // opaque path — describe() must redact rather than echo credentials.
         let config = DatabaseConfig {
-            url: "postgresql:user:s3cret@db.example.com/app".to_string().into(),
+            url: "postgresql:user:s3cret@db.example.com/app"
+                .to_string()
+                .into(),
         };
         let description = config.describe();
         assert!(!description.contains("s3cret"));

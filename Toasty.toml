@@ -1,5 +1,5 @@
 [migration]
-path = "{% if database == "postgresql" %}migrations-postgres{% else %}migrations{% endif %}"
+path = '{% if database == "postgresql" %}migrations-postgres{% else %}migrations{% endif %}'
 prefix_style = "Sequential"
 checksums = false
 statement_breakpoints = true
