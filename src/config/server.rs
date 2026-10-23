@@ -187,15 +187,7 @@ impl Server {
             match (client_id, client_secret) {
                 (Some(client_id), Some(client_secret)) => {
                     let redirect_uri = env::var(spec.redirect_uri_env)?.unwrap_or_else(|| {
-                        let scheme = if base.env == Env::Production {
-                            "https"
-                        } else {
-                            "http"
-                        };
-                        format!(
-                            "{}://{}:{}/api/v1/auth/{}/callback",
-                            scheme, domain_name, port, spec.slug
-                        )
+                        default_oauth_redirect_uri(&base.env, &domain_name, port, spec.slug)
                     });
                     oauth_providers.push(OAuthProviderConfig {
                         spec,
@@ -456,6 +448,22 @@ where
     }
 
     Ok(result)
+}
+
+/// Build the default OAuth callback URL for a provider. The port is omitted
+/// when it is the scheme's default: some providers string-match the registered
+/// callback URL and reject an explicit `:443`/`:80`.
+fn default_oauth_redirect_uri(env: &Env, domain_name: &str, port: u16, slug: &str) -> String {
+    let scheme = if *env == Env::Production {
+        "https"
+    } else {
+        "http"
+    };
+    let port_suffix = match (scheme, port) {
+        ("https", 443) | ("http", 80) => String::new(),
+        _ => format!(":{port}"),
+    };
+    format!("{scheme}://{domain_name}{port_suffix}/api/v1/auth/{slug}/callback")
 }
 
 #[derive(Clone, Debug, Default)]
@@ -896,5 +904,41 @@ mod tests {
         with_env(vars, || {
             assert!(Server::from_environment().is_err());
         });
+    }
+
+    #[test]
+    fn test_default_oauth_redirect_uri() {
+        // Scheme-default ports are omitted: exact-match providers reject them.
+        assert_eq!(
+            default_oauth_redirect_uri(&Env::Production, "example.com", 443, "github"),
+            "https://example.com/api/v1/auth/github/callback"
+        );
+        assert_eq!(
+            default_oauth_redirect_uri(&Env::Development, "localhost", 80, "github"),
+            "http://localhost/api/v1/auth/github/callback"
+        );
+        assert_eq!(
+            default_oauth_redirect_uri(&Env::Development, "localhost", 8888, "github"),
+            "http://localhost:8888/api/v1/auth/github/callback"
+        );
+        assert_eq!(
+            default_oauth_redirect_uri(&Env::Production, "example.com", 8443, "github"),
+            "https://example.com:8443/api/v1/auth/github/callback"
+        );
+    }
+
+    #[test]
+    fn test_sentry_enabled_only_in_production_with_dsn() {
+        let mut config = crate::tests::test_app::TestApp::test_config();
+        config.sentry_dsn = Some(SecretString::from(
+            "https://key@o0.ingest.sentry.io/0".to_string(),
+        ));
+        assert!(!config.sentry_enabled());
+
+        config.base.env = Env::Production;
+        assert!(config.sentry_enabled());
+
+        config.sentry_dsn = None;
+        assert!(!config.sentry_enabled());
     }
 }

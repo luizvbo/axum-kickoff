@@ -70,11 +70,13 @@ jobs:
             # smaller renders because cargo prunes unused entries.
             check_args: --locked
             pg: true
+            tailwind: true
             defines: >-
               -d database=postgresql
               -d metrics=true
               -d sentry=true
               -d jemalloc=true
+              -d tailwind=true
           # All OAuth providers compiled in — exercises the multi-provider
           # tests (e.g. cross-provider state replay rejection).
           - name: oauth-all-providers
@@ -169,6 +171,27 @@ jobs:
           grep -q '{{ ctx.csrf_token }}' templates/base.html
           grep -q '{{ ctx.app_name }}' templates/index.html
           grep -q '{% block title %}' templates/index.html
+        working-directory: ${{ runner.temp }}/render/${{ matrix.project }}
+
+      # tailwind=true swaps the stylesheet: the hand-written style.css is
+      # dropped (just css regenerates it from input.css) and the npm deps,
+      # recipes and gitignore entry appear.
+      - name: Tailwind render checks
+        if: matrix.tailwind == true
+        run: |
+          test -f static/css/input.css
+          test ! -e static/css/style.css
+          grep -q '@tailwindcss/cli' package.json
+          grep -q 'run: css' justfile
+          grep -q '^/static/css/style.css' .gitignore
+        working-directory: ${{ runner.temp }}/render/${{ matrix.project }}
+
+      - name: No Tailwind files when off
+        if: matrix.tailwind != true
+        run: |
+          test -f static/css/style.css
+          test ! -e static/css/input.css
+          ! grep -q 'tailwindcss' package.json
         working-directory: ${{ runner.temp }}/render/${{ matrix.project }}
 
   deps:

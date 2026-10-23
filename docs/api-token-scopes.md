@@ -47,7 +47,7 @@ Resource scopes control which specific resources a token can access. They suppor
 | Pattern | Description | Matches |
 |---------|-------------|---------|
 | `posts` | Exact match | Only `posts` |
-| `posts*` | Prefix match | `posts`, `posts-comments`, `posts-meta` |
+| `posts*` | Raw prefix match | Any name starting with `posts`: `posts`, `posts-comments`, `posts-meta` — but also `postsx` |
 | `*` | Wildcard | All resources |
 
 ### Usage Example

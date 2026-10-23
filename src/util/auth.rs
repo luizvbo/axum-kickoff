@@ -237,7 +237,9 @@ impl AuthCheck {
             (Some(_), None) => false,
 
             // The token is NOT a legacy token, and the endpoint allows a certain action scope
-            (Some(token_scopes), Some(action_scope)) => token_scopes.contains(action_scope),
+            (Some(token_scopes), Some(action_scope)) => token_scopes
+                .iter()
+                .any(|scope| scope.can_perform(action_scope.as_str())),
         }
     }
 
@@ -346,6 +348,28 @@ mod tests {
             api_token: token,
         };
         assert!(check.check(&auth).is_ok());
+    }
+
+    #[test]
+    fn test_action_scope_admin_covers_all() {
+        for required in [
+            ActionScope::Read,
+            ActionScope::Create,
+            ActionScope::Update,
+            ActionScope::Delete,
+        ] {
+            let check = AuthCheck::new().with_action_scope(required);
+            let token = create_test_token(Some(vec![ActionScope::Admin]), None);
+            let auth = Authentication::Token {
+                user_id: 1,
+                token_id: 1,
+                api_token: token,
+            };
+            assert!(
+                check.check(&auth).is_ok(),
+                "admin token must satisfy {required:?} endpoints"
+            );
+        }
     }
 
     #[test]

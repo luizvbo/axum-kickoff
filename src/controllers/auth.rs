@@ -307,7 +307,7 @@ pub async fn oauth_callback(
 
             existing_user
         }
-        Err(_) => {
+        Err(e) if e.is_record_not_found() || e.is_invalid_record_count() => {
             // Create new user
             toasty::create!(User {
                 provider: provider.spec.slug.to_string(),
@@ -326,6 +326,7 @@ pub async fn oauth_callback(
             .await
             .map_err(db_error)?
         }
+        Err(e) => return Err(db_error(e)),
     };
 
     // Session fixation protection: clear pre-login session data

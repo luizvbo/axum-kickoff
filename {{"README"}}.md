@@ -16,7 +16,7 @@ A production-ready Rust web application built on [Axum](https://github.com/tokio
 - **Storage**: Local filesystem storage (pluggable architecture for future backends)
 - **Background Jobs**: Built-in worker for async job processing
 - **API Docs**: OpenAPI/Swagger UI out of the box (utoipa)
-- **Optional subsystems** (selected at generation time): Prometheus metrics, Sentry error reporting, jemalloc allocator
+- **Optional subsystems** (selected at generation time): Prometheus metrics, Sentry error reporting, jemalloc allocator, Tailwind CSS
 
 ## Quick Start
 
@@ -29,7 +29,8 @@ A production-ready Rust web application built on [Axum](https://github.com/tokio
 ### Installation
 
 ```bash
-# Install dependencies and vendor JS libraries (HTMX, Alpine.js)
+# Install dependencies and vendor JS libraries (HTMX, Alpine.js){% if tailwind %},
+# then build the Tailwind stylesheet (rerun anytime with `just css`){% endif %}
 just setup
 
 # Copy environment variables
