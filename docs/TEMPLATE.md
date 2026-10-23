@@ -82,6 +82,17 @@ pair (setting only one is a startup error). The login page lists enabled
 providers at runtime from `PageContext.oauth_providers`, so no Liquid is needed
 in `templates/`.
 
+`{% if tailwind %}` swaps the styling pipeline: `package.json` gains
+`tailwindcss`/`@tailwindcss/cli` dev dependencies, the justfile gains a `css`
+recipe (a dependency of `run`/`dev`, also run once at the end of `setup`), and
+`.gitignore` starts ignoring `/static/css/style.css`. The served path never
+changes — `just css` compiles `static/css/input.css` into
+`static/css/style.css`, so `templates/base.html` needs no conditional (it
+cannot hold Liquid anyway — `templates/` is `exclude`d). Two conditional
+ignores ship the right half of the pair: `[conditional.'tailwind']` drops the
+bundled hand-written `style.css` (it becomes a generated artifact), while
+`[conditional.'!tailwind']` drops `input.css`.
+
 ### Tag placement and whitespace
 
 Liquid tags render in place. To keep `cargo fmt --check` happy on **both**

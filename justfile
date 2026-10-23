@@ -20,13 +20,18 @@ setup:
     @mkdir -p static/vendor
     @cp node_modules/htmx.org/dist/htmx.min.js static/vendor/htmx.min.js
     @cp node_modules/@alpinejs/csp/dist/cdn.min.js static/vendor/alpine.js
+{% if tailwind %}    @just css
+{% endif %}
+{% if tailwind %}[doc("Regenerate static/css/style.css with Tailwind CSS")]
+css:
+    npx @tailwindcss/cli -i static/css/input.css -o static/css/style.css --minify
 
-[doc("Run the development server")]
-run:
+{% endif %}[doc("Run the development server")]
+run:{% if tailwind %} css{% endif %}
     cargo run --bin {{project-name}} -- server
 
 [doc("Run the development server with auto-reload (requires cargo-watch)")]
-dev:
+dev:{% if tailwind %} css{% endif %}
     cargo watch -x 'run --bin {{project-name}} -- server'
 
 [doc("Run tests with nextest faster test runner (requires cargo-nextest)")]

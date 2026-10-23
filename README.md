@@ -36,6 +36,7 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | `metrics` | `true` / `false` | `false` | Adds the `prometheus` dependency, a `metrics` feature in `default`, the `/metrics` endpoint, and request instrumentation middleware |
 | `sentry` | `true` / `false` | `false` | Adds `sentry` + `sentry-tracing` dependencies and feature, error-event capture via the tracing layer, and `SENTRY_DSN` support |
 | `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |
+| `tailwind` | `true` / `false` | `false` | Adds `tailwindcss` + `@tailwindcss/cli` npm dev dependencies and a `just css` recipe (also run by `just setup`, `just run` and `just dev`) that compiles `static/css/input.css` into `static/css/style.css`, replacing the bundled hand-written stylesheet |
 
 The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
 unconditional parts of the generated application, not options.
