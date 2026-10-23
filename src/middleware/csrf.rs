@@ -76,7 +76,7 @@ pub fn generate_token() -> String {
 /// visitors should check `session_has_csrf_state` first to avoid sending
 /// cookies on requests that carry no state worth protecting.
 pub fn get_or_create_csrf_token(session: &SessionExtension) -> String {
-    if let Some(token) = session.get(CSRF_TOKEN_KEY) {
+    if let Some(token) = session.get(CSRF_TOKEN_KEY).filter(|t| !t.is_empty()) {
         return token;
     }
 
@@ -91,7 +91,7 @@ pub fn get_or_create_csrf_token(session: &SessionExtension) -> String {
 /// A session with a `user_id` but no token still returns `true` — such a
 /// session must not bypass CSRF validation on unsafe methods.
 pub(crate) fn session_has_csrf_state(session: &SessionExtension) -> bool {
-    session.get("user_id").is_some() || session.get(CSRF_TOKEN_KEY).is_some()
+    session.get("user_id").is_some() || session.get(CSRF_TOKEN_KEY).is_some_and(|t| !t.is_empty())
 }
 
 /// Validate a CSRF token against the session
@@ -435,5 +435,27 @@ mod tests {
         let (token, _) =
             extract_csrf_token(&Method::POST, &axum::http::HeaderMap::new(), req).await;
         assert!(token.is_none());
+    }
+
+    #[test]
+    fn test_get_or_create_csrf_token_regenerates_empty_token() {
+        let mut data = std::collections::HashMap::new();
+        data.insert(CSRF_TOKEN_KEY.to_string(), String::new());
+        let session = SessionExtension::new(crate::middleware::session::Session::new(data));
+
+        let token = get_or_create_csrf_token(&session);
+        assert!(!token.is_empty());
+        assert_eq!(session.get(CSRF_TOKEN_KEY).as_deref(), Some(token.as_str()));
+    }
+
+    #[test]
+    fn test_session_has_csrf_state_ignores_empty_token() {
+        let mut data = std::collections::HashMap::new();
+        data.insert(CSRF_TOKEN_KEY.to_string(), String::new());
+        let session = SessionExtension::new(crate::middleware::session::Session::new(data));
+        assert!(!session_has_csrf_state(&session));
+
+        session.insert(CSRF_TOKEN_KEY.to_string(), "tok".to_string());
+        assert!(session_has_csrf_state(&session));
     }
 }

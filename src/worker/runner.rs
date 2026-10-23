@@ -215,13 +215,34 @@ impl Runner {
     pub async fn run(mut self) -> anyhow::Result<()> {
         info!(queue = %self.queue, worker_id = %self.worker_id, "Background worker started");
 
+        // Signal streams are registered once before the loop so a delivered
+        // signal stays buffered even when no `select!` is polling it (fresh
+        // per-iteration streams would miss signals delivered between selects).
+        #[cfg(unix)]
+        let shutdown = {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm =
+                signal(SignalKind::terminate()).expect("failed to create SIGTERM listener");
+            let mut sigint =
+                signal(SignalKind::interrupt()).expect("failed to create SIGINT listener");
+            async move {
+                tokio::select! {
+                    _ = sigterm.recv() => {}
+                    _ = sigint.recv() => {}
+                }
+            }
+        };
+        #[cfg(not(unix))]
+        let shutdown = tokio::signal::ctrl_c();
+        tokio::pin!(shutdown);
+
         loop {
             // Enqueue recurring maintenance jobs when due. This runs between
             // polls so an in-flight job is never cancelled by the scheduler.
             self.enqueue_scheduled_jobs().await;
 
             tokio::select! {
-                _ = shutdown_signal() => {
+                _ = &mut shutdown => {
                     info!("Background worker shutting down");
                     return Ok(());
                 }
@@ -229,7 +250,7 @@ impl Runner {
                     Ok(true) => continue,
                     Ok(false) => {
                         tokio::select! {
-                            _ = shutdown_signal() => {
+                            _ = &mut shutdown => {
                                 info!("Background worker shutting down");
                                 return Ok(());
                             }
@@ -239,7 +260,7 @@ impl Runner {
                     Err(e) => {
                         error!(error = ?e, "Background worker error");
                         tokio::select! {
-                            _ = shutdown_signal() => {
+                            _ = &mut shutdown => {
                                 info!("Background worker shutting down");
                                 return Ok(());
                             }
@@ -605,24 +626,6 @@ fn compute_retry_time(now: jiff::Timestamp, retries: i32) -> jiff::Timestamp {
     // (the old `unwrap_or(now)` fallback produced a hot retry loop).
     now.checked_add(jiff::SignedDuration::from_secs(delay))
         .unwrap_or(jiff::Timestamp::MAX)
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    use tokio::signal::unix::{signal, SignalKind};
-
-    let mut sigterm = signal(SignalKind::terminate()).expect("failed to create SIGTERM listener");
-    let mut sigint = signal(SignalKind::interrupt()).expect("failed to create SIGINT listener");
-
-    tokio::select! {
-        _ = sigterm.recv() => {}
-        _ = sigint.recv() => {}
-    }
-}
-
-#[cfg(not(unix))]
-async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
 }
 
 #[cfg(test)]

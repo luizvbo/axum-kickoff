@@ -103,7 +103,11 @@ impl TestApp {
                     ),
                 })
                 .collect(),
-            storage_config: StorageConfig::local_filesystem("./test_uploads"),
+            // Unique per test app so parallel tests don't share the dir and
+            // nothing litters the checkout (the OS reaps the temp dir).
+            storage_config: StorageConfig::local_filesystem(
+                std::env::temp_dir().join(format!("test_uploads_{}", uuid::Uuid::new_v4())),
+            ),
             rate_limiter_config: LimitedAction::VARIANTS
                 .iter()
                 .map(|&a| {

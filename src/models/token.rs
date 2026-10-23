@@ -182,7 +182,8 @@ impl ActionScope {
 ///
 /// Examples:
 /// - `posts` - access to posts resource only
-/// - `posts*` - access to posts and any sub-resources
+/// - `posts*` - raw prefix match: any name starting with `posts`
+///   (`posts`, `posts-comments`, but also `postsx`)
 /// - `*` - access to all resources
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]

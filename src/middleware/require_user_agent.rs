@@ -81,10 +81,12 @@ pub async fn require_user_agent(
     let is_download = req.uri().path().ends_with("download");
 
     if !has_user_agent && !is_download {
+        // `request_id` middleware runs outermost, so the extension always
+        // exists by now — it holds a client-supplied or generated ID.
         let request_id = req
-            .headers()
-            .get("x-request-id")
-            .map(|header| header.to_str().unwrap_or_default())
+            .extensions()
+            .get::<crate::middleware::RequestId>()
+            .map(|id| id.0.as_str())
             .unwrap_or_default();
 
         let body = format!(

@@ -86,9 +86,11 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         // responses and `HtmlTemplate` can negotiate HTML/HTMX/JSON.
         .layer(from_fn(self::error_handler::middleware))
         .layer(from_fn(self::request_format::middleware))
-        .layer(from_fn(self::request_id::middleware))
         .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
+        // Outermost request-id: it must run before `require_user_agent` so the
+        // generated ID exists in extensions (and on rejection responses).
+        .layer(from_fn(self::request_id::middleware))
         .layer(from_fn_with_state(
             security_headers_config,
             self::security_headers::middleware,
