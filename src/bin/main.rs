@@ -50,7 +50,11 @@ fn main() -> Result<()> {
             // Initialize Sentry before the middleware stack so panics are
             // captured. The returned guard must be kept alive.
             #[cfg(feature = "sentry")]
-            let _sentry_guard = {{crate_name}}::tracing::init_sentry(config.sentry_dsn.as_ref());
+            let _sentry_guard = if config.sentry_enabled() {
+                {{crate_name}}::tracing::init_sentry(config.sentry_dsn.as_ref())
+            } else {
+                None
+            };
 {% endif %}
             // Set up the global tracing subscriber (pretty in dev/test, JSON
             // in production). When Sentry is enabled, this also attaches the
@@ -68,7 +72,11 @@ fn main() -> Result<()> {
             // subscriber so `tracing::error!` events from the worker loop are
             // captured. The guard must stay alive for the worker's lifetime.
             #[cfg(feature = "sentry")]
-            let _sentry_guard = {{crate_name}}::tracing::init_sentry(config.sentry_dsn.as_ref());
+            let _sentry_guard = if config.sentry_enabled() {
+                {{crate_name}}::tracing::init_sentry(config.sentry_dsn.as_ref())
+            } else {
+                None
+            };
 {% endif %}
             let rt = build_runtime(&config)?;
             rt.block_on(run_worker(config))?;

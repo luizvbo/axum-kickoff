@@ -423,9 +423,9 @@ Response: Handler → C → B → A
 6. Request Body Timeout
 7. Timeout
 8. Security Headers
-9. User Agent Validation
-10. Panic Catcher
-11. Request ID
+9. Request ID
+10. User Agent Validation
+11. Panic Catcher
 12. Request Format task-local
 13. Error Handler (logging)
 14. Real IP Extraction

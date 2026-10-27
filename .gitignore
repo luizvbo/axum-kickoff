@@ -24,6 +24,7 @@ target
 *.db-wal
 /node_modules
 /static/vendor
-/tmp
+{% if tailwind %}/static/css/style.css
+{% endif %}/tmp
 /.env
 /docs/local

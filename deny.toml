@@ -7,8 +7,13 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # the tree. Reached only via toasty-driver-postgresql through the pinned
 # toasty =0.11.0 (latest release); drop this once toasty migrates to
 # rustls-pki-types' PemObject.
+#
+# RUSTSEC-2026-0374: basic-toml is unmaintained, not vulnerable — it parses
+# askama.toml at compile time inside askama_derive. Even askama 0.16.1 still
+# depends on it, so no upgrade path exists; drop this once askama moves off it.
 ignore = [
     "RUSTSEC-2025-0134",
+    "RUSTSEC-2026-0374",
 ]
 
 [licenses]
