@@ -62,7 +62,6 @@ sentry-tracing = { version = "0.49", optional = true }{% endif %}
 secrecy = "0.10"
 rand = "0.10"
 sha2 = "0.11"
-aes-gcm = "0.11"
 hex = "0.4"
 bytes = "1"
 urlencoding = "2"

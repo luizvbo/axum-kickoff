@@ -14,7 +14,6 @@ use tracing::{info, info_span, Instrument};
 use crate::app::AppState;
 use crate::Env;
 
-pub mod api_token;
 pub mod auth;
 pub mod block_traffic;
 pub mod csrf;
@@ -29,7 +28,6 @@ pub mod require_user_agent;
 pub mod security_headers;
 pub mod session;
 
-pub use api_token::ApiTokenAuth;
 pub use auth::{authenticate, require_auth, require_login, CurrentUserId, OptionalCurrentUserId};
 pub use block_traffic::middleware as block_traffic;
 pub use csrf::{

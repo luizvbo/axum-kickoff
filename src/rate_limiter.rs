@@ -325,6 +325,12 @@ pub(crate) fn timestamp_storage_text(ts: jiff::Timestamp) -> String {
     format!("{:.6}", rounded)
 }
 
+// `last_refill` semantics: the timestamp from which the current `tokens`
+// count was computed. It must only advance when whole tokens actually
+// refilled — resetting it to `now` on a spend with zero refill would discard
+// the accrued fractional progress and starve callers making requests just
+// under the refill interval. Advancing by exactly `refill * rate` (not `now`)
+// preserves the remainder, so the effective rate matches the configured one.
 const POSTGRES_TAKE_SQL: &str = r#"
     INSERT INTO rate_limit_buckets AS b (bucket_key, action, bucket_id, tokens, last_refill)
     VALUES ($1, $2, $3, $4, $5)
@@ -335,25 +341,29 @@ const POSTGRES_TAKE_SQL: &str = r#"
         ELSE -1
     END,
     last_refill = CASE
-        WHEN GREATEST(0, b.tokens) + FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer >= 1
-        THEN EXCLUDED.last_refill
+        WHEN FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer >= 1
+        THEN b.last_refill + (FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer * $6) * INTERVAL '1 second'
         ELSE b.last_refill
     END
     RETURNING tokens
 "#;
 
+// The +0.002s epsilon absorbs rounding loss: strftime's %f writes
+// last_refill at millisecond precision and julianday math has ~100us of
+// float error, so a request landing exactly on a refill boundary would
+// otherwise measure elapsed just under `rate` and miss the refill.
 const SQLITE_TAKE_SQL: &str = r#"
     INSERT INTO rate_limit_buckets AS b (bucket_key, action, bucket_id, tokens, last_refill)
     VALUES (?1, ?2, ?3, ?4, ?5)
     ON CONFLICT (bucket_key) DO UPDATE
     SET tokens = CASE
-        WHEN MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400) / ?6) AS INTEGER) >= 1
-        THEN MIN(MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400) / ?6) AS INTEGER), ?7) - 1
+        WHEN MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER) >= 1
+        THEN MIN(MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER), ?7) - 1
         ELSE -1
     END,
     last_refill = CASE
-        WHEN MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400) / ?6) AS INTEGER) >= 1
-        THEN EXCLUDED.last_refill
+        WHEN CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER) >= 1
+        THEN strftime('%Y-%m-%dT%H:%M:%fZ', b.last_refill, printf('%+f seconds', CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER) * ?6))
         ELSE b.last_refill
     END
     RETURNING tokens
@@ -667,6 +677,59 @@ mod tests {
             allowed <= 10,
             "concurrent calls allowed {allowed}, but burst is 10"
         );
+    }
+
+    /// Spending tokens while fewer than `rate` seconds elapsed must not
+    /// discard the accrued refill progress: requests arriving at, e.g., 50%
+    /// and 99% of the interval still leave the bucket one refill away.
+    #[tokio::test]
+    async fn test_refill_progress_not_lost_when_spending_tokens() {
+        let mut config = HashMap::new();
+        config.insert(
+            LimitedAction::ApiRequest,
+            RateLimiterConfig {
+                rate: Duration::from_secs(100),
+                burst: 3,
+            },
+        );
+
+        let (_db_file, database) = test_database().await;
+        let clock = TestClock::new();
+        let rate_limiter = rate_limiter_with_clock(config, database, &clock);
+        let ip = "127.0.0.1".parse().unwrap();
+
+        // Drain the burst below the refill interval. The old code reset
+        // `last_refill` on every spend, so at t=101 the bucket would measure
+        // only 2s of elapsed time and deny.
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_ok());
+        clock.advance(Duration::from_secs(50));
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_ok());
+        clock.advance(Duration::from_secs(49));
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_ok());
+
+        // 101s since bucket creation: a token refilled at t=100.
+        clock.advance(Duration::from_secs(2));
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_ok());
+
+        // `last_refill` advanced by exactly one interval (to t=100), keeping
+        // the 1s remainder — so the next refill lands at t=200, not t=201.
+        clock.advance(Duration::from_secs(99));
+        assert!(rate_limiter
+            .check_by_ip(ip, LimitedAction::ApiRequest)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
