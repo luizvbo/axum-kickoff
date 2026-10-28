@@ -18,10 +18,10 @@
 //!
 //! # Example
 //!
-//! The `not_found_user` function can be used to create a "user not found" error:
+//! The `not_found` function can be used to create a 404 error:
 //!
 //! ```text
-//! not_found_user("user_123")
+//! not_found()
 //! ```
 //!
 use axum::extract::Request;

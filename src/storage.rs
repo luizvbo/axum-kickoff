@@ -203,10 +203,30 @@ impl Storage {
     /// Delete all files with a given prefix
     #[instrument(skip(self))]
     pub async fn delete_all_with_prefix(&self, prefix: &str) -> anyhow::Result<Vec<String>> {
+        // A prefix that resolves to the storage root itself (empty,
+        // whitespace, ".", "./") would wipe every stored file.
+        let has_real_component = Path::new(prefix.trim())
+            .components()
+            .any(|c| !matches!(c, std::path::Component::CurDir));
+        if !has_real_component {
+            anyhow::bail!("Invalid storage prefix: resolves to the storage root");
+        }
+
         let prefix_path = safe_storage_path(&self.base_path, prefix)?;
         let mut deleted = Vec::new();
 
         if !prefix_path.exists() {
+            return Ok(deleted);
+        }
+
+        // A prefix can name a single file, not only a directory.
+        if prefix_path.is_file() {
+            tokio::fs::remove_file(&prefix_path)
+                .await
+                .context("Failed to delete file")?;
+            if let Ok(rel_path) = prefix_path.strip_prefix(&self.base_path) {
+                deleted.push(rel_path.to_string_lossy().to_string());
+            }
             return Ok(deleted);
         }
 
@@ -302,10 +322,14 @@ impl Storage {
 
 fn apply_cdn_prefix(cdn_prefix: &Option<String>, path: &str) -> String {
     match cdn_prefix {
-        Some(cdn_prefix) if !cdn_prefix.starts_with("https://") => {
-            format!("https://{cdn_prefix}/{path}")
+        Some(cdn_prefix) => {
+            let prefix = cdn_prefix.trim_end_matches('/');
+            if prefix.starts_with("http://") || prefix.starts_with("https://") {
+                format!("{prefix}/{path}")
+            } else {
+                format!("https://{prefix}/{path}")
+            }
         }
-        Some(cdn_prefix) => format!("{cdn_prefix}/{path}"),
         None => format!("/{path}"),
     }
 }
@@ -408,6 +432,59 @@ mod tests {
 
         let files = storage.list(None).await.unwrap();
         assert_eq!(files, vec!["other/test3.txt"]);
+    }
+
+    #[tokio::test]
+    async fn test_delete_all_with_prefix_rejects_storage_root() {
+        let (storage, _temp_dir) = prepare_storage().await;
+
+        storage
+            .upload("dir/test.txt", Bytes::from_static(b"x"))
+            .await
+            .unwrap();
+
+        for prefix in ["", ".", "./", "  ", "/"] {
+            assert!(
+                storage.delete_all_with_prefix(prefix).await.is_err(),
+                "prefix {prefix:?} must be rejected"
+            );
+        }
+
+        // Nothing was deleted.
+        assert_eq!(storage.list(None).await.unwrap(), vec!["dir/test.txt"]);
+        assert!(storage.base_path().exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_all_with_prefix_deletes_single_file() {
+        let (storage, _temp_dir) = prepare_storage().await;
+
+        let bytes = Bytes::from_static(b"hello world");
+        storage.upload("dir/test.txt", bytes.clone()).await.unwrap();
+        storage.upload("dir/other.txt", bytes).await.unwrap();
+
+        let deleted = storage
+            .delete_all_with_prefix("dir/test.txt")
+            .await
+            .unwrap();
+        assert_eq!(deleted, vec!["dir/test.txt"]);
+        assert_eq!(storage.list(None).await.unwrap(), vec!["dir/other.txt"]);
+    }
+
+    #[test]
+    fn test_apply_cdn_prefix_http_and_trailing_slash() {
+        assert_eq!(
+            apply_cdn_prefix(&Some("http://localhost:9000".to_string()), "a.txt"),
+            "http://localhost:9000/a.txt"
+        );
+        assert_eq!(
+            apply_cdn_prefix(&Some("https://cdn.example.com/".to_string()), "a.txt"),
+            "https://cdn.example.com/a.txt"
+        );
+        assert_eq!(
+            apply_cdn_prefix(&Some("cdn.example.com/".to_string()), "a.txt"),
+            "https://cdn.example.com/a.txt"
+        );
     }
 
     #[tokio::test]

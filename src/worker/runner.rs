@@ -102,6 +102,11 @@ const DEFAULT_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 /// `max_age_days` passed to the recurring [`CleanupJob`].
 const DEFAULT_CLEANUP_MAX_AGE_DAYS: u64 = 30;
 
+/// Upper bound for retry backoff. Uncapped `2^retries` waits grow to weeks
+/// and months long before `max_retries` is reached, parking transiently
+/// failing jobs without ever marking them dead.
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(86_400);
+
 /// Handles polling, locking, and running of background jobs.
 pub struct Runner {
     app: Arc<App>,
@@ -620,10 +625,11 @@ async fn mark_job_dead(
 fn compute_retry_time(now: jiff::Timestamp, retries: i32) -> jiff::Timestamp {
     let delay = 2_i64
         .checked_pow(retries.unsigned_abs().min(62))
-        .unwrap_or(i64::MAX);
-    // On overflow the delay is hundreds of millions of years — pinning to
-    // Timestamp::MAX keeps the job parked instead of retrying immediately
-    // (the old `unwrap_or(now)` fallback produced a hot retry loop).
+        .unwrap_or(i64::MAX)
+        .min(MAX_RETRY_DELAY.as_secs() as i64);
+    // The capped delay can only overflow when `now` is within a day of
+    // Timestamp::MAX — pin to MAX rather than retrying immediately (the old
+    // `unwrap_or(now)` fallback produced a hot retry loop).
     now.checked_add(jiff::SignedDuration::from_secs(delay))
         .unwrap_or(jiff::Timestamp::MAX)
 }
@@ -631,6 +637,7 @@ fn compute_retry_time(now: jiff::Timestamp, retries: i32) -> jiff::Timestamp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::models::{BackgroundJob, RateLimitBucket};
     use crate::tests::test_app::TestApp;
     use crate::worker::CleanupJob;
@@ -1025,14 +1032,16 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_retry_time_overflow_pins_to_max() {
+    fn test_compute_retry_time_caps_at_max_delay() {
         let now = jiff::Timestamp::now();
-        // 2^62 seconds far exceeds Timestamp range — the job is pinned to
-        // MAX rather than rescheduled for *now* (the old fallback produced a
-        // hot retry loop). Extreme retry counts saturate identically.
-        assert_eq!(compute_retry_time(now, 62), jiff::Timestamp::MAX);
-        assert_eq!(compute_retry_time(now, i32::MAX), jiff::Timestamp::MAX);
-        assert_eq!(compute_retry_time(now, i32::MIN), jiff::Timestamp::MAX);
+        // Uncapped 2^24s would be ~194 days out and 2^62s exceeds Timestamp
+        // range entirely; the delay caps at MAX_RETRY_DELAY so transiently
+        // failing jobs retry within a day instead of parking for weeks.
+        let cap = jiff::SignedDuration::from_secs(86_400);
+        assert_eq!(compute_retry_time(now, 24), now + cap);
+        assert_eq!(compute_retry_time(now, 62), now + cap);
+        assert_eq!(compute_retry_time(now, i32::MAX), now + cap);
+        assert_eq!(compute_retry_time(now, i32::MIN), now + cap);
     }
 
     #[tokio::test]

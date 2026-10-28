@@ -28,3 +28,4 @@ target
 {% endif %}/tmp
 /.env
 /docs/local
+*.sync-conflict-*

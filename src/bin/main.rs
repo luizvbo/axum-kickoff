@@ -78,6 +78,10 @@ fn main() -> Result<()> {
                 None
             };
 {% endif %}
+            // Same ordering as `server`: tracing must be live before the
+            // runtime is built so startup failures are logged.
+            {{crate_name}}::tracing::init_tracing_with_format(config.env(), config.log_format);
+
             let rt = build_runtime(&config)?;
             rt.block_on(run_worker(config))?;
         }
@@ -110,8 +114,6 @@ fn build_runtime(config: &{{crate_name}}::config::Server) -> Result<tokio::runti
 }
 
 async fn run_worker(config: {{crate_name}}::config::Server) -> Result<()> {
-    {{crate_name}}::tracing::init_tracing_with_format(config.env(), config.log_format);
-
     let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
     let database = {{crate_name}}::db::Database::from_config(&db_config).await?;
 

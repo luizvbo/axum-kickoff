@@ -22,6 +22,7 @@ use crate::router::{HtmlTemplate, PageContext};
 use crate::util::errors::{bad_request, db_error, forbidden, server_error, BoxedAppError};
 use crate::util::ReqwestClient;
 use secrecy::ExposeSecret;
+use subtle::ConstantTimeEq;
 
 /// Session keys used while an OAuth flow is in progress. The provider slug is
 /// recorded alongside the state so the callback can verify the flow was
@@ -195,7 +196,7 @@ pub async fn oauth_callback(
         .remove(SESSION_OAUTH_STATE)
         .ok_or_else(|| bad_request("Missing OAuth state in session"))?;
 
-    if session_state != csrf_state {
+    if !bool::from(session_state.as_bytes().ct_eq(csrf_state.as_bytes())) {
         return Err(bad_request("Invalid OAuth state - possible CSRF attack"));
     }
 
@@ -398,14 +399,7 @@ pub struct LoginTemplate {
 pub async fn logout_api(
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Json<serde_json::Value>, BoxedAppError> {
-    // Clear all session data
-    session.remove("user_id");
-    session.remove("user_login");
-    session.remove(SESSION_OAUTH_STATE);
-    session.remove(SESSION_OAUTH_PKCE_VERIFIER);
-    session.remove(SESSION_OAUTH_PROVIDER);
-    session.remove(SESSION_REDIRECT_TO);
-    session.remove("csrf_token");
+    session.clear();
 
     Ok(Json(json!({"success": true})))
 }
@@ -421,14 +415,7 @@ pub async fn logout_api(
 pub async fn logout_html(
     Extension(session): Extension<SessionExtension>,
 ) -> Result<Redirect, BoxedAppError> {
-    // Clear all session data
-    session.remove("user_id");
-    session.remove("user_login");
-    session.remove(SESSION_OAUTH_STATE);
-    session.remove(SESSION_OAUTH_PKCE_VERIFIER);
-    session.remove(SESSION_OAUTH_PROVIDER);
-    session.remove(SESSION_REDIRECT_TO);
-    session.remove("csrf_token");
+    session.clear();
 
     Ok(Redirect::to("/"))
 }

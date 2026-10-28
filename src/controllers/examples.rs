@@ -10,7 +10,7 @@
 
 use askama::Template;
 use axum::extract::{Form, State};
-use axum::response::{IntoResponse, Json, Redirect, Response};
+use axum::response::{IntoResponse, Json, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -207,29 +207,6 @@ pub async fn example_json() -> impl IntoResponse {
     };
 
     Json(response)
-}
-
-// ============================================================================
-// Redirect vs HTML Partial Convention
-// ============================================================================
-
-/// Demonstrates when to redirect vs return HTML partial
-///
-/// Convention:
-/// - HTMX requests: Return HTML partial (no redirect)
-/// - Traditional form submissions: Redirect on success
-/// - Navigation actions: Redirect to new page
-///
-/// You can detect HTMX requests via the "HX-Request" header
-pub async fn example_redirect_convention() -> impl IntoResponse {
-    // This would check for HTMX header in a real implementation
-    // let is_htmx = headers.get("HX-Request").is_some();
-
-    // For HTMX: return HTML partial
-    // For traditional: return Redirect
-
-    // Example redirect:
-    Redirect::to("/examples/contact")
 }
 
 #[cfg(test)]

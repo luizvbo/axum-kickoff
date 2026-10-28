@@ -50,6 +50,14 @@ impl SessionExtension {
         session.data.remove(key)
     }
 
+    /// Remove every key and mark the session for deletion. The middleware
+    /// turns an empty dirty session into a cookie removal.
+    pub fn clear(&self) {
+        let mut session = self.0.write();
+        session.dirty = true;
+        session.data.clear();
+    }
+
     pub fn is_dirty(&self) -> bool {
         let session = self.0.read();
         session.dirty
@@ -134,6 +142,13 @@ pub async fn middleware(State(state): State<SessionState>, req: Request, next: N
     // Check if session was modified
     let session = session_arc.read();
     if session.dirty {
+        if session.data.is_empty() {
+            // The session was emptied (e.g. logout): expire the cookie in the
+            // browser instead of persisting an empty payload for 90 days.
+            let removal = Cookie::build((COOKIE_NAME, "")).path("/").build();
+            return (jar.remove(removal), response).into_response();
+        }
+
         // Encode the session data
         let encoded = encode(&session.data);
 
@@ -276,6 +291,18 @@ mod tests {
         let extension = SessionExtension::new(session);
         assert_eq!(extension.remove("nonexistent"), None);
         assert!(extension.is_dirty());
+    }
+
+    #[test]
+    fn test_session_extension_clear() {
+        let mut data = HashMap::new();
+        data.insert("key1".to_string(), "value1".to_string());
+        let session = Session::new(data);
+        let extension = SessionExtension::new(session);
+        extension.clear();
+        assert!(extension.is_dirty());
+        assert_eq!(extension.get("key1"), None);
+        assert!(extension.0.read().data.is_empty());
     }
 
     #[test]

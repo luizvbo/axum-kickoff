@@ -49,12 +49,12 @@ cargo generate --git https://github.com/luizvbo/axum-kickoff \
   -d database=postgresql -d metrics=true -d sentry=true -d jemalloc=true
 ```
 
-> **PostgreSQL note**: the checked-in migrations are written in SQLite dialect
-> (`AUTOINCREMENT`). When `database=postgresql` is selected the Postgres driver
-> is compiled in and `DATABASE_URL` defaults to Postgres, but the migration SQL
-> must be adapted for PostgreSQL before `migrate` will run against a real
-> Postgres database. The test suite is unaffected: it runs on in-memory
-> SQLite.
+> **PostgreSQL note**: two migration sets are checked in — `migrations/`
+> (SQLite dialect) and `migrations-postgres/` (PostgreSQL dialect).
+> `database=postgresql` compiles in the Postgres driver, defaults
+> `DATABASE_URL` to Postgres, and ships only the Postgres migration set, so
+> `migrate` works against a real Postgres database out of the box. The test
+> suite is unaffected: it runs on in-memory SQLite.
 
 ## After generation
 

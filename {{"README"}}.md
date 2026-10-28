@@ -116,12 +116,10 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
 unconditional parts of the application, not template options.
 
-> **PostgreSQL note**: the checked-in migrations under `migrations/` are written
-> in SQLite dialect (`AUTOINCREMENT`). When `database=postgresql` is selected
-> the Postgres driver is compiled in and `DATABASE_URL` defaults to Postgres,
-> but the migration SQL must be adapted for PostgreSQL before `migrate` will
-> run against a real Postgres database. The test suite is unaffected: it runs
-> on in-memory SQLite.
+> **PostgreSQL note**: the template ships a migration set per backend
+> (`migrations/` for SQLite, `migrations-postgres/` for PostgreSQL) and keeps
+> only the one matching `database`, so `migrate` works out of the box on
+> either backend. The test suite is unaffected: it runs on in-memory SQLite.
 
 ### Non-interactive generation
 

@@ -11,7 +11,6 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Redirect, Response};
 
 use crate::app::AppState;
-use crate::middleware::api_token::ApiTokenAuth;
 use crate::middleware::SessionExtension;
 use crate::models::{ApiToken, User};
 use crate::util::auth::Authentication;
@@ -150,23 +149,20 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
             .insert(Authentication::Cookie { user_id });
     }
 
-    // If an Authorization header is present, prefer token auth
+    // If an Authorization header is present, prefer token auth. The scheme
+    // is case-insensitive per RFC 6750 and the token may carry surrounding
+    // whitespace.
     if let Some(auth_header) = req
         .headers()
         .get(AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
     {
-        if let Some(token_str) = auth_header.strip_prefix("Bearer ") {
-            match validate_token(&state, token_str).await {
+        let (scheme, token_str) = auth_header.split_once(' ').unwrap_or(("", auth_header));
+        if scheme.eq_ignore_ascii_case("bearer") {
+            match validate_token(&state, token_str.trim()).await {
                 Ok(auth) => {
-                    let user_id = auth.user_id;
-                    req.extensions_mut().insert(auth.clone());
-                    req.extensions_mut().insert(CurrentUserId(user_id));
-                    req.extensions_mut().insert(Authentication::Token {
-                        user_id,
-                        token_id: auth.token_id,
-                        api_token: auth.api_token.clone(),
-                    });
+                    req.extensions_mut().insert(CurrentUserId(auth.user_id()));
+                    req.extensions_mut().insert(auth);
                 }
                 Err(response) => return response,
             }
@@ -176,7 +172,7 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
     next.run(req).await
 }
 
-async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAuth, Response> {
+async fn validate_token(state: &AppState, token_str: &str) -> Result<Authentication, Response> {
     let hashed_token =
         HashedToken::parse(token_str).map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
 
@@ -227,7 +223,7 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<ApiTokenAut
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
     }
 
-    Ok(ApiTokenAuth {
+    Ok(Authentication::Token {
         user_id: api_token.user_id,
         token_id: api_token.id,
         api_token: Arc::new(api_token),

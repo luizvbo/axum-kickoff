@@ -6,9 +6,7 @@ use crate::models::token::{ActionScope, ResourceScope};
 use crate::models::ApiToken;
 use crate::util::errors::{forbidden, unauthorized, BoxedAppError};
 use axum::extract::FromRequestParts;
-use http::header;
 use http::request::Parts;
-use secrecy::SecretString;
 use std::sync::Arc;
 
 /// Authentication method (cookie session or API token)
@@ -62,57 +60,6 @@ impl<S: Send + Sync> FromRequestParts<S> for Authentication {
             .get::<Authentication>()
             .cloned()
             .ok_or_else(|| unauthorized("You must be logged in to perform this action"))
-    }
-}
-
-/// Authorization header extractor
-#[derive(Debug)]
-pub struct AuthHeader(SecretString);
-
-impl AuthHeader {
-    /// Extract authorization header from request parts (optional)
-    pub async fn optional_from_request_parts(parts: &Parts) -> Result<Option<Self>, BoxedAppError> {
-        let Some(auth_header) = parts.headers.get(header::AUTHORIZATION) else {
-            return Ok(None);
-        };
-
-        let auth_header = auth_header.to_str().map_err(|_| {
-            let message = "Invalid `Authorization` header: Found unexpected non-ASCII characters";
-            unauthorized(message)
-        })?;
-
-        let (scheme, token) = auth_header.split_once(' ').unwrap_or(("", auth_header));
-        if !(scheme.eq_ignore_ascii_case("Bearer") || scheme.is_empty()) {
-            let message = format!(
-                "Invalid `Authorization` header: Found unexpected authentication scheme `{scheme}`"
-            );
-            return Err(unauthorized(message));
-        }
-
-        let token = SecretString::from(token.trim_ascii());
-        Ok(Some(AuthHeader(token)))
-    }
-
-    /// Extract authorization header from request parts (required)
-    pub async fn from_request_parts(parts: &Parts) -> Result<Self, BoxedAppError> {
-        let auth = Self::optional_from_request_parts(parts).await?;
-        auth.ok_or_else(|| {
-            let message = "Missing `Authorization` header";
-            unauthorized(message)
-        })
-    }
-
-    /// Get the token value
-    pub fn token(&self) -> &SecretString {
-        &self.0
-    }
-}
-
-impl<S: Send + Sync> FromRequestParts<S> for AuthHeader {
-    type Rejection = BoxedAppError;
-
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Self::from_request_parts(parts).await
     }
 }
 
@@ -233,8 +180,12 @@ impl AuthCheck {
             // The token is a legacy token (no scopes)
             (None, _) => true,
 
-            // The token is NOT a legacy token, and the endpoint only allows legacy tokens
-            (Some(_), None) => false,
+            // The endpoint declares no required scope. Only `admin` tokens
+            // (full access by definition) pass — anything narrower stays
+            // denied so a token can't reach endpoints it was never scoped for.
+            (Some(token_scopes), None) => token_scopes
+                .iter()
+                .any(|scope| scope.can_perform(ActionScope::Admin.as_str())),
 
             // The token is NOT a legacy token, and the endpoint allows a certain action scope
             (Some(token_scopes), Some(action_scope)) => token_scopes
@@ -370,6 +321,32 @@ mod tests {
                 "admin token must satisfy {required:?} endpoints"
             );
         }
+    }
+
+    #[test]
+    fn test_admin_token_allowed_on_unscoped_endpoint() {
+        let check = AuthCheck::new();
+        let token = create_test_token(Some(vec![ActionScope::Admin]), None);
+        let auth = Authentication::Token {
+            user_id: 1,
+            token_id: 1,
+            api_token: token,
+        };
+        assert!(check.check(&auth).is_ok());
+    }
+
+    #[test]
+    fn test_narrow_scoped_token_denied_on_unscoped_endpoint() {
+        // Endpoints that declare no action scope stay fail-closed: a token
+        // scoped to `read` must not reach them.
+        let check = AuthCheck::new();
+        let token = create_test_token(Some(vec![ActionScope::Read]), None);
+        let auth = Authentication::Token {
+            user_id: 1,
+            token_id: 1,
+            api_token: token,
+        };
+        assert!(check.check(&auth).is_err());
     }
 
     #[test]

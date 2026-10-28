@@ -328,6 +328,37 @@ async fn token_auth_can_list_tokens_without_csrf() {
     assert_eq!(data[0]["name"], "read-token");
 }
 
+/// The `Authorization` scheme is case-insensitive (RFC 6750): clients sending
+/// `bearer <token>` must authenticate the same as `Bearer <token>`.
+#[tokio::test]
+async fn token_auth_accepts_lowercase_bearer_scheme() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+
+    let user = app
+        .user_builder("lowercase_bearer_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let (_api_token, plain_token) = app
+        .token_builder(user.id, "read-token")
+        .action_scopes(vec![ActionScope::Read])
+        .build(&mut db)
+        .await
+        .expect("Failed to create token");
+
+    let anon = crate::tests::AnonymousUser::new(app);
+    let mut request = anon.request_builder(http::Method::GET, "/api/v1/tokens");
+    request.headers_mut().insert(
+        http::header::AUTHORIZATION,
+        format!("bearer {plain_token}").parse().unwrap(),
+    );
+
+    let response = anon.run::<Value>(request).await;
+    response.assert_status(StatusCode::OK);
+}
+
 #[tokio::test]
 async fn token_auth_without_required_scope_is_forbidden() {
     let app = TestApp::new().await;
