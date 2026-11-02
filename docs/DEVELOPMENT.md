@@ -261,7 +261,7 @@ chosen backend.
 For manual database changes:
 
 1. Update model definitions in `src/models/`
-2. Run Toasty to regenerate
+2. Generate + apply a migration (`just migration-generate && just migration-apply`)
 3. Test with a temporary SQLite file (TestApp default)
 
 ## Adding New Features
@@ -286,7 +286,7 @@ For manual database changes:
 
 1. Create model file in `src/models/`
 2. Define model with Toasty macros
-3. Run Toasty to regenerate
+3. Generate + apply a migration (`just migration-generate && just migration-apply`)
 4. Add CRUD operations
 5. Add tests
 6. Update documentation

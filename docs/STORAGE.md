@@ -215,7 +215,10 @@ S3 storage will support the same operations as local filesystem:
 - Check existence
 - Public URL generation with CDN support
 
-## In-Memory Storage (Planned)
+## In-Memory Storage (Not Implemented — Design Notes Only)
+
+Like the S3 section above, `STORAGE_BACKEND` does not exist — this is a
+sketch of a possible future backend for tests, not usable configuration.
 
 ### Use Case
 

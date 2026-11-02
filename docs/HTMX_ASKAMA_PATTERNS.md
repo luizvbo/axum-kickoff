@@ -98,7 +98,7 @@ struct ContactPageTemplate {
 pub async fn contact_page(Extension(session): Extension<SessionExtension>) -> impl IntoResponse {
     let csrf_token = get_or_create_csrf_token(&session);
     let template = ContactPageTemplate { csrf_token };
-    HtmlTemplate(template)
+    HtmlTemplate::new(template)
 }
 ```
 

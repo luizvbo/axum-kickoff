@@ -47,9 +47,8 @@ Use this checklist when deploying {{project-name}} to production.
 
 ### Rate Limiting
 - [ ] Configure appropriate rate limits for production
-- [ ] Set `RATE_LIMITER_API_REQUEST_RATE_SECONDS` and `BURST`
-- [ ] Configure `RATE_LIMITER_LOGIN_ATTEMPT` limits
-- [ ] Consider Redis for distributed rate limiting (if needed)
+- [ ] Set `RATE_LIMITER_API_REQUEST_RATE_SECONDS` and `BURST` (only actions wired in `determine_limited_action` take effect — e.g. `LOGIN_ATTEMPT` is unconfigured by default)
+- [ ] The DB-backed limiter already shares state across instances; Redis is a design doc, not a backend
 - [ ] Test rate limiting behavior
 
 ### Security Headers
@@ -122,10 +121,9 @@ re-check after each `cargo update`:
 - [ ] Configure rate limiting at proxy level (optional)
 
 ### Storage
-- [ ] Configure storage backend for production
-- [ ] For local storage: ensure disk space and permissions
-- [ ] For S3: configure credentials and bucket
-- [ ] Set up CDN if using one
+- [ ] Set `STORAGE_PATH` to durable storage (local filesystem is the only backend)
+- [ ] Ensure disk space and permissions on `STORAGE_PATH`
+- [ ] Put uploads behind a CDN if needed (no built-in S3)
 - [ ] Test file upload/download functionality
 
 ### Logging
