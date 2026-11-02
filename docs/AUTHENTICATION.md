@@ -154,9 +154,14 @@ Sessions store:
 
 The session middleware in `src/middleware/session.rs`:
 
-- Validates session cookies
-- Extracts user information from sessions
-- Attaches user context to requests
+- Validates the signed session cookie
+- Exposes session data (`user_id`, CSRF token, OAuth state) to downstream
+  middleware
+- Reissues a `Set-Cookie` header when session data changes
+
+Authentication itself (resolving `user_id` to a user, or validating a
+Bearer token) happens in `src/middleware/auth.rs`'s `authenticate`
+middleware, which runs inside the same route-layer stack.
 
 ### Session Security
 
@@ -181,39 +186,51 @@ API tokens provide programmatic access to the API with fine-grained permissions 
 API tokens have the following properties:
 
 - **Name**: Human-readable name for the token
-- **Token Hash**: SHA-256 hash of the token (stored in database)
+- **Token Hash**: SHA-256 hash of the token (stored in database; plaintext
+  is `ako` + 32 random characters, shown once at creation)
 - **Action Scopes**: Permissions for actions (read, create, update, delete, admin)
 - **Resource Scopes**: Permissions for specific resources
 - **Expiration**: Optional expiration date
 - **Last Used**: Timestamp of last use
+- **Revoked**: Tokens are revoked, not deleted
 
 ### Creating API Tokens
 
 #### Via API
 
+`POST /api/v1/tokens` accepts session-cookie auth (with the `X-CSRF-Token`
+header) or an existing token that has the `create` action scope on the
+`tokens` resource:
+
 ```bash
-curl -X POST http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+curl -X POST http://localhost:8888/api/v1/tokens \
+  -H "Cookie: {{crate_name}}_session=<signed-cookie-value>" \
+  -H "X-CSRF-Token: <session-csrf-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Token",
     "action_scopes": ["read"],
     "resource_scopes": ["posts"],
-    "expires_at": "2024-12-31T23:59:59Z"
+    "expires_at": "2026-12-31T23:59:59Z"
   }'
 ```
 
 #### Response
 
+Returns `201 Created` with the standard `{"data": ...}` envelope. The
+plaintext token appears once, in `data.token`:
+
 ```json
 {
-  "id": "token_id",
-  "name": "My Token",
-  "token": "axk_abc123...",  // Only shown on creation
-  "action_scopes": ["read"],
-  "resource_scopes": ["posts"],
-  "expires_at": "2024-12-31T23:59:59Z",
-  "created_at": "2024-01-01T00:00:00Z"
+  "data": {
+    "token": "ako...",  // Only shown on creation
+    "id": 1,
+    "name": "My Token",
+    "created_at": "2026-01-01T00:00:00Z",
+    "action_scopes": ["read"],
+    "resource_scopes": ["posts"],
+    "expires_at": "2026-12-31T23:59:59Z"
+  }
 }
 ```
 
@@ -224,8 +241,8 @@ curl -X POST http://localhost:3000/api/tokens \
 Include the token in the `Authorization` header:
 
 ```bash
-curl http://localhost:3000/api/posts \
-  -H "Authorization: Bearer axk_abc123..."
+curl http://localhost:8888/api/v1/posts \
+  -H "Authorization: Bearer ako..."
 ```
 
 ### Token Scopes
@@ -252,16 +269,22 @@ Resource scopes control which resources a token can access:
 
 #### List Tokens
 
+`GET /api/v1/tokens` returns a paginated list (`?page=`/`?per_page=`, max
+100) of the caller's tokens. Revoked tokens are omitted:
+
 ```bash
-curl http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+curl http://localhost:8888/api/v1/tokens \
+  -H "Cookie: {{crate_name}}_session=<signed-cookie-value>"
 ```
 
 #### Revoke Token
 
+`POST /api/v1/tokens/{token_id}` revokes a token and returns `204`:
+
 ```bash
-curl -X DELETE http://localhost:3000/api/tokens/TOKEN_ID \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+curl -X POST http://localhost:8888/api/v1/tokens/TOKEN_ID \
+  -H "Cookie: {{crate_name}}_session=<signed-cookie-value>" \
+  -H "X-CSRF-Token: <session-csrf-token>"
 ```
 
 ### Token Security
@@ -281,14 +304,16 @@ Tokens without scopes (legacy tokens) are granted full access for backward compa
 
 The session middleware (`src/middleware/session.rs`):
 
-1. Extracts session cookie from request
-2. Validates session signature
-3. Checks session expiration
-4. Attaches user context to request extensions
+1. Extracts the `{{crate_name}}_session` cookie from the request
+2. Validates the signature and expiry embedded in the signed cookie value
+3. Exposes the session map to downstream middleware via request extensions
+4. Emits a `Set-Cookie` when the session was modified
 
 ### API Token Middleware
 
-The API token middleware (`src/middleware/api_token.rs`):
+Token authentication is handled by `authenticate` in
+`src/middleware/auth.rs` (token hashing/lookup lives in
+`src/util/token.rs`, scope checks in `src/util/auth.rs`):
 
 1. Extracts `Authorization` header
 2. Validates token format
@@ -391,7 +416,7 @@ Locked accounts cannot authenticate until the lock expires.
 
 ### API Token Rejected
 
-- Verify token is correctly formatted: `Bearer axk_...`
+- Verify token is correctly formatted: `Bearer ako...`
 - Check token hasn't expired
 - Verify token has required scopes for endpoint
 - Ensure token hasn't been revoked

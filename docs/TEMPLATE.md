@@ -19,7 +19,7 @@ there. It is the source of truth for "the template works".
 Workflow:
 
 1. Edit the template source.
-2. Render: `cargo generate --path . --name test-app --destination /tmp/render --vcs none --silent` (plus `-d key=value` to override placeholder defaults).
+2. Render: `mkdir -p /tmp/render && cargo generate --path . --name test-app --destination /tmp/render --vcs none --silent` (plus `-d key=value` to override placeholder defaults). The destination directory must already exist — cargo-generate 0.25 fails with `No such file or directory` otherwise.
 3. Run the cargo checks inside `/tmp/render/test-app`.
 
 ## The exclude boundary

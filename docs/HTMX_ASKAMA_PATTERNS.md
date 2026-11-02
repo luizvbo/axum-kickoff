@@ -62,8 +62,8 @@ Full-page templates render complete HTML documents. Use these for initial page l
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <meta name="htmx-config" content='{"csrfToken": "{{ csrf_token }}"}'>
+    <script src="/static/vendor/htmx.min.js"></script>
+    <meta name="csrf-token" content="{{ ctx.csrf_token }}">
 </head>
 <body>
     <nav>
@@ -113,7 +113,7 @@ let public_router = Router::new()
 
 - **CSRF token**: Always include for forms that submit data
 - **HTMX script**: Load HTMX from CDN or bundle it
-- **htmx-config**: Configure CSRF token for automatic inclusion
+- **hx-headers**: `base.html` sends the CSRF token on every HTMX request (htmx 2.x, vendored at `/static/vendor/htmx.min.js`)
 - **Type safety**: Askama validates template variables at compile time
 
 ## Pattern 2: Partial Template Responses

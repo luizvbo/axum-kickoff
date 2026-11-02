@@ -24,7 +24,7 @@ This guide covers database operations in {{project-name}} using the Toasty ORM. 
 - **Default backend**: SQLite (zero-setup for development)
 - **Production backend**: PostgreSQL (migration path available)
 - **Schema definition**: Rust structs with `#[derive(toasty::Model)]`
-- **Migrations**: Automatic generation from model changes
+- **Migrations**: SQL files generated from model changes, applied explicitly
 - **Type safety**: Compile-time checked queries
 - **Connection pooling**: Built-in pooling with sensible defaults
 
@@ -33,7 +33,7 @@ This guide covers database operations in {{project-name}} using the Toasty ORM. 
 Toasty was chosen over more established ORMs like Diesel for several reasons:
 
 - **Ergonomic API**: More intuitive than Diesel's macro-heavy approach
-- **Automatic migrations**: No manual SQL migration files required
+- **Generated migrations**: `migrate migration generate` produces the SQL for you
 - **Async-first**: Built for Tokio and async workloads
 - **Type-safe queries**: Compile-time guarantees for query correctness
 - **Zero-cost abstractions**: Minimal runtime overhead
@@ -126,7 +126,7 @@ The database connection is configured via the `DATABASE_URL` environment variabl
 # SQLite (file-based, default)
 DATABASE_URL=sqlite:./{{crate_name}}.db
 
-# SQLite (in-memory, for testing)
+# SQLite (in-memory — valid URL, though tests use temp files instead)
 DATABASE_URL=sqlite::memory:
 
 # PostgreSQL
@@ -147,7 +147,10 @@ You can customize pool settings by modifying `Database::from_config()` in `src/d
 
 ## Migrations
 
-Toasty automatically generates migrations based on model changes. No manual SQL migration files are required.
+Toasty generates migration SQL from model changes, but nothing applies them
+automatically — `server` never migrates. Run `just migration-apply` (or
+`cargo run -- migrate`) after generating, and once after generating the
+project.
 
 ### Migration Workflow
 
@@ -184,10 +187,14 @@ Generated migrations are stored in the `migrations/` directory with sequential n
 
 ```
 migrations/
-├── 0001_initial.sql
-├── 0002_add_user_index.sql
-└── 0003_add_api_tokens.sql
+├── migrations/0000_migration.sql  ... sequential .sql files
+├── snapshots/0000_snapshot.toml   ... schema snapshots per migration
+└── history.toml
 ```
+
+{% if database == "postgresql" %}This project renders `migrations-postgres/` (PostgreSQL dialect); the
+template's SQLite set was dropped at generation time.
+{% else %}This project renders `migrations/` (SQLite dialect).{% endif %}
 
 ### Toasty Configuration
 
@@ -195,7 +202,7 @@ Migration behavior is configured in `Toasty.toml`:
 
 ```toml
 [migration]
-path = "migrations"
+path = "{% if database == "postgresql" %}migrations-postgres{% else %}migrations{% endif %}"
 prefix_style = "Sequential"
 checksums = false
 statement_breakpoints = true
@@ -212,108 +219,109 @@ Toasty provides a fluent, type-safe query API.
 
 ### Basic Queries
 
+Queries run through `Model::filter()` with the generated `Model::fields()`
+accessors, and always execute against a `&mut toasty::Db` (get one via
+`db.db_clone()` on `App`'s `database` or `app.db()` in tests):
+
 ```rust
 use crate::models::User;
 
-// Find by ID
-let user = User::get(id).exec(&db).await?;
+let mut db = state.0.database.db_clone();
 
-// Find by unique field
+// Find by primary key
+let user = User::get_by_id(&mut db, id).await?;
+
+// Find by a unique pair of fields
 let user = User::get_by_provider_and_provider_user_id(&mut db, provider, provider_user_id).await?;
 
-// Find all records
-let users = User::all().exec(&db).await?;
-
-// Count records
-let count = User::all().count(&db).await?;
+// Fetch the first row matching a filter
+let user = User::filter(User::fields().login().eq("octocat"))
+    .first()
+    .exec(&mut db)
+    .await?;
 ```
 
 ### Filtering
 
 ```rust
 // Single condition
-let active_users = User::filter(User::IsActive.eq(true))
-    .exec(&db)
+let published = Post::filter(Post::fields().published().eq(true))
+    .exec(&mut db)
     .await?;
 
-// Multiple conditions
-let recent_users = User::filter(User::IsActive.eq(true))
-    .filter(User::CreatedAt.gt(some_timestamp))
-    .exec(&db)
+// Multiple conditions (each .filter() ANDs)
+let recent = Post::filter(Post::fields().published().eq(true))
+    .filter(Post::fields().created_at().gt(some_timestamp))
+    .exec(&mut db)
     .await?;
-
-// Complex conditions
-let users = User::filter(
-    User::IsActive.eq(true)
-        .and(User::GhLogin.like("admin%"))
-)
-.exec(&db)
-.await?;
 ```
 
 ### Sorting
 
 ```rust
-// Sort ascending
-let users = User::all()
-    .sort(User::CreatedAt.asc())
-    .exec(&db)
-    .await?;
-
-// Sort descending
-let users = User::all()
-    .sort(User::CreatedAt.desc())
-    .exec(&db)
-    .await?;
-
-// Multiple sort fields
-let users = User::all()
-    .sort(User::IsActive.desc())
-    .sort(User::CreatedAt.asc())
-    .exec(&db)
+// order_by takes a single field or a tuple; a deterministic tie-breaker
+// (here `id`) keeps pagination stable.
+let posts = Post::filter(Post::fields().published().eq(true))
+    .order_by((
+        Post::fields().created_at().desc(),
+        Post::fields().id().desc(),
+    ))
+    .exec(&mut db)
     .await?;
 ```
 
 ### Limiting and Pagination
 
 ```rust
-// Limit results
-let users = User::all()
-    .limit(10)
-    .exec(&db)
-    .await?;
-
-// Offset for pagination
-let page2 = User::all()
-    .limit(10)
-    .offset(10)
-    .exec(&db)
+// Offset pagination, as used by GET /api/v1/posts
+let page2 = Post::filter(Post::fields().published().eq(true))
+    .order_by(Post::fields().id().asc())
+    .limit(per_page)
+    .offset((page - 1) * per_page)
+    .exec(&mut db)
     .await?;
 ```
 
 ### Creating Records
 
 ```rust
-use crate::models::User;
+use crate::models::Post;
 
-let user = User::new(provider, provider_user_id, login, name, email, avatar_url);
-// Users are created by the OAuth callback handler; use builders in tests.
+let post = toasty::create!(Post {
+    user_id,
+    title: "Hello".to_string(),
+    content: "First post".to_string(),
+    published: false,
+    created_at: jiff::Timestamp::now(),
+    updated_at: jiff::Timestamp::now(),
+})
+.exec(&mut db)
+.await?;
 ```
 
 ### Updating Records
 
+`toasty::update!` takes the loaded model and the fields to change:
+
 ```rust
-let mut user = User::get(id).exec(&db).await?;
-user.name = Some("New Name".to_string());
-user.touch(); // Update timestamp
-user.update(&db).await?;
+let mut post = Post::filter(Post::fields().id().eq(id))
+    .first()
+    .exec(&mut db)
+    .await?
+    .unwrap();
+
+toasty::update!(post {
+    title: "New title".to_string(),
+    updated_at: jiff::Timestamp::now(),
+})
+.exec(&mut db)
+.await?;
 ```
 
 ### Deleting Records
 
 ```rust
-let user = User::get(id).exec(&db).await?;
-user.delete(&db).await?;
+post.delete().exec(&mut db).await?;
 ```
 
 ## Relationships
@@ -350,8 +358,8 @@ pub struct User {
 
 ```rust
 // Get all posts by a user
-let posts = Post::filter(Post::UserId.eq(user_id))
-    .exec(&db)
+let posts = Post::filter(Post::fields().user_id().eq(user_id))
+    .exec(&mut db)
     .await?;
 
 // Join with user (if relationship is defined)
@@ -367,14 +375,17 @@ When Toasty's query builder isn't sufficient, you can execute raw SQL.
 ```rust
 use toasty::sql;
 
-// Execute a raw SQL statement
-sql::query("UPDATE users SET is_active = false WHERE id = ?", [user_id])
-    .exec(&db)
+// Execute a raw SQL statement; bind parameters one per .bind() call
+sql::query("UPDATE users SET is_active = false WHERE id = ?")
+    .bind(user_id)
+    .exec(&mut db)
     .await?;
 
 // Execute a raw query and parse results
-let rows = sql::query("SELECT * FROM users WHERE provider = ? AND provider_user_id = ?", [provider, provider_user_id])
-    .fetch_all(&db)
+let rows = sql::query("SELECT * FROM users WHERE provider = ? AND provider_user_id = ?")
+    .bind(provider)
+    .bind(provider_user_id)
+    .fetch_all(&mut db)
     .await?;
 ```
 
@@ -417,20 +428,11 @@ rm {{crate_name}}.db
 
 #### SQLite in Testing
 
-For tests, use in-memory SQLite:
+Tests don't read `DATABASE_URL` — `TestApp` uses a temporary SQLite file
+per test. To run the suite against another backend, set `TEST_DATABASE_URL`:
 
 ```bash
-DATABASE_URL=sqlite::memory: cargo test
-```
-
-Or set it in your test environment:
-
-```rust
-#[tokio::test]
-async fn test_something() {
-    let db_url = "sqlite::memory:";
-    // ... test code
-}
+TEST_DATABASE_URL=sqlite::memory: cargo test
 ```
 
 ### PostgreSQL (Production)
@@ -488,18 +490,17 @@ sudo apt-get install pgbouncer
 
 ### Test Database Setup
 
-Tests use a temporary SQLite database:
+`TestApp` handles this for you — each `TestApp::new().await` creates a
+temporary SQLite file and builds the schema via `Db::push_schema` (no
+migration files needed):
 
 ```rust
-use tempfile::NamedTempFile;
+use {{crate_name}}::tests::TestApp;
 
 #[tokio::test]
 async fn test_user_creation() {
-    let db_file = NamedTempFile::new().expect("Failed to create temp database");
-    let db_url = format!("sqlite:{}", db_file.path().display());
-
-    let config = DatabaseConfig { url: db_url };
-    let db = Database::from_config(&config).await.unwrap();
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
 
     // ... test code
 }
@@ -608,7 +609,7 @@ Toasty is a relatively new ORM with some limitations compared to more mature ORM
 
 **Solutions**:
 
-1. Ensure all field references use the correct model (e.g., `User::GhId`)
+1. Ensure field references go through `Model::fields()` (e.g., `User::fields().login()`)
 2. Check that filter conditions are properly typed
 3. Review Toasty's query builder API documentation
 

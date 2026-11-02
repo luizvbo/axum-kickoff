@@ -82,15 +82,11 @@ The domain name of the application. Used for cookie domains and URL generation.
 
 **Default:** `localhost`
 
-### Server IP
+### Server Bind Address
 
-```bash
-SERVER_IP=127.0.0.1
-```
-
-The IP address to bind to.
-
-**Default:** `127.0.0.1`
+There is no `SERVER_IP` variable. The server binds to `127.0.0.1` by
+default and to `0.0.0.0` when `DEV_DOCKER=true` or `HEROKU` is set — put the
+app behind a reverse proxy for anything else.
 
 ### Async Worker Threads
 
@@ -424,10 +420,11 @@ Set different log levels for specific modules.
 TEST_DATABASE_URL=sqlite::memory:
 ```
 
-Database URL for tests. Defaults to in-memory SQLite if not set.
+Database URL for tests. Defaults to a temporary SQLite file per test run if
+not set — not `DATABASE_URL`.
 
 ## Feature Flags
-
+{% if metrics %}
 ### Metrics
 
 ```bash
@@ -444,6 +441,11 @@ METRICS_TOKEN=<bearer-token>
 **publicly readable**: they run outside the session/auth middleware subtree
 by design. In production, either set `METRICS_TOKEN` (requests then need
 `Authorization: Bearer <token>`) or restrict `/metrics` at your reverse proxy.
+{% else %}
+This project was generated without the `metrics` option, so the `metrics`
+Cargo feature and the `/metrics` endpoints are not compiled in.
+`METRICS_TOKEN` is still a valid env var but has no effect.
+{% endif %}
 
 ## Configuration Files
 
@@ -484,10 +486,9 @@ DATABASE_URL=postgresql://user:password@db.example.com:5432/{{crate_name}}
 # Session
 SESSION_KEY=<generate-secure-64-byte-key>
 
-# Server
-PORT=3000
+# Server (binds 0.0.0.0 automatically when HEROKU/DEV_DOCKER is set)
+PORT=8888
 DOMAIN_NAME=example.com
-SERVER_IP=0.0.0.0
 
 {% if oauth_github or oauth_google or oauth_facebook %}# OAuth providers (each enabled when both ID and secret are set)
 {% endif %}{% if oauth_github %}GH_CLIENT_ID=your_production_client_id
@@ -538,10 +539,9 @@ DATABASE_URL=sqlite:./{{crate_name}}.db
 # Session
 SESSION_KEY=dev-session-key-for-local-development-only
 
-# Server
+# Server (binds 127.0.0.1; set DEV_DOCKER=true to bind 0.0.0.0)
 PORT=8888
 DOMAIN_NAME=localhost
-SERVER_IP=127.0.0.1
 
 {% if oauth_github or oauth_google or oauth_facebook %}# OAuth providers (use dev apps; a provider needs both ID and secret)
 {% endif %}{% if oauth_github %}GH_CLIENT_ID=your_dev_client_id

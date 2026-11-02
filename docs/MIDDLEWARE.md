@@ -10,11 +10,12 @@ The middleware stack provides cross-cutting concerns for HTTP requests, includin
 
 Path normalization is applied as a top-level service around the router in `src/lib.rs::build_handler` before the remaining middleware stack. The stack is then split in two, mirroring crates.io:
 
-**Infrastructure stack** (`src/middleware/mod.rs::apply_axum_middleware`) runs for every route, including operational endpoints (`/health`, `/static`, `/metrics`, `/swagger-ui`, `/api-docs`) and the 404 fallback. It stays cheap and free of session/auth/CSRF/rate-limit work:
+**Infrastructure stack** (`src/middleware/mod.rs::apply_axum_middleware`) runs for every route, including operational endpoints (`/health`, `/static`, {% if metrics %}`/metrics`, {% endif %}`/swagger-ui`, `/api-docs`) and the 404 fallback. It stays cheap and free of session/auth/CSRF/rate-limit work:
 
 1. **Debug Requests** - Development debug logging (conditional)
 2. **CORS** - Answers `OPTIONS` preflights before anything else can reject them
-3. **Metrics** - Prometheus request metrics (feature-gated)
+{% if metrics %}3. **Metrics** - Prometheus request metrics
+{% endif %}
 4. **Compression** - Gzip compression
 5. **Request Body Timeout** - Request body timeout (30s default)
 6. **Timeout** - Request timeout (30s default)
@@ -305,7 +306,7 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 # Can be made configurable if needed
 ```
 
-### Metrics
+{% if metrics %}### Metrics
 
 **Purpose:** Collect Prometheus metrics for monitoring.
 
@@ -327,7 +328,7 @@ cargo run --bin {{project-name}} --features metrics -- server
 ```
 GET /metrics
 ```
-
+{% endif %}
 ### Debug Requests
 
 **Purpose:** Log full request details in development.
@@ -463,7 +464,7 @@ use {{crate_name}}::tests::{TestApp, AnonymousUser};
 
 #[tokio::test]
 async fn test_security_headers() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/api/endpoint").await;

@@ -169,7 +169,9 @@ export RUST_LOG=info
 export LOG_FORMAT=json
 
 # Log file path (if writing to file)
-export LOG_FILE=/var/log/{{project-name}}/app.log
+# No LOG_FILE option exists — the app logs to stdout only.
+# Redirect output to a file if you want file-based ingestion:
+{{project-name}} server >> /var/log/{{project-name}}/app.log 2>&1
 ```
 
 ## OpenTelemetry Integration

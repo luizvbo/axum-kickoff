@@ -36,8 +36,9 @@ For HTMX requests, you can configure HTMX to automatically include the CSRF toke
 
 ```html
 <head>
-    <meta name="htmx-config" content='{"csrfToken": "{{ csrf_token }}"}'>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <meta name="csrf-token" content="{{ ctx.csrf_token }}">
+    <script src="/static/vendor/htmx.min.js"></script>
+    <!-- htmx 2.x, vendored locally; the CSRF token is sent via hx-headers on <body> -->
 </head>
 ```
 
@@ -113,10 +114,10 @@ To test CSRF protection:
 
 ## HTMX Integration
 
-The template includes HTMX configuration to automatically include the CSRF token in requests. This is done via the `htmx-config` meta tag in the HTML head:
+The template includes the CSRF token on every HTMX request via an `hx-headers` attribute on `<body>` in `templates/base.html` (plus a `csrf-token` meta tag for other JS):
 
 ```html
-<meta name="htmx-config" content='{"csrfToken": "{{ csrf_token }}"}'>
+<body hx-headers='{"X-CSRF-Token": "{{ ctx.csrf_token }}"}'>
 ```
 
 This configuration tells HTMX to automatically include the CSRF token in the `X-CSRF-Token` header for all requests.

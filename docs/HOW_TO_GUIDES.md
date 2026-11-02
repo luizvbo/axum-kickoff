@@ -26,7 +26,7 @@ This section contains practical guides for common tasks when building with {{pro
 6. Test your changes
 
 ### Adding authentication
-1. Use the `CurrentUser` extractor in your handler
+1. Use the `CurrentUserId` extractor in your handler (or `OptionalCurrentUserId` when anonymous access is allowed)
 2. The extractor automatically checks session or API token
 3. Returns 401 for unauthenticated requests
 4. See [Add a Protected Route](ADD_PROTECTED_ROUTE.md) for details

@@ -4,7 +4,7 @@ This guide shows you how to add a new database model using Toasty ORM.
 
 ## Overview
 
-Toasty uses a schema-based approach where you define your models in Rust code, and the ORM handles database migrations automatically.
+Toasty uses a schema-based approach where you define your models in Rust code. Migrations are generated as SQL files and applied explicitly (`just migration-generate` / `just migration-apply`) — the derive macro itself needs no codegen step.
 
 ## Step 1: Define the Model
 
@@ -47,24 +47,26 @@ Add the model to `src/models/mod.rs`:
 ```rust
 pub mod user;
 pub mod token;
-pub mod oauth_github;
-pub mod post;  // Add this line
+pub mod post;
+pub mod product;  // Add this line
 
 pub use user::User;
-pub use token::{ApiToken, EndpointScope, CrateScope};
-pub use oauth_github::OauthGithub;
-pub use post::Post;  // Add this line
+pub use token::{ActionScope, ApiToken, ResourceScope};
+pub use post::Post;
+pub use product::Product;  // Add this line
 ```
 
-## Step 3: Generate Database Code
+## Step 3: Generate a Migration
 
-Run the Toasty code generator to create the database access code:
+`#[derive(toasty::Model)]` generates the query methods at compile time — but
+the database schema still needs a migration:
 
 ```bash
 cargo run --bin {{project-name}} -- migrate migration generate
+# then apply it:
+cargo run --bin {{project-name}} -- migrate
+# or: just migration-generate && just migration-apply
 ```
-
-This will generate the necessary database query methods for your model.
 
 ## Step 4: Add Helper Methods (Optional)
 
@@ -139,8 +141,19 @@ impl PostBuilder {
         self
     }
 
-    pub fn build(self) -> Post {
-        Post::new(self.user_id, self.title, self.content)
+    /// Insert into the database (matches `src/tests/builders.rs`)
+    pub async fn build(self, db: &mut toasty::Db) -> anyhow::Result<Post> {
+        let post = toasty::create!(Post {
+            user_id: self.user_id,
+            title: self.title,
+            content: self.content,
+            published: self.published,
+            created_at: jiff::Timestamp::now(),
+            updated_at: jiff::Timestamp::now(),
+        })
+        .exec(db)
+        .await?;
+        Ok(post)
     }
 }
 ```
@@ -194,19 +207,15 @@ impl Post {
 ```rust
 use axum::extract::State;
 use crate::app::AppState;
+use crate::middleware::CurrentUserId;
 use crate::models::Post;
-use crate::util::errors::{db_error, unauthorized, AppResult};
+use crate::util::errors::{db_error, AppResult};
 
 pub async fn create_post(
+    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
-    Extension(session): Extension<SessionExtension>,
     Json(req): Json<CreatePostRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user_id = session.get("user_id")
-        .ok_or_else(|| unauthorized("Not logged in"))?
-        .parse::<u64>()
-        .map_err(|_| unauthorized("Invalid session"))?;
-
     let mut db = state.0.database.db_clone();
 
     let post = toasty::create!(Post {
@@ -241,23 +250,20 @@ pub async fn list_posts(
 ### Testing with the Builder
 
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tests::builders::PostBuilder;
+#[tokio::test]
+async fn test_post_builder() {
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
 
-    #[test]
-    fn test_post_builder() {
-        let post = PostBuilder::new(123)
-            .title("My Post")
-            .content("Post content")
-            .published(true)
-            .build();
+    let post = app
+        .post_builder(1, "My Post")
+        .published(true)
+        .build(&mut db)
+        .await
+        .unwrap();
 
-        assert_eq!(post.user_id, 123);
-        assert_eq!(post.title, "My Post");
-        assert!(post.published);
-    }
+    assert_eq!(post.title, "My Post");
+    assert!(post.published);
 }
 ```
 
@@ -313,11 +319,13 @@ pub struct Post {
 
 ## Migration Notes
 
-Toasty automatically handles schema migrations on first run. However, for production:
+Nothing applies migrations automatically — `server` connects but never
+migrates. After generating a migration, apply it with
+`cargo run -- migrate` / `just migration-apply`. For production:
 
 1. Always back up your database before schema changes
 2. Test migrations in a staging environment first
-3. For PostgreSQL, consider using explicit migration files for complex changes
+3. Deploy via `script/release.sh`, which runs `migrate` before `server`
 
 ## Next Steps
 

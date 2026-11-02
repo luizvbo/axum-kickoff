@@ -6,7 +6,7 @@ This guide covers development workflow, coding standards, and contribution guide
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.96.0 (pinned via `rust-toolchain.toml`)
 - Git
 - SQLite (for development)
 - PostgreSQL (optional, for testing with PostgreSQL)
@@ -48,7 +48,7 @@ This guide covers development workflow, coding standards, and contribution guide
 │   ├── middleware/       # Axum middleware
 │   │   ├── mod.rs       # Middleware stack orchestration
 │   │   ├── session.rs   # Session management
-│   │   ├── api_token.rs # API token authentication
+│   │   ├── auth.rs     # session + API token authentication, CurrentUserId
 │   │   ├── security_headers.rs # Security headers
 │   │   └── ...          # Other middleware
 │   ├── models/          # Database models (Toasty)
@@ -207,7 +207,7 @@ cargo test -- --nocapture
 cargo test test_name
 
 # Run integration tests only
-cargo test --test '*'
+cargo test            # all tests live in the lib target under src/tests/
 
 # Accept snapshot changes
 cargo insta accept
@@ -223,7 +223,7 @@ use http::StatusCode;
 
 #[tokio::test]
 async fn test_health_check() {
-    let app = TestApp::new();
+    let app = TestApp::new().await;
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/health").await;
@@ -262,7 +262,7 @@ For manual database changes:
 
 1. Update model definitions in `src/models/`
 2. Run Toasty to regenerate
-3. Test with SQLite in-memory database
+3. Test with a temporary SQLite file (TestApp default)
 
 ## Adding New Features
 
@@ -454,7 +454,7 @@ The project uses GitHub Actions for CI. See `.github/workflows/ci.yml` for confi
 ## Release Process
 
 1. Update version in `Cargo.toml`
-2. Update CHANGELOG.md
+2. Update docs (no CHANGELOG.md exists yet — create one if needed)
 3. Create git tag
 4. Push to GitHub
 5. Create GitHub release
@@ -513,11 +513,12 @@ development:
    syntax. Process *nothing* that doesn't need a substitution. If a file needs
    no placeholders it belongs in `exclude` or ships raw Liquid for no reason.
 
-Because the checkout doesn't parse, the pre-commit hooks that invoke cargo
-(`rustfmt`, `clippy`, `doc`, `deny`, `machete` in `prek.toml`) cannot run in
-the template repository. `SKIP` them when committing template changes and rely
-on the render CI. `cargo fmt`/`clippy`/`doc`/`test`/`deny`/`machete`/`audit`
-all run against rendered output in `template-ci.yml`.
+Because the checkout doesn't parse, most cargo hooks can't run against it
+directly — but they don't need `SKIP`ing: `rustfmt`/`deny`/`machete` in
+`prek.toml` call `scripts/rendered-check.sh`, which renders a default
+project into a temp dir and runs there. Only `clippy` and `doc` no-op on the
+`cargo-generate.toml` marker (they need a full build); `template-ci.yml`
+covers them on renders alongside `test`/`audit`.
 
 For the full mechanism reference (placeholder list, tag-placement rules,
 conditional-file handling) see [docs/TEMPLATE.md](TEMPLATE.md), which applies

@@ -107,7 +107,7 @@ re-check after each `cargo update`:
 ## Infrastructure
 
 ### Server Configuration
-- [ ] Set `SERVER_IP=0.0.0.0` to bind to all interfaces
+- [ ] Confirm the bind address: `DEV_DOCKER=true`/`HEROKU` binds `0.0.0.0` (default is `127.0.0.1`; there is no `SERVER_IP`)
 - [ ] Set appropriate `PORT` (e.g., 3000, 8080)
 - [ ] Set `DOMAIN_NAME` to production domain
 - [ ] Configure firewall rules

@@ -29,7 +29,7 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | Option | Values | Default | Effect |
 | ------ | ------ | ------- | ------ |
 | `project-name` | any crate-safe name | asked once | Package name, binary name, session cookie (`<crate_name>_session`), default SQLite file (`<crate_name>.db`), PostgreSQL `application_name`, API title, user-agent strings, and the on-page application branding |
-| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way. The test suite uses in-memory SQLite regardless |
+| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way. The test suite uses temporary-file SQLite regardless |
 | `oauth_github` | `true` / `false` | `true` | Compiles in the GitHub OAuth provider, enabled at runtime when `GH_CLIENT_ID`/`GH_CLIENT_SECRET` are set |
 | `oauth_google` | `true` / `false` | `false` | Same for Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) |
 | `oauth_facebook` | `true` / `false` | `false` | Same for Facebook (`FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`) |
@@ -54,7 +54,7 @@ cargo generate --git https://github.com/luizvbo/axum-kickoff \
 > `database=postgresql` compiles in the Postgres driver, defaults
 > `DATABASE_URL` to Postgres, and ships only the Postgres migration set, so
 > `migrate` works against a real Postgres database out of the box. The test
-> suite is unaffected: it runs on in-memory SQLite.
+> suite is unaffected: it runs on temporary-file SQLite.
 
 ## After generation
 

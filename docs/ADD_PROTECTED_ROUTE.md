@@ -4,314 +4,145 @@ This guide shows you how to add a route that requires user authentication.
 
 ## Overview
 
-Protected routes require users to be logged in. For browser requests, anonymous users should be redirected to the login page (`/login`, which lists the enabled OAuth providers). For API requests, return a `401 Unauthorized` response.
+The application ships the machinery already — you don't write extractors:
 
-## Step 1: Create a CurrentUser Extractor
+- **`authenticate`** middleware (in `src/middleware/auth.rs`) resolves the
+  session cookie or an `Authorization: Bearer` API token and stores an
+  `Authentication` + `CurrentUserId` in the request extensions.
+- **`require_auth`** middleware returns `401` when no authentication is
+  present — used as a `route_layer` on API route groups.
+- **`require_login`** middleware redirects anonymous browser requests to
+  `/login?redirect_to=<path>` — used for HTML pages.
+- **`CurrentUserId(pub u64)`** — extractor: the authenticated user's ID or
+  `401`.
+- **`OptionalCurrentUserId(pub Option<u64>)`** — extractor: `Some(id)` or
+  `None`, never rejects.
 
-First, create a reusable extractor for authenticated users in `src/middleware/auth.rs`:
+All are re-exported from `crate::middleware`.
 
-```rust
-use axum::{
-    async_trait,
-    extract::{FromRequestParts, TypedHeader},
-    headers::{authorization::Bearer, Authorization},
-    http::request::FromRef,
-    RequestPartsExt,
-};
-use crate::app::AppState;
-use crate::middleware::SessionExtension;
-use crate::models::User;
-use crate::util::errors::{unauthorized, AppResult};
-
-/// Extractor for authenticated users
-///
-/// Returns 401 if user is not logged in
-pub struct CurrentUser(pub User);
-
-#[async_trait]
-impl<S> FromRequestParts<S> for CurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = AppResult<axum::http::StatusCode>;
-
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let state = AppState::from_ref(state);
-
-        // Try session auth first
-        if let Some(session) = parts.extract::<SessionExtension>().await.ok() {
-            if let Some(user_id_str) = session.get("user_id") {
-                if let Ok(user_id) = user_id_str.parse::<u64>() {
-                    let mut db = state.0.database.db_clone();
-                    if let Ok(user) = User::get_by_id(&mut db, user_id).await {
-                        return Ok(CurrentUser(user));
-                    }
-                }
-            }
-        }
-
-        // Try API token auth
-        if let Ok(TypedHeader(auth)) = TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state).await {
-            let token = auth.token();
-            // Validate token and fetch user
-            // (Implement token validation logic)
-        }
-
-        Err(unauthorized("Authentication required"))
-    }
-}
-
-/// Optional extractor for authenticated users
-///
-/// Returns None if user is not logged in
-pub struct OptionalCurrentUser(pub Option<User>);
-
-#[async_trait]
-impl<S> FromRequestParts<S> for OptionalCurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        match CurrentUser::from_request_parts(parts, state).await {
-            Ok(user) => Ok(OptionalCurrentUser(Some(user.0))),
-            Err(_) => Ok(OptionalCurrentUser(None)),
-        }
-    }
-}
-```
-
-## Step 2: Use the Extractor in Your Handler
-
-Use the `CurrentUser` extractor in your protected route handler:
+## Step 1: Use the Extractor in Your Handler
 
 ```rust
 use axum::extract::State;
-use crate::middleware::auth::CurrentUser;
 use crate::app::AppState;
+use crate::middleware::CurrentUserId;
+use crate::models::{Post, User};
+use crate::router::{HtmlTemplate, PageContext};
 use crate::util::errors::{db_error, AppResult};
-use crate::templates::HtmlTemplate;
 
 pub async fn dashboard(
-    CurrentUser(user): CurrentUser,
-    State(state): State<AppState>,
-) -> AppResult<HtmlTemplate<DashboardTemplate>> {
-    // User is authenticated, proceed with the handler
-    let mut db = state.0.database.db_clone();
-
-    // Fetch user-specific data
-    let posts = Post::filter(Post::fields().user_id().eq(user.id))
-        .exec(&mut db)
-        .await
-        .map_err(db_error)?;
-
-    Ok(HtmlTemplate(DashboardTemplate {
-        user,
-        posts,
-    }))
-}
-```
-
-## Step 3: Add the Route
-
-Add the protected route to your router:
-
-```rust
-use axum::routing::get;
-use crate::controllers::your_controller;
-
-// In your router function
-.route("/dashboard", get(controllers::your_controller::dashboard))
-```
-
-## Step 4: Handle Redirects for Browser Requests
-
-For browser requests, you may want to redirect anonymous users to the login page instead of returning 401. Create a middleware or modify your extractor:
-
-```rust
-pub async fn require_auth_or_redirect(
-    session: SessionExtension,
-) -> Result<CurrentUser, Redirect> {
-    if let Some(user_id_str) = session.get("user_id") {
-        if let Ok(user_id) = user_id_str.parse::<u64>() {
-            // Fetch user from database
-            // Return CurrentUser
-        }
-    }
-
-    // Redirect to the login page with return URL
-    Err(Redirect::to("/login?redirect_to=/dashboard"))
-}
-```
-
-## Complete Example
-
-Here's a complete example for a protected dashboard page:
-
-### Extractor (`src/middleware/auth.rs`)
-
-```rust
-use axum::{
-    async_trait,
-    extract::FromRequestParts,
-    http::request::FromRef,
-};
-use crate::app::AppState;
-use crate::middleware::SessionExtension;
-use crate::models::User;
-use crate::util::errors::{unauthorized, AppResult};
-
-pub struct CurrentUser(pub User);
-
-#[async_trait]
-impl<S> FromRequestParts<S> for CurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = AppResult<axum::http::StatusCode>;
-
-    async fn from_request_parts(
-        parts: &mut http::request::Parts,
-        state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        let state = AppState::from_ref(state);
-
-        if let Some(session) = parts.extract::<SessionExtension>().await.ok() {
-            if let Some(user_id_str) = session.get("user_id") {
-                if let Ok(user_id) = user_id_str.parse::<u64>() {
-                    let mut db = state.0.database.db_clone();
-                    if let Ok(user) = User::get_by_id(&mut db, user_id).await {
-                        return Ok(CurrentUser(user));
-                    }
-                }
-            }
-        }
-
-        Err(unauthorized("Authentication required"))
-    }
-}
-```
-
-### Controller (`src/controllers/dashboard.rs`)
-
-```rust
-use axum::extract::State;
-use crate::middleware::auth::CurrentUser;
-use crate::app::AppState;
-use crate::models::Post;
-use crate::util::errors::{db_error, AppResult};
-use crate::templates::HtmlTemplate;
-
-pub async fn dashboard(
-    CurrentUser(user): CurrentUser,
+    ctx: PageContext,
+    CurrentUserId(user_id): CurrentUserId,
     State(state): State<AppState>,
 ) -> AppResult<HtmlTemplate<DashboardTemplate>> {
     let mut db = state.0.database.db_clone();
 
-    let posts = Post::filter(Post::fields().user_id().eq(user.id))
+    let user = User::get_by_id(&mut db, user_id).await.map_err(db_error)?;
+    let posts = Post::filter(Post::fields().user_id().eq(user_id))
         .exec(&mut db)
         .await
         .map_err(db_error)?;
 
-    Ok(HtmlTemplate(DashboardTemplate {
-        user: user.clone(),
+    Ok(HtmlTemplate::new(DashboardTemplate {
+        ctx,
         username: user.login,
         post_count: posts.len(),
     }))
 }
 ```
 
-### Template (`templates/dashboard.html`)
+## Step 2: Add the Route to the Right Group
 
-```html
-{% extends "base.html" %}
+Authentication requirements are enforced **per route group** via
+`route_layer` in `src/router.rs` — put your route in the group matching its
+needs:
 
-{% block title %}Dashboard{% endblock %}
-
-{% block content %}
-<div class="container mx-auto p-4">
-    <h1 class="text-3xl font-bold mb-4">Welcome, {{ username }}!</h1>
-
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-xl font-semibold mb-2">Your Posts</h2>
-        <p class="text-gray-600">You have {{ post_count }} posts.</p>
-    </div>
-</div>
-{% endblock %}
-```
-
-### Router (`src/router.rs`)
+- **API route** (401 on anonymous): add it to the protected API router that
+  already runs `require_auth`, or add `.route_layer(from_fn_with_state(state.clone(), require_auth))`.
+- **Browser page** (redirect to `/login`): use `require_login` the same way.
+- **Public route**: the public router — no layer needed.
 
 ```rust
-.route("/dashboard", get(controllers::dashboard::dashboard))
-```
+// API group — anonymous requests get 401
+let protected_router = protected_router
+    .route("/api/v1/things", get(list_things));
 
-## API-Only Protected Routes
-
-For API endpoints that should always return 401 (not redirect):
-
-```rust
-pub async fn api_create_post(
-    CurrentUser(user): CurrentUser,
-    State(state): State<AppState>,
-    Json(req): Json<CreatePostRequest>,
-) -> AppResult<impl IntoResponse> {
-    // Handler logic
-    Ok(Json(created_post))
-}
+// Page route — anonymous requests redirect to /login
+.route(
+    "/dashboard",
+    get(dashboard).route_layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        require_login,
+    )),
+)
 ```
 
 ## Optional Authentication
 
-For routes that work with or without authentication:
+For routes that work with or without a logged-in user:
 
 ```rust
-use crate::middleware::auth::OptionalCurrentUser;
+use crate::middleware::OptionalCurrentUserId;
 
 pub async fn public_page(
-    OptionalCurrentUser(maybe_user): OptionalCurrentUser,
+    OptionalCurrentUserId(maybe_user_id): OptionalCurrentUserId,
 ) -> AppResult<HtmlTemplate<PublicTemplate>> {
-    let username = maybe_user.map(|u| u.login);
-
-    Ok(HtmlTemplate(PublicTemplate {
-        username,
-    }))
+    let username = match maybe_user_id {
+        Some(id) => Some(load_user_login(id).await?),
+        None => None,
+    };
+    // ...
 }
 ```
 
-## Testing Protected Routes
+## Scope Checks for API Tokens
 
-Test that protected routes reject unauthenticated requests:
+`CurrentUserId` accepts either a session or a Bearer token. To restrict a
+route to specific token scopes, take `Authentication` as an extractor and
+run an `AuthCheck` — the same pattern `controllers/post.rs` and
+`controllers/token.rs` use:
+
+```rust
+use crate::models::token::ActionScope;
+use crate::util::auth::{AuthCheck, Authentication};
+
+pub async fn create_thing(
+    auth: Authentication,
+    CurrentUserId(user_id): CurrentUserId,
+    // ...
+) -> AppResult<impl IntoResponse> {
+    AuthCheck::new()
+        .with_action_scope(ActionScope::Create)
+        .for_crate("things")
+        .check(&auth)?;
+    // ...
+}
+```
+
+A session-cookie user passes any `AuthCheck`; the check only constrains
+Bearer tokens. See [api-token-scopes.md](api-token-scopes.md).
+
+## Testing Protected Routes
 
 ```rust
 #[tokio::test]
 async fn test_dashboard_requires_auth() {
-    let app = create_test_app().await;
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
 
-    let response = app
-        .oneshot(Request::builder()
-            .uri("/dashboard")
-            .body(Body::empty())
-            .unwrap())
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = anon.get::<()>("/dashboard").await;
+    // Browser pages redirect to /login; API routes return 401.
+    assert!(matches!(
+        response.status(),
+        StatusCode::UNAUTHORIZED | StatusCode::SEE_OTHER
+    ));
 }
 ```
+
+See `src/tests/middleware_auth.rs` for cookie-user examples with CSRF.
 
 ## Next Steps
 
 - Learn how to [add an HTMX form](ADD_HTMX_FORM.md) for creating resources
-- Learn about [API token authentication](../AUTHENTICATION.md)
+- Learn about [authentication](AUTHENTICATION.md)
 - Review the [production checklist](PRODUCTION_CHECKLIST.md)
