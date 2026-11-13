@@ -25,24 +25,18 @@ This document describes the high-level architecture of {{project-name}}, its des
                          │ HTTP/HTTPS
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               Infrastructure Middleware (all routes)         │
-│  CORS · Timeout/Body-Timeout · Compression · Security Headers│
-│  Request ID · User-Agent · Panic · Error Handler · Real IP   │
-│  Logging · Traffic Blocking{% if metrics %} · Metrics{% endif %}                          │
+│                    Middleware Stack                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+│  │ Security │ │   CORS   │ │Rate Limit│ │  Logging │       │
+│  │  Headers │ │          │ │          │ │          │       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+│  │  Session │ │ API Token│ │Real IP   │ │  Error   │       │
+│  │  Mgmt    │ │  Auth    │ │Extraction│ │ Handler  │       │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 └────────────────────────┬────────────────────────────────────┘
                          │
-         ┌───────────────┴───────────────┐
-         ▼                               ▼
-┌──────────────────┐          ┌──────────────────────────────┐
-│ Operational      │          │  Application Middleware       │
-│ routes: /health  │          │  Session · Authenticate ·     │
-│ /static{% if metrics %} /metrics{% endif %}   │          │  Origin Verification          │
-│ /swagger-ui      │          │  + per-route `route_layer`s:  │
-│ /api-docs        │          │  require_auth · require_login │
-└──────────────────┘          │  csrf_protect · rate_limit    │
-                              └──────────────┬───────────────┘
-                                             │
-                                             ▼
+                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Router Layer                             │
 │                    (Axum Router)                              │
@@ -55,8 +49,9 @@ This document describes the high-level architecture of {{project-name}}, its des
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Controller Layer                           │
-│  auth · token · post · examples · home (all in               │
-│  src/controllers/, template structs beside handlers)         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │ Auth Controller│ │Token Controller│ │User Controller│   │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
@@ -64,17 +59,16 @@ This document describes the high-level architecture of {{project-name}}, its des
 │                    Application State                          │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ Database │ │ Storage  │ │  Config  │ │ Rate     │       │
-│  │  Pool    │ │ (local)  │ │          │ │ Limiter  │       │
+│  │  Pool    │ │ Backend  │ │          │ │ Limiter  │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
 └────────────────────────┬────────────────────────────────────┘
                          │
-         ┌───────────────┼───────────────┐
-         ▼               ▼               ▼
-┌──────────────────┐ ┌────────────┐ ┌──────────────────┐
-│   Database       │ │  Storage   │ │ Background worker│
-│ (SQLite{% if database == "postgresql" %}/Postgres{% endif %})    │ │ (local FS) │ │ (DB job queue,   │
-│                  │ │            │ │  `cargo run -- worker`)│
-└──────────────────┘ └────────────┘ └──────────────────┘
+         ┌───────────────┴───────────────┐
+         ▼                               ▼
+┌──────────────────┐          ┌──────────────────┐
+│   Database       │          │    Storage      │
+│  (SQLite/PG)     │          │ (Local/S3)      │
+└──────────────────┘          └──────────────────┘
 ```
 
 ## Component Architecture
@@ -87,29 +81,25 @@ The `App` struct in `src/app.rs` holds all application-wide components:
 - **Storage Backend**: Pluggable storage for file uploads
 - **Configuration**: Server and application configuration
 - **Session Key**: For signing session cookies
-- **Rate Limiter**: Database-backed token bucket rate limiter
-{% if metrics %}- **Metrics**: Prometheus metrics (`metrics` Cargo feature)
-{% endif %}
+- **Rate Limiter**: Token bucket rate limiter
+- **Metrics**: Prometheus metrics (feature-gated)
+
 ### Middleware Stack
 
-Middleware is **not** one flat stack — `src/middleware/mod.rs` applies it in
-two tiers:
+Middleware is applied in `src/middleware/mod.rs` in this order:
 
-1. **Infrastructure** (`apply_infra_middleware`, every route): CORS →
-   timeout/body-timeout → compression → security headers → request ID →
-   user-agent check → panic catch → request-format negotiation → error
-   handler → real-IP extraction → request logging → traffic blocking
-   (innermost).
-2. **Application** (`apply_app_middleware`, only HTML/API routes): session
-   cookies → `authenticate` (session + Bearer token resolution) → origin
-   verification.
-3. **Per-route `route_layer`s** in `src/router.rs`: `require_auth`,
-   `require_login`, `csrf_protect`, `rate_limit` — enforcement at point of
-   use, mirroring crates.io.
-
-Operational routes (`/health`, `/static`, `/swagger-ui`, `/api-docs`{% if metrics %},
-`/metrics`{% endif %}) see only tier 1 — they never create sessions, touch the
-user database, or consume rate-limit tokens.
+1. **Real IP Extraction**: Extract client IP from proxy headers
+2. **Request Logging**: Structured logging with tracing spans
+3. **Security Headers**: CSP, HSTS, X-Frame-Options, etc.
+4. **CORS**: Cross-origin resource sharing
+5. **Rate Limiting**: Request throttling per action type
+6. **Session Management**: Cookie-based session middleware
+7. **API Token Auth**: Bearer token authentication
+8. **User Agent Validation**: Block requests without User-Agent
+9. **Traffic Blocking**: Advanced traffic filtering
+10. **Error Handling**: Centralized error handling
+11. **Compression**: Gzip compression
+12. **Timeout**: Request timeout (30s default)
 
 See [Middleware Documentation](MIDDLEWARE.md) for details.
 
@@ -117,11 +107,9 @@ See [Middleware Documentation](MIDDLEWARE.md) for details.
 
 Controllers in `src/controllers/` handle HTTP requests:
 
-- **Auth Controller** (`auth.rs`): provider-generic OAuth authorize/callback, login, logout
-- **Token Controller** (`token.rs`): API token creation/listing/revocation
-- **Post Controller** (`post.rs`): CRUD + publish — the reference resource
-- **Examples Controller** (`examples.rs`): HTMX/Alpine patterns (contact form, counter, JSON)
-- **Home Controller** (`mod.rs`): home page, login page
+- **Auth Controller**: OAuth sign-in (provider-generic handlers), login, logout
+- **Token Controller**: API token management
+- **User Controller**: User management (planned)
 
 Controllers follow these patterns:
 - Use `AppResult<T>` for consistent error handling
@@ -134,7 +122,7 @@ Controllers follow these patterns:
 The database layer uses Toasty ORM:
 
 - **Models**: Defined in `src/models/` with Toasty macros
-- **Migrations**: SQL generated by `migrate migration generate`, applied explicitly by `migrate`
+- **Migrations**: Automatic schema management via Toasty CLI
 - **Connection Pooling**: Built-in connection pooling
 - **Query Builder**: Type-safe query construction
 
@@ -144,10 +132,13 @@ Supported databases:
 
 ### Storage Layer
 
-The storage layer in `src/storage.rs` is a thin abstraction over the local
-filesystem (`STORAGE_PATH`, default `./local_uploads`) — the only backend
-that exists. S3 design notes live in [Storage Documentation](STORAGE.md) but
-no S3 or in-memory backend is implemented.
+The storage layer in `src/storage.rs` provides a pluggable abstraction:
+
+- **Local Filesystem**: Default for development
+- **S3 Compatible**: AWS S3, MinIO, DigitalOcean Spaces
+- **In-Memory**: For testing
+
+See [Storage Documentation](STORAGE.md) for details.
 
 ### Authentication System
 
@@ -161,10 +152,11 @@ See [Authentication Documentation](AUTHENTICATION.md) for details.
 
 ### Rate Limiting
 
-Rate limiting uses a database-backed token bucket (`rate_limit_buckets`
-table) — persistent and shared across instances of the same database. There
-is no in-memory or Redis backend; a Redis migration path is sketched in
-`docs/rate-limiting-redis-upgrade.md` (design only).
+Rate limiting uses a token bucket algorithm:
+
+- **In-Memory**: Default for single-instance deployments
+- **Database-Backed**: Optional for distributed systems
+- **Redis**: Optional for high-throughput scenarios
 
 See [Rate Limiting Documentation](RATE_LIMITING.md) for details.
 
@@ -296,20 +288,16 @@ See [Testing Documentation](TESTING.md) for details.
 - **Structured Logging**: JSON format with tracing
 - **Log Levels**: Configurable via `RUST_LOG`
 - **Spans**: Request-scoped context
-- Logs go to **stdout** only (JSON in production); QuickWit ingestion is a
-  how-to ([quickwit-integration.md](quickwit-integration.md)), not a
-  built-in integration.
-{% if metrics %}
+- **Integration**: QuickWit for log analytics
+
+See [QuickWit Integration](quickwit-integration.md) for details.
+
 ### Metrics
 
-- **Prometheus**: `/metrics` and `/api/private/metrics` endpoints
-- **Request Metrics**: counts, response times via middleware instrumentation
-- Optional `METRICS_TOKEN` bearer protection
-{% else %}
-### Metrics
-
-Not compiled in — this project was generated without the `metrics` option.
-{% endif %}
+- **Prometheus**: Metrics endpoint (feature-gated)
+- **Instance Metrics**: Memory, CPU, connections
+- **Service Metrics**: Request counts, response times, error rates
+- **Custom Metrics**: Business metrics as needed
 
 ## Security Architecture
 
@@ -337,7 +325,7 @@ Not compiled in — this project was generated without the `metrics` option.
 
 - **Per-Action Limits**: Different limits for different actions
 - **Token Bucket**: Fair throttling algorithm
-- **Shared State**: database backend; shared across instances on the same DB
+- **Distributed Support**: Database/Redis backends
 
 ## Scalability Considerations
 
@@ -345,7 +333,7 @@ Not compiled in — this project was generated without the `metrics` option.
 
 Default configuration supports single-instance deployments:
 
-- **Database-Backed Rate Limiting**: works out of the box on SQLite
+- **In-Memory Rate Limiting**: Fast, no external dependencies
 - **SQLite Database**: Zero-setup, sufficient for moderate load
 - **Local Storage**: Simple file uploads
 
@@ -353,9 +341,9 @@ Default configuration supports single-instance deployments:
 
 For horizontal scaling:
 
-- **PostgreSQL**: Replace SQLite for shared database (rate-limit buckets and
-  the worker queue become shared automatically)
-- **Shared `STORAGE_PATH`**: block/shared storage for uploads (no S3 backend)
+- **PostgreSQL**: Replace SQLite for shared database
+- **Redis Rate Limiting**: Distributed rate limiting
+- **S3 Storage**: Shared file storage
 - **Load Balancer**: Nginx, HAProxy, or cloud LB
 
 See [Deployment Documentation](DEPLOYMENT.md) for scaling guidance.

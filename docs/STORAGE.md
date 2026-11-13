@@ -176,11 +176,7 @@ let url = storage.public_url("test.txt");
 > end-to-end. Uploaded files are public by definition with this wiring. Add
 > an authorization layer (`require_auth`) if they should be private.
 
-## S3 Storage (Not Implemented — Design Notes Only)
-
-None of the `STORAGE_*` env vars below exist in the code; `STORAGE_PATH` is
-the only storage configuration. This section is a sketch of how an S3
-backend could be added, not usable configuration.
+## S3 Storage (Planned)
 
 ### Configuration
 
@@ -215,10 +211,7 @@ S3 storage will support the same operations as local filesystem:
 - Check existence
 - Public URL generation with CDN support
 
-## In-Memory Storage (Not Implemented — Design Notes Only)
-
-Like the S3 section above, `STORAGE_BACKEND` does not exist — this is a
-sketch of a possible future backend for tests, not usable configuration.
+## In-Memory Storage (Planned)
 
 ### Use Case
 

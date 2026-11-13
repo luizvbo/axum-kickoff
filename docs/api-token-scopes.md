@@ -57,15 +57,15 @@ use crate::util::auth::AuthCheck;
 
 // Restrict token to only access posts
 let check = AuthCheck::default()
-    .for_crate("posts");
+    .for_resource("posts");
 
 // Restrict token to posts and related resources
 let check = AuthCheck::default()
-    .for_crate("posts*");
+    .for_resource("posts*");
 
 // Allow token to access any resource (when combined with endpoint scope)
 let check = AuthCheck::default()
-    .allow_any_crate_scope();
+    .allow_any_resource_scope();
 ```
 
 ## Combining Scopes
@@ -76,12 +76,12 @@ You can combine endpoint and resource scopes for fine-grained control:
 // Token can read posts but not modify them
 let check = AuthCheck::default()
     .with_action_scope(ActionScope::Read)
-    .for_crate("posts");
+    .for_resource("posts");
 
 // Token can create and update posts but not delete them
 let check = AuthCheck::default()
     .with_action_scope(ActionScope::Create)
-    .for_crate("posts*");
+    .for_resource("posts*");
 ```
 
 ## Creating Scoped Tokens
@@ -92,10 +92,7 @@ When creating an API token, you can specify scopes:
 use crate::models::token::{ApiToken, ActionScope, ResourceScope};
 
 let action_scopes = vec![ActionScope::Read, ActionScope::Create];
-let resource_scopes: Vec<ResourceScope> = ["posts", "users"]
-    .into_iter()
-    .filter_map(|p| ResourceScope::new(p.to_string()).ok())
-    .collect();
+let resource_scopes = vec!["posts".to_string(), "users".to_string()];
 
 let token = ApiToken::new(
     user_id,

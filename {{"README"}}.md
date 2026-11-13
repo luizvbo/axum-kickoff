@@ -105,14 +105,13 @@ You'll be prompted for the options below (or pass `-d <key>=<value>` to skip pro
 | Option | Values | Default | Effect |
 | ------ | ------ | ------- | ------ |
 | `project-name` | any crate-safe name | asked once | Package name, binary name, session cookie (`<crate_name>_session`), default SQLite file (`<crate_name>.db`), PostgreSQL `application_name`, API title, user-agent strings, and the on-page application branding |
-| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way. The test suite uses temporary-file SQLite regardless |
+| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way. The test suite uses in-memory SQLite regardless |
 | `oauth_github` | `true` / `false` | `true` | Compiles in the GitHub OAuth provider, enabled at runtime when `GH_CLIENT_ID`/`GH_CLIENT_SECRET` are set |
 | `oauth_google` | `true` / `false` | `false` | Same for Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) |
 | `oauth_facebook` | `true` / `false` | `false` | Same for Facebook (`FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`) |
 | `metrics` | `true` / `false` | `false` | Adds the `prometheus` dependency, a `metrics` feature in `default`, the `/metrics` endpoint, and request instrumentation middleware |
 | `sentry` | `true` / `false` | `false` | Adds `sentry` + `sentry-tracing` dependencies and feature, error-event capture via the tracing layer, and `SENTRY_DSN` support |
 | `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |
-| `tailwind` | `true` / `false` | `false` | Adds `tailwindcss` + `@tailwindcss/cli` npm dev dependencies and a `just css` recipe that compiles `static/css/input.css` into `static/css/style.css`, replacing the bundled stylesheet |
 
 The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
 unconditional parts of the application, not template options.
@@ -120,7 +119,7 @@ unconditional parts of the application, not template options.
 > **PostgreSQL note**: the template ships a migration set per backend
 > (`migrations/` for SQLite, `migrations-postgres/` for PostgreSQL) and keeps
 > only the one matching `database`, so `migrate` works out of the box on
-> either backend. The test suite is unaffected: it runs on temporary-file SQLite.
+> either backend. The test suite is unaffected: it runs on in-memory SQLite.
 
 ### Non-interactive generation
 

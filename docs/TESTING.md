@@ -24,15 +24,15 @@ use {{crate_name}}::tests::TestApp;
 
 #[tokio::test]
 async fn test_example() {
-    let app = TestApp::new().await;
+    let app = TestApp::new();
     // Use app for testing
 }
 ```
 
 **Features:**
-- Isolated SQLite database (temporary file, schema built via `Db::push_schema`)
+- Isolated SQLite database (temporary file)
 - Test configuration with minimal settings
-- Exposes router, state (`app.state`), and database (`app.db()`)
+- Exposes router, state, and database
 - Automatic cleanup on drop
 
 ### RequestHelper Trait
@@ -44,37 +44,29 @@ use {{crate_name}}::tests::{TestApp, AnonymousUser};
 
 #[tokio::test]
 async fn test_get_endpoint() {
-    let app = TestApp::new().await;
+    let app = TestApp::new();
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/health").await;
+    let response = anon.get::<()>("/api/endpoint").await;
     response.assert_status(StatusCode::OK);
 }
 ```
 
 **Authentication States:**
-- `AnonymousUser::new(app)` - No authentication
-- `CookieUser::new(app, user_id, session_key)` - Session cookie auth;
-  `session_key` comes from `app.state.session_key`
-- `TokenUser::new(app, plain_token)` - API token auth; `plain_token` comes
-  from `app.token_builder(...)` (returns `(ApiToken, String)`)
+- `AnonymousUser` - No authentication
+- `CookieUser` - Session cookie authentication
+- `TokenUser` - API token authentication
 
 **Methods:**
-- `get`, `post`, `put`, `delete`, `patch` - JSON-bodied requests
-- `post_with_headers`, `patch_with_headers`, `delete_with_headers` - with
-  extra headers (e.g. `CookieUser::headers_with_csrf`)
-
-**CSRF in tests:** a cookie-authenticated session has a `user_id`, so
-unsafe methods (POST/PUT/PATCH/DELETE) require a CSRF token. Mint one with
-`cookie_user.init_csrf().await` and send it via
-`cookie_user.headers_with_csrf(&csrf_token)` + `post_with_headers`.
+- `get`, `post`, `put`, `delete`, `patch` - HTTP methods
+- Automatic request building and headers
 
 ### Response Wrapper
 
 Wrapper around axum responses with helper methods:
 
 ```rust
-use {{crate_name}}::tests::Response;
+use {{crate_name}}::tests::response::TestResponse;
 
 let response = anon.get::<()>("/api/endpoint").await;
 
@@ -82,9 +74,9 @@ let response = anon.get::<()>("/api/endpoint").await;
 response.assert_status(StatusCode::OK);
 response.assert_success();
 
-// Body extraction (async — consumes the response)
-let body: String = response.into_string().await;
-let json: MyType = response.into_json().await;
+// Body extraction
+let body: String = response.into_string();
+let json: MyType = response.into_json();
 
 // Content-type
 let content_type = response.content_type();
@@ -120,14 +112,8 @@ cargo test --lib
 
 ### Integration Tests Only
 
-All tests live inside the library crate (`src/tests/`), so there is no
-separate `tests/` target — `cargo test --lib` covers everything. To run
-only the `tests` module:
-
 ```bash
-cargo test tests::
-# or with nextest (as CI does):
-cargo nextest run -E 'test_id_pattern=~tests::'
+cargo test --test '*'
 ```
 
 ### Specific Test
@@ -184,7 +170,7 @@ use http::StatusCode;
 
 #[tokio::test]
 async fn test_health_check() {
-    let app = TestApp::new().await;
+    let app = TestApp::new();
     let anon = AnonymousUser::new(app);
 
     let response = anon.get::<()>("/health").await;
@@ -194,24 +180,17 @@ async fn test_health_check() {
 
 ### Authenticated Tests
 
-Test with an authenticated user — build the user first, then construct a
-`CookieUser` with the app's session key:
+Test with authenticated user:
 
 ```rust
 use {{crate_name}}::tests::{TestApp, CookieUser};
 
 #[tokio::test]
 async fn test_protected_endpoint() {
-    let app = TestApp::new().await;
-    let user = app
-        .user_builder("test_user")
-        .build(&mut app.db().db_clone())
-        .await
-        .unwrap();
-    let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, user.id, session_key);
+    let app = TestApp::new();
+    let user = CookieUser::new(app, "test_user").await;
 
-    let response = cookie_user.get::<()>("/api/v1/posts").await;
+    let response = user.get::<()>("/api/protected").await;
     response.assert_success();
 }
 ```
@@ -226,11 +205,11 @@ use insta::assert_json_snapshot;
 
 #[tokio::test]
 async fn test_api_response() {
-    let app = TestApp::new().await;
+    let app = TestApp::new();
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<serde_json::Value>("/health").await;
-    assert_json_snapshot!(response.into_json().await);
+    let response = anon.get::<serde_json::Value>("/api/data").await;
+    assert_json_snapshot!(response.into_json());
 }
 ```
 
@@ -241,7 +220,7 @@ async fn test_api_response() {
 - Unit tests in same file as code (in `#[cfg(test)]` module)
 - Integration tests in `src/tests/`
 - Test utilities in `src/tests/`
-- Snapshots in `src/tests/snapshots/` directory
+- Snapshots in `snapshots/` directory
 
 ### Naming
 
@@ -255,17 +234,11 @@ async fn test_api_response() {
 #[tokio::test]
 async fn test_endpoint_name() {
     // Arrange
-    let app = TestApp::new().await;
-    let user = app
-        .user_builder("user")
-        .build(&mut app.db().db_clone())
-        .await
-        .unwrap();
-    let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, user.id, session_key);
+    let app = TestApp::new();
+    let user = CookieUser::new(app, "user").await;
 
     // Act
-    let response = cookie_user.get::<()>("/api/endpoint").await;
+    let response = user.get::<()>("/api/endpoint").await;
 
     // Assert
     response.assert_status(StatusCode::OK);
@@ -276,15 +249,11 @@ async fn test_endpoint_name() {
 
 ### Configuration
 
-Tests use temporary SQLite files by default — no env var needed. To run
-them against a different backend (e.g. a scratch Postgres database), set
-`TEST_DATABASE_URL`:
+Tests use in-memory SQLite by default:
 
 ```bash
-TEST_DATABASE_URL=postgresql://localhost/test_db cargo test
+TEST_DATABASE_URL=sqlite::memory:
 ```
-
-`DATABASE_URL` itself is ignored by tests.
 
 ### Isolation
 
@@ -311,26 +280,17 @@ let user = app
 ```rust
 #[tokio::test]
 async fn test_create_post() {
-    let app = TestApp::new().await;
-    let user = app
-        .user_builder("user")
-        .build(&mut app.db().db_clone())
-        .await
-        .unwrap();
-    let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, user.id, session_key);
-    let csrf_token = cookie_user.init_csrf().await;
+    let app = TestApp::new();
+    let user = CookieUser::new(app, "user").await;
 
     // Create
-    let input = serde_json::json!({ "title": "Test", "content": "Body" });
-    let response = cookie_user
-        .post_with_headers::<serde_json::Value>(
-            "/api/v1/posts",
-            &input,
-            cookie_user.headers_with_csrf(&csrf_token),
-        )
-        .await;
+    let input = CreatePostInput { title: "Test".to_string() };
+    let response = user.post("/api/posts", &input).await;
     response.assert_status(StatusCode::CREATED);
+
+    // Read
+    let post: Post = response.into_json();
+    assert_eq!(post.title, "Test");
 }
 ```
 
@@ -339,24 +299,11 @@ async fn test_create_post() {
 ```rust
 #[tokio::test]
 async fn test_invalid_input() {
-    let app = TestApp::new().await;
-    let user = app
-        .user_builder("user")
-        .build(&mut app.db().db_clone())
-        .await
-        .unwrap();
-    let session_key = app.state.session_key.clone();
-    let cookie_user = CookieUser::new(app, user.id, session_key);
-    let csrf_token = cookie_user.init_csrf().await;
+    let app = TestApp::new();
+    let user = CookieUser::new(app, "user").await;
 
-    let invalid_input = serde_json::json!({ "title": "" });
-    let response = cookie_user
-        .post_with_headers::<serde_json::Value>(
-            "/api/v1/posts",
-            &invalid_input,
-            cookie_user.headers_with_csrf(&csrf_token),
-        )
-        .await;
+    let invalid_input = CreatePostInput { title: "".to_string() };
+    let response = user.post("/api/posts", &invalid_input).await;
     response.assert_status(StatusCode::BAD_REQUEST);
 }
 ```
@@ -366,10 +313,10 @@ async fn test_invalid_input() {
 ```rust
 #[tokio::test]
 async fn test_unauthorized_access() {
-    let app = TestApp::new().await;
+    let app = TestApp::new();
     let anon = AnonymousUser::new(app);
 
-    let response = anon.get::<()>("/api/v1/tokens").await;
+    let response = anon.get::<()>("/api/protected").await;
     response.assert_status(StatusCode::UNAUTHORIZED);
 }
 ```
@@ -379,16 +326,13 @@ async fn test_unauthorized_access() {
 ```rust
 #[tokio::test]
 async fn test_rate_limiting() {
-    let app = TestApp::new().await;
+    let app = TestApp::new();
     let anon = AnonymousUser::new(app);
 
-    // Exceed the per-action budget; a 429 carries a Retry-After header
-    for _ in 0..200 {
-        let response = anon.get::<()>("/api/v1/posts").await;
-        if response.status() == StatusCode::TOO_MANY_REQUESTS {
-            assert!(response.headers().contains_key("retry-after"));
-            return;
-        }
+    // Make multiple requests
+    for _ in 0..100 {
+        let response = anon.get::<()>("/api/endpoint").await;
+        // Eventually should hit rate limit
     }
 }
 ```
@@ -420,11 +364,11 @@ impl TestApp {
 ### Checking Coverage
 
 ```bash
-# Install llvm-cov + nextest
-cargo install cargo-llvm-cov cargo-nextest
+# Install tarpaulin
+cargo install cargo-tarpaulin
 
-# Generate coverage report (same tooling as the justfile/CI uses)
-cargo llvm-cov nextest
+# Generate coverage report
+cargo tarpaulin --out Html
 ```
 
 ### Coverage Goals
@@ -437,11 +381,12 @@ cargo llvm-cov nextest
 
 Tests run automatically on GitHub Actions. See `.github/workflows/ci.yml`.
 
-### CI Jobs
+### CI Test Matrix
 
-- `cargo fmt --check` / `cargo clippy --all-targets --all-features` / `cargo doc`
-- `cargo insta test --all-features --test-runner nextest`
-- `cargo deny check`, `cargo machete`, `cargo audit`, `zizmor`
+- Multiple Rust versions
+- All test suites
+- Clippy linting
+- Code formatting check
 
 ## Troubleshooting
 

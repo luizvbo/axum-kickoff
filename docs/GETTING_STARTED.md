@@ -4,7 +4,7 @@ This guide will help you get {{project-name}} up and running on your local machi
 
 ## Prerequisites
 
-- **Rust**: the version pinned in `rust-toolchain.toml` ([Install Rust](https://rustup.rs/))
+- **Rust**: 1.70 or later ([Install Rust](https://rustup.rs/))
 - **Git**: For cloning the repository
 - **SQLite**: Usually pre-installed on most systems, or install via package manager
 
@@ -27,18 +27,15 @@ brew install sqlite
 ```
 
 **Windows:**
-Download from the [SQLite site](https://www.sqlite.org/download.html)
+Download from [SQLite官网](https://www.sqlite.org/download.html)
 
 ## Installation
 
-### 1. Get the Project
-
-This project was generated with `cargo generate`; you already have the
-checkout. If you generated it with `--vcs none`, initialize git yourself:
+### 1. Clone the Repository
 
 ```bash
+git clone https://github.com/your-org/{{project-name}}.git
 cd {{project-name}}
-git init
 ```
 
 ### 2. Set Up Environment Variables
@@ -61,7 +58,7 @@ PORT=8888
 DOMAIN_NAME=localhost
 
 # Database
-DATABASE_URL=sqlite:./{{crate_name}}.db
+DATABASE_URL=sqlite:{{project-name}}.db
 
 # Session Key (generate a secure random key)
 SESSION_KEY=your-secret-key-minimum-64-bytes-long
@@ -130,28 +127,20 @@ and secret are set. Configure the ones you want to offer on the login page:
 Generate a cryptographically secure session key:
 
 ```bash
-# Using OpenSSL (48 bytes → a 64-character key, the required minimum)
-openssl rand -base64 48
+# Using OpenSSL
+openssl rand -base64 32
 
 # Or using Python
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 Use the output as your `SESSION_KEY` in `.env`.
 
 ### 5. Run Database Migrations
 
-{{project-name}} uses Toasty ORM. The schema is defined in `src/models/` and
-the migration files ship in `migrations/`. `server` does **not** apply them —
-run them yourself before starting the app:
+{{project-name}} uses Toasty ORM for database management. The schema is defined in `src/models/` and migrations are handled automatically on first run.
 
-```bash
-cargo run --bin {{project-name}} -- migrate
-# or: just migration-apply
-```
-
-For development, SQLite creates the database file automatically on first
-connect; `migrate` then creates the tables.
+For development, SQLite will create the database file automatically on first startup.
 
 ### 6. Start the Server
 
@@ -189,21 +178,18 @@ Click a "Sign in with …" button on `/login` to authenticate via OAuth. This wi
 
 ### 2. Create an API Token
 
-After logging in, you can create API tokens for programmatic access via
-`POST /api/v1/tokens`. The endpoint accepts the session cookie (with the
-`X-CSRF-Token` header) or an existing token with the `create` scope:
+After logging in, you can create API tokens for programmatic access:
 
 ```bash
-# Log in via OAuth in the browser first, then reuse the session cookie:
-curl -X POST http://localhost:8888/api/v1/tokens \
-  -H "Cookie: {{crate_name}}_session=<signed-cookie-value>" \
-  -H "X-CSRF-Token: <session-csrf-token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Token"}'
-```
+# Via the web UI (when implemented)
+# Navigate to Settings → API Tokens → Create Token
 
-The plaintext token is returned once in the response's `data.token` field
-(`ako...`) — store it, it can't be recovered.
+# Or via API (when implemented)
+curl -X POST http://localhost:8888/api/v1/tokens \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Token", "scopes": ["read"]}'
+```
 
 ### 3. Test the API
 
@@ -225,21 +211,16 @@ Familiarize yourself with the project structure:
 │   │   └── main.rs            # Entry point (server, background-worker, migrate subcommands)
 │   ├── controllers/
 │   │   ├── auth.rs            # Authentication endpoints
-│   │   ├── post.rs            # Post CRUD endpoints
-│   │   ├── token.rs           # API token management
-│   │   └── examples.rs        # HTMX/Askama example handlers
+│   │   └── token.rs           # API token management
 │   ├── middleware/
 │   │   ├── mod.rs             # Middleware stack
 │   │   ├── session.rs         # Session management
-│   │   ├── auth.rs            # Authentication (session + API token)
-│   │   ├── csrf.rs            # CSRF protection
+│   │   ├── api_token.rs       # API token authentication
 │   │   └── ...                # Other middleware
 │   ├── models/
 │   │   ├── user.rs            # User model
 │   │   ├── token.rs           # API token model
-│   │   ├── post.rs            # Post model
-│   │   ├── rate_limit_bucket.rs  # Rate limiter state
-│   │   └── background_job.rs  # Worker job queue
+│   │   └── post.rs            # Post model
 │   ├── config/
 │   │   ├── mod.rs             # Configuration module
 │   │   ├── base.rs            # Base configuration
@@ -253,10 +234,8 @@ Familiarize yourself with the project structure:
 │   │   ├── test_app.rs        # Test application builder
 │   │   ├── request_helper.rs  # HTTP request helpers
 │   │   └── ...                # Test utilities
-│   ├── worker/                # Background job worker
 │   ├── app.rs                 # Application state
 │   ├── db.rs                  # Database connection
-│   ├── oauth.rs               # OAuth provider registry
 │   ├── rate_limiter.rs        # Rate limiting
 │   ├── storage.rs             # Storage abstraction
 │   └── lib.rs                 # Library entry point
@@ -295,38 +274,27 @@ cargo build --release
 # The binary will be at target/release/{{project-name}}
 ```
 
-{% if metrics %}### Metrics
+### Enabling Metrics
 
-This project was generated with the `metrics` option, so the Prometheus
-endpoint is already compiled in — no feature flag needed:
+Build with the metrics feature flag:
 
 ```bash
-cargo run --bin {{project-name}} -- server
+cargo run --bin {{project-name}} --features metrics -- server
 ```
 
-Metrics are available at `/metrics` (and `/api/private/metrics` when
-`METRICS_TOKEN` is set).
-{% else %}### Metrics
-
-This project was generated without the `metrics` option — there is no
-`/metrics` endpoint or metrics feature. Regenerate with `metrics=true` if
-you need it.
-{% endif %}
+Metrics will be available at `/metrics`.
 
 ### Database Operations
 
 ```bash
-# Run database migrations (apply pending migrations)
-cargo run --bin {{project-name}} -- migrate
-
-# Generate a new migration after changing models
+# Run database migrations (generate, apply, snapshot, ...)
 cargo run --bin {{project-name}} -- migrate migration generate
 
 # View SQLite database
-sqlite3 {{crate_name}}.db
+sqlite3 {{project-name}}.db
 
 # Backup SQLite database
-cp {{crate_name}}.db {{crate_name}}.db.backup
+cp {{project-name}}.db {{project-name}}.db.backup
 ```
 
 ## Troubleshooting
@@ -345,10 +313,10 @@ Ensure the `DATABASE_URL` is correct:
 
 ```bash
 # For SQLite (file-based)
-DATABASE_URL=sqlite:./{{crate_name}}.db
+DATABASE_URL=sqlite:{{project-name}}.db
 
-# Tests don't read DATABASE_URL — they use temporary SQLite files.
-# Point TEST_DATABASE_URL elsewhere to run them on another backend.
+# For SQLite (in-memory, for testing)
+DATABASE_URL=sqlite::memory:
 ```
 
 ### OAuth Errors
@@ -373,8 +341,8 @@ openssl rand -base64 64
 Ensure the storage directory is writable:
 
 ```bash
-mkdir -p ./local_uploads
-chmod 755 ./local_uploads
+mkdir -p ./uploads
+chmod 755 ./uploads
 ```
 
 ## Next Steps
@@ -387,7 +355,7 @@ chmod 755 ./local_uploads
 ## Getting Help
 
 - Check the [Documentation](README.md#documentation) for detailed guides
-- Review issues on the [axum-kickoff template repo](https://github.com/luizvbo/axum-kickoff/issues)
+- Review existing [Issues](https://github.com/your-org/{{project-name}}/issues)
 - Open a new issue if you encounter problems
 
 ## Additional Resources

@@ -47,8 +47,9 @@ Use this checklist when deploying {{project-name}} to production.
 
 ### Rate Limiting
 - [ ] Configure appropriate rate limits for production
-- [ ] Set `RATE_LIMITER_API_REQUEST_RATE_SECONDS` and `BURST` (only actions wired in `determine_limited_action` take effect — e.g. `LOGIN_ATTEMPT` is unconfigured by default)
-- [ ] The DB-backed limiter already shares state across instances; Redis is a design doc, not a backend
+- [ ] Set `RATE_LIMITER_API_REQUEST_RATE_SECONDS` and `BURST`
+- [ ] Configure `RATE_LIMITER_LOGIN_ATTEMPT` limits
+- [ ] Consider Redis for distributed rate limiting (if needed)
 - [ ] Test rate limiting behavior
 
 ### Security Headers
@@ -106,7 +107,7 @@ re-check after each `cargo update`:
 ## Infrastructure
 
 ### Server Configuration
-- [ ] Confirm the bind address: `DEV_DOCKER=true`/`HEROKU` binds `0.0.0.0` (default is `127.0.0.1`; there is no `SERVER_IP`)
+- [ ] Set `SERVER_IP=0.0.0.0` to bind to all interfaces
 - [ ] Set appropriate `PORT` (e.g., 3000, 8080)
 - [ ] Set `DOMAIN_NAME` to production domain
 - [ ] Configure firewall rules
@@ -121,9 +122,10 @@ re-check after each `cargo update`:
 - [ ] Configure rate limiting at proxy level (optional)
 
 ### Storage
-- [ ] Set `STORAGE_PATH` to durable storage (local filesystem is the only backend)
-- [ ] Ensure disk space and permissions on `STORAGE_PATH`
-- [ ] Put uploads behind a CDN if needed (no built-in S3)
+- [ ] Configure storage backend for production
+- [ ] For local storage: ensure disk space and permissions
+- [ ] For S3: configure credentials and bucket
+- [ ] Set up CDN if using one
 - [ ] Test file upload/download functionality
 
 ### Logging

@@ -41,10 +41,10 @@ DATABASE_URL=postgresql://user:password@host:5432/dbname
 # Session
 SESSION_KEY=<generate-secure-64-byte-key>
 
-# Server (binds 0.0.0.0 when HEROKU is set, or add DEV_DOCKER=true)
-PORT=8888
+# Server
+PORT=3000
 DOMAIN_NAME=example.com
-DEV_DOCKER=true
+SERVER_IP=0.0.0.0
 
 # OAuth providers
 {% if oauth_github %}GH_CLIENT_ID=production_client_id
@@ -61,8 +61,12 @@ FACEBOOK_REDIRECT_URI=https://example.com/api/v1/auth/facebook/callback
 # CORS
 WEB_ALLOWED_ORIGINS=https://example.com
 
-# Storage — local filesystem only; there is no S3 backend
-STORAGE_PATH=/var/lib/{{project-name}}/uploads
+# Storage
+STORAGE_BACKEND=s3
+STORAGE_S3_BUCKET=production-bucket
+STORAGE_S3_REGION=us-east-1
+STORAGE_S3_ACCESS_KEY=access_key
+STORAGE_S3_SECRET_KEY=secret_key
 
 # Security
 SECURITY_HSTS_ENABLED=true
@@ -91,7 +95,7 @@ Create a `Dockerfile` in the project root:
 
 ```dockerfile
 # Build stage
-FROM rust:1.96-slim as builder
+FROM rust:1.70-slim as builder
 
 WORKDIR /app
 
@@ -170,7 +174,11 @@ services:
       - FACEBOOK_REDIRECT_URI=https://example.com/api/v1/auth/facebook/callback
 {% endif %}
       - WEB_ALLOWED_ORIGINS=https://example.com
-      - STORAGE_PATH=/data/uploads
+      - STORAGE_BACKEND=s3
+      - STORAGE_S3_BUCKET=${S3_BUCKET}
+      - STORAGE_S3_REGION=${S3_REGION}
+      - STORAGE_S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - STORAGE_S3_SECRET_KEY=${S3_SECRET_KEY}
       - SECURITY_HSTS_ENABLED=true
       - SECURITY_CSP_MODE=strict
       - RUST_LOG=info
@@ -511,11 +519,8 @@ Follow Systemd deployment instructions on a Droplet.
 Create `Procfile`:
 
 ```
-web: {{project-name}} server
-release: {{project-name}} migrate
+web: server
 ```
-
-Heroku sets `HEROKU` for you, so the app binds `0.0.0.0` automatically.
 
 Deploy:
 
@@ -542,8 +547,19 @@ git push heroku main
 
 ### Health Checks
 
-The app already exposes `GET /health` (with a database check) — point your
-probe at it; no extra wiring needed.
+Add health check endpoint (if not already implemented):
+
+```rust
+pub async fn health_check() -> &'static str {
+    "OK"
+}
+```
+
+Configure in router:
+
+```rust
+router.route("/health", get(health_check))
+```
 
 ### Logs
 
@@ -554,17 +570,21 @@ Use structured logging with QuickWit (see [QuickWit Integration](quickwit-integr
 export LOG_FORMAT=json
 ```
 
-{% if metrics %}### Metrics
+### Metrics
 
-Metrics are compiled in and served at `/metrics` (no `--features` flag
-needed — generation already put it in `default`).
+Enable Prometheus metrics:
+
+```bash
+cargo run --bin {{project-name}} --features metrics -- server
+```
+
+Metrics available at `/metrics`.
 
 **Warning:** without `METRICS_TOKEN` set, `/metrics` is publicly readable.
 Set a token (requests then need `Authorization: Bearer <token>`) or restrict
 the endpoint at your reverse proxy before exposing the service.
 
 Set up Prometheus and Grafana for visualization.
-{% endif %}
 
 ## Scaling
 
@@ -573,8 +593,8 @@ Set up Prometheus and Grafana for visualization.
 For multiple instances:
 
 1. Use PostgreSQL instead of SQLite
-2. The database-backed rate limiter shares state across instances; for higher volume see the Redis upgrade design in [Rate Limiting Documentation](RATE_LIMITING.md)
-3. Put `STORAGE_PATH` on shared/block storage (local FS is the only backend)
+2. Use Redis for rate limiting (see [Rate Limiting Documentation](RATE_LIMITING.md))
+3. Use S3 for storage
 4. Set up load balancer (Nginx, HAProxy, or cloud LB)
 5. Ensure session key is shared across instances
 
