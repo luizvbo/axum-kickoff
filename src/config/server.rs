@@ -875,7 +875,6 @@ mod tests {
     fn base_env() -> Vec<(&'static str, Option<&'static str>)> {
         let mut vars: Vec<(&'static str, Option<&'static str>)> = vec![
             ("APP_ENV", Some("test")),
-            ("HEROKU", None),
             ("DEV_DOCKER", None),
             ("SESSION_KEY", Some("test-session-key")),
             ("WEB_ALLOWED_ORIGINS", Some("http://localhost:3000")),

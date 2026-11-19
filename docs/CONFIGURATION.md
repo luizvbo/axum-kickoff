@@ -129,16 +129,6 @@ development behavior). Set `APP_ENV=development` for local work to enable the
 `/debug` route, non-Secure cookies, and pretty logs. Set `APP_ENV=test` when
 running the application against the `TEST_DATABASE_URL` database.
 
-### Heroku
-
-```bash
-HEROKU=1
-```
-
-Set to any value to indicate running on Heroku. This adjusts the bind address
-and Postgres `sslmode`. It does not select the environment: `APP_ENV` does,
-and already defaults to `production`.
-
 ### Docker
 
 ```bash

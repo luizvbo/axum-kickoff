@@ -528,6 +528,7 @@ Deploy:
 heroku create your-app-name
 heroku addons create heroku-postgresql
 heroku config:set DATABASE_URL=$(heroku config:get DATABASE_URL)
+heroku config:set DATABASE_SSLMODE=require
 heroku config:set SESSION_KEY=$(openssl rand -base64 64)
 {% if oauth_github %}heroku config:set GH_CLIENT_ID=your_client_id
 heroku config:set GH_CLIENT_SECRET=your_client_secret

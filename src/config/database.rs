@@ -90,8 +90,6 @@ impl DatabaseConfig {
                 if !query.contains_key("sslmode") {
                     if let Some(sslmode) = env::var("DATABASE_SSLMODE")? {
                         query.insert("sslmode".to_string(), sslmode);
-                    } else if env::var("HEROKU")?.is_some() {
-                        query.insert("sslmode".to_string(), "require".to_string());
                     }
                 }
             }
