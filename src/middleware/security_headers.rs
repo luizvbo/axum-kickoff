@@ -170,56 +170,51 @@ impl Default for SecurityHeadersConfig {
 impl SecurityHeadersConfig {
     /// Create configuration from environment variables, using the deployment
     /// environment to drive secure defaults.
-    pub fn for_env(env: Env) -> Self {
-        let hsts_enabled = dotenvy::var("SECURITY_HSTS_ENABLED")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(env == Env::Production);
+    ///
+    /// Called once from `Server::from_environment`; malformed `SECURITY_*`
+    /// values are startup errors rather than silently ignored defaults.
+    pub fn for_env(env: Env) -> anyhow::Result<Self> {
+        use crate::config::env as config_env;
 
-        let hsts_max_age = dotenvy::var("SECURITY_HSTS_MAX_AGE")
-            .ok()
-            .and_then(|s| s.parse().ok())
+        let hsts_enabled =
+            config_env::var_parsed("SECURITY_HSTS_ENABLED")?.unwrap_or(env == Env::Production);
+
+        let hsts_max_age = config_env::var_parsed::<u64>("SECURITY_HSTS_MAX_AGE")?
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(365 * 24 * 60 * 60));
 
-        let hsts_include_subdomains = dotenvy::var("SECURITY_HSTS_INCLUDE_SUBDOMAINS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(true);
+        let hsts_include_subdomains =
+            config_env::var_parsed("SECURITY_HSTS_INCLUDE_SUBDOMAINS")?.unwrap_or(true);
 
-        let hsts_preload = dotenvy::var("SECURITY_HSTS_PRELOAD")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(false);
+        let hsts_preload = config_env::var_parsed("SECURITY_HSTS_PRELOAD")?.unwrap_or(false);
 
-        let csp_mode = dotenvy::var("SECURITY_CSP_MODE")
-            .ok()
-            .and_then(|s| s.parse().ok())
+        let csp_mode = config_env::var("SECURITY_CSP_MODE")?
+            .map(|s| s.parse().map_err(anyhow::Error::msg))
+            .transpose()?
             .unwrap_or(CspMode::Strict);
 
-        let frame_options = dotenvy::var("SECURITY_FRAME_OPTIONS")
-            .ok()
-            .and_then(|s| s.parse().ok())
+        let frame_options = config_env::var("SECURITY_FRAME_OPTIONS")?
+            .map(|s| s.parse().map_err(anyhow::Error::msg))
+            .transpose()?
             .unwrap_or(FrameOptions::Deny);
 
         // An empty value would emit a bare `frame-ancestors` directive
         // (effectively `frame-ancestors ''`), which is neither valid nor the
         // intended "no override" — treat it as unset.
-        let frame_ancestors = dotenvy::var("SECURITY_FRAME_ANCESTORS")
-            .ok()
-            .filter(|v| !v.trim().is_empty());
+        let frame_ancestors =
+            config_env::var("SECURITY_FRAME_ANCESTORS")?.filter(|v| !v.trim().is_empty());
 
-        let referrer_policy = dotenvy::var("SECURITY_REFERRER_POLICY")
-            .ok()
-            .and_then(|s| s.parse().ok())
+        let referrer_policy = config_env::var("SECURITY_REFERRER_POLICY")?
+            .map(|s| s.parse().map_err(anyhow::Error::msg))
+            .transpose()?
             .unwrap_or(ReferrerPolicy::StrictOriginWhenCrossOrigin);
 
-        let permissions_policy = dotenvy::var("SECURITY_PERMISSIONS_POLICY")
-            .ok()
-            .and_then(|s| s.parse().ok())
+        let permissions_policy = config_env::var("SECURITY_PERMISSIONS_POLICY")?
+            .map(|s| s.parse().map_err(anyhow::Error::msg))
+            .transpose()?
             .unwrap_or(PermissionsPolicy::Restrictive);
 
-        Self {
+        Ok(Self {
             hsts_enabled,
             hsts_max_age,
             hsts_include_subdomains,
@@ -229,7 +224,7 @@ impl SecurityHeadersConfig {
             frame_ancestors,
             referrer_policy,
             permissions_policy,
-        }
+        })
     }
 }
 
@@ -451,6 +446,24 @@ fn generate_permissions_policy(config: &SecurityHeadersConfig) -> String {
     }
 }
 
+/// CSP for Swagger UI / api-docs pages: they serve their own bundled assets
+/// but bootstrap via an inline script and inline styles that cannot carry
+/// our per-request nonce, so they get `'unsafe-inline'` instead of the
+/// strict policy.
+fn generate_swagger_csp() -> String {
+    [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+    ]
+    .join("; ")
+}
+
 /// Apply all configured security headers to a response.
 fn apply_security_headers(
     response: &mut Response,
@@ -458,8 +471,13 @@ fn apply_security_headers(
     nonce: &str,
     path: &str,
 ) {
-    // Content-Security-Policy
-    let csp = generate_csp(config, nonce);
+    // Content-Security-Policy — Swagger UI routes get a relaxed policy
+    // regardless of the configured mode.
+    let csp = if path.starts_with("/swagger-ui") || path.starts_with("/api-docs") {
+        generate_swagger_csp()
+    } else {
+        generate_csp(config, nonce)
+    };
     response.headers_mut().insert(
         HeaderName::from_static("content-security-policy"),
         HeaderValue::from_str(&csp)
@@ -851,7 +869,7 @@ mod tests {
         let _guard = ENV_LOCK.lock();
         std::env::remove_var("SECURITY_HSTS_ENABLED");
 
-        let config = SecurityHeadersConfig::for_env(Env::Production);
+        let config = SecurityHeadersConfig::for_env(Env::Production).unwrap();
         assert!(config.hsts_enabled);
     }
 
@@ -860,7 +878,7 @@ mod tests {
         let _guard = ENV_LOCK.lock();
         std::env::remove_var("SECURITY_HSTS_ENABLED");
 
-        let config = SecurityHeadersConfig::for_env(Env::Development);
+        let config = SecurityHeadersConfig::for_env(Env::Development).unwrap();
         assert!(!config.hsts_enabled);
     }
 
@@ -869,7 +887,7 @@ mod tests {
         let _guard = ENV_LOCK.lock();
         std::env::set_var("SECURITY_HSTS_ENABLED", "false");
 
-        let config = SecurityHeadersConfig::for_env(Env::Production);
+        let config = SecurityHeadersConfig::for_env(Env::Production).unwrap();
         assert!(!config.hsts_enabled);
 
         std::env::remove_var("SECURITY_HSTS_ENABLED");

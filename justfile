@@ -64,8 +64,7 @@ test-verbose:
 
 [doc("Run test coverage (add '--html' to generate an HTML report)")]
 test-cov args='':
-    @echo "🧪 Running test coverage (skipping test errors)..."
-    APP_ENV=TEST cargo llvm-cov nextest --ignore-run-fail {% raw %}{{ if args != '' { args } else { "" } }}{% endraw %}
+    APP_ENV=TEST cargo llvm-cov nextest {% raw %}{{ if args != '' { args } else { "" } }}{% endraw %}
 
 # ============================================================================
 # Database Commands

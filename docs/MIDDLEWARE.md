@@ -30,7 +30,7 @@ Path normalization is applied as a top-level service around the router in `src/l
 
 **Application stack** (`src/middleware/mod.rs::apply_app_middleware`) runs only for HTML pages and `/api/*` routes:
 
-16. **Session Management** - Signed-cookie session parsing/writing
+16. **Session Management** - Encrypted-cookie session parsing/writing
 17. **Authentication** - Resolves auth context: lazy for cookie sessions (no DB lookup), eager for Bearer tokens
 18. **Origin Verification** - `Origin` header check on unsafe methods
 
@@ -131,7 +131,7 @@ INFO http_request: GET /api/posts user_agent=Mozilla/5.0
 **Configuration:** Requires `SESSION_KEY` environment variable.
 
 **Features:**
-- Signed cookies with HMAC
+- Private (encrypted) cookies
 - Session extraction and validation
 - User context attachment
 

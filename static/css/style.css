@@ -87,6 +87,27 @@ body {
     color: var(--primary);
 }
 
+/* Logout form sits inline in .nav-links */
+.nav-logout {
+    margin: 0;
+}
+
+.nav-link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+.nav-link-btn:hover {
+    color: var(--primary);
+}
+
 /* Hero */
 .hero {
     background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
@@ -169,7 +190,8 @@ body {
 .btn-secondary-solid {
     background: white;
     color: var(--dark);
-    border: 2px solid var(--border);
+    /* var(--border) was nearly invisible on a white background. */
+    border: 2px solid var(--text-light);
 }
 
 .btn-secondary-solid:hover {
@@ -360,12 +382,25 @@ body {
     margin-top: 1rem;
 }
 
+/* htmx's injected indicator styles are disabled (htmx-config
+   includeIndicatorStyles=false) so these rules live here instead: the
+   indicator is transparent until htmx adds `htmx-request` while a request
+   is in flight. `opacity` (not `display`) keeps a stable layout. */
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+    opacity: 1;
+}
+
 .loading-indicator {
     margin-top: 1rem;
     color: var(--text-light);
     font-size: 0.9rem;
     text-align: center;
-    display: none;
 }
 
 .form-result {
@@ -633,6 +668,28 @@ body {
     margin-left: auto;
 }
 
+/* Error page (templates/error.html) */
+.error-page {
+    text-align: center;
+    padding-top: 6rem;
+}
+
+.error-status {
+    font-size: 4rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 0.5rem;
+}
+
+.error-message {
+    color: var(--text-light);
+    font-size: 1.1rem;
+}
+
+.error-back {
+    margin-top: 2rem;
+}
+
 /* Footer */
 footer {
     background: var(--dark);
@@ -657,8 +714,14 @@ footer {
 
 /* Responsive */
 @media (max-width: 768px) {
+    .nav-container {
+        flex-wrap: wrap;
+    }
+
+    /* Links wrap onto a second row instead of disappearing entirely. */
     .nav-links {
-        display: none;
+        flex-wrap: wrap;
+        gap: 1rem;
     }
 
     .hero h1 {

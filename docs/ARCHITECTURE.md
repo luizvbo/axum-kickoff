@@ -145,7 +145,7 @@ See [Storage Documentation](STORAGE.md) for details.
 Authentication supports multiple methods:
 
 - **OAuth sign-in**: OAuth 2.0 flow (with PKCE) for the providers compiled in at generation time
-- **Session-Based**: Signed cookie sessions
+- **Session-Based**: Encrypted cookie sessions
 - **API Tokens**: Scoped tokens with fine-grained permissions
 
 See [Authentication Documentation](AUTHENTICATION.md) for details.
@@ -304,7 +304,7 @@ See [QuickWit Integration](quickwit-integration.md) for details.
 ### Authentication
 
 - **OAuth sign-in**: OAuth 2.0 with PKCE
-- **Session Cookies**: Signed with HMAC
+- **Session Cookies**: Encrypted (private cookies)
 - **API Tokens**: Hashed with SHA-256
 - **Token Scopes**: Fine-grained permissions
 

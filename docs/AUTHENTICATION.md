@@ -7,7 +7,7 @@ This document describes the authentication system in {{project-name}}, including
 {{project-name}} supports multiple authentication methods:
 
 {% if oauth_github or oauth_google or oauth_facebook %}- **OAuth sign-in**: OAuth 2.0 flow with {% if oauth_github %}GitHub{% endif %}{% if oauth_google %}{% if oauth_github %}, {% endif %}Google{% endif %}{% if oauth_facebook %}{% if oauth_github or oauth_google %}, {% endif %}Facebook{% endif %} (providers were selected when this project was generated)
-{% endif %}- **Session-Based**: Signed cookie sessions for web users
+{% endif %}- **Session-Based**: Encrypted cookie sessions for web users
 - **API Tokens**: Scoped tokens for programmatic access
 
 {% if oauth_github or oauth_google or oauth_facebook %}## OAuth Sign-In
@@ -126,7 +126,7 @@ different provider creates a separate account.
 
 ### Overview
 
-Sessions are managed using signed cookies with the `axum-extra` crate's cookie-signed feature.
+Sessions are managed using encrypted cookies via the `axum-extra` crate's `PrivateCookieJar`.
 
 ### Session Key
 
@@ -160,7 +160,7 @@ The session middleware in `src/middleware/session.rs`:
 
 ### Session Security
 
-- **Signed Cookies**: Sessions are signed with HMAC to prevent tampering
+- **Encrypted Cookies**: Sessions are encrypted, preventing both tampering and client-side reading
 - **Secure Flag**: Cookies are marked as secure in production (HTTPS only)
 - **HttpOnly Flag**: Cookies are not accessible via JavaScript
 - **SameSite**: Cookies are set with `SameSite=Lax` to prevent CSRF
@@ -191,9 +191,15 @@ API tokens have the following properties:
 
 #### Via API
 
+Token management is cookie-only: an API token can never list, create, or
+revoke tokens. Send the session cookie and the CSRF token from your session
+(`x-csrf-token` header; the token is embedded in pages and returned by the
+login flow). Both `resource_scopes` and `action_scopes` are required.
+
 ```bash
-curl -X POST http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+curl -X POST http://localhost:3000/api/v1/tokens \
+  -H "Cookie: {{crate_name}}_session=YOUR_SESSION_COOKIE" \
+  -H "X-CSRF-Token: YOUR_CSRF_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Token",
@@ -207,13 +213,15 @@ curl -X POST http://localhost:3000/api/tokens \
 
 ```json
 {
-  "id": "token_id",
-  "name": "My Token",
-  "token": "axk_abc123...",  // Only shown on creation
-  "action_scopes": ["read"],
-  "resource_scopes": ["posts"],
-  "expires_at": "2024-12-31T23:59:59Z",
-  "created_at": "2024-01-01T00:00:00Z"
+  "data": {
+    "id": 1,
+    "name": "My Token",
+    "token": "ako_abc123...",  // Only shown on creation
+    "action_scopes": ["read"],
+    "resource_scopes": ["posts"],
+    "expires_at": "2024-12-31T23:59:59Z",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
 }
 ```
 
@@ -224,8 +232,8 @@ curl -X POST http://localhost:3000/api/tokens \
 Include the token in the `Authorization` header:
 
 ```bash
-curl http://localhost:3000/api/posts \
-  -H "Authorization: Bearer axk_abc123..."
+curl http://localhost:3000/api/v1/posts \
+  -H "Authorization: Bearer ako_abc123..."
 ```
 
 ### Token Scopes
@@ -250,18 +258,22 @@ Resource scopes control which resources a token can access:
 
 ### Token Management
 
+Like token creation, listing and revoking require the session cookie (CSRF
+only applies to the unsafe `POST`).
+
 #### List Tokens
 
 ```bash
-curl http://localhost:3000/api/tokens \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+curl http://localhost:3000/api/v1/tokens \
+  -H "Cookie: {{crate_name}}_session=YOUR_SESSION_COOKIE"
 ```
 
 #### Revoke Token
 
 ```bash
-curl -X DELETE http://localhost:3000/api/tokens/TOKEN_ID \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+curl -X POST http://localhost:3000/api/v1/tokens/TOKEN_ID \
+  -H "Cookie: {{crate_name}}_session=YOUR_SESSION_COOKIE" \
+  -H "X-CSRF-Token: YOUR_CSRF_TOKEN"
 ```
 
 ### Token Security
@@ -391,7 +403,7 @@ Locked accounts cannot authenticate until the lock expires.
 
 ### API Token Rejected
 
-- Verify token is correctly formatted: `Bearer axk_...`
+- Verify token is correctly formatted: `Bearer ako_...`
 - Check token hasn't expired
 - Verify token has required scopes for endpoint
 - Ensure token hasn't been revoked
@@ -421,10 +433,10 @@ use oauth2::{
 
 ### Session Encoding
 
-Sessions are encoded using `axum-extra`'s signed cookies:
+Sessions are encoded using `axum-extra`'s private (encrypted) cookies:
 
 ```rust
-use axum_extra::extract::cookie::SignedCookieJar;
+use axum_extra::extract::cookie::PrivateCookieJar;
 use axum_extra::extract::cookie::Key;
 ```
 

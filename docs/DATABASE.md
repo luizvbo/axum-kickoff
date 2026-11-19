@@ -178,6 +178,15 @@ just migration-reset
 just migration-inspect
 ```
 
+Two ways to apply migrations, both via the app binary:
+
+- `cargo run --bin {{project-name}} -- migrate` (no arguments) applies the
+  migrations **embedded in the binary** — use this in deployment, where
+  `migrations/` may not be on disk.
+- `migrate migration <subcommand>` (what the `just migration-*` recipes call)
+  is the dev-time Toasty CLI — generate/apply/reset operate on the on-disk
+  `migrations/` directory.
+
 ### Migration Files
 
 Generated migrations are stored in the `migrations/` directory with sequential naming:

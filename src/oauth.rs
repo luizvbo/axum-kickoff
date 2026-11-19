@@ -92,7 +92,13 @@ static GOOGLE: OAuthProviderSpec = OAuthProviderSpec {
     parse_profile: |body| {
         let sub = body.get("sub")?.as_str()?;
         let name = opt_str(body, "name");
-        let email = opt_str(body, "email");
+        // Only trust the email claim when Google marks it verified — an
+        // unverified address is attacker-controlled.
+        let email = if body.get("email_verified").and_then(Value::as_bool) == Some(true) {
+            opt_str(body, "email")
+        } else {
+            None
+        };
         Some(OAuthProfile {
             provider_user_id: sub.to_owned(),
             login: email
@@ -191,6 +197,7 @@ mod tests {
             "sub": "110169484474386276334",
             "name": "Ada Lovelace",
             "email": "ada@example.com",
+            "email_verified": true,
             "picture": "https://lh3.googleusercontent.com/photo"
         });
         let profile = (GOOGLE.parse_profile)(&body).unwrap();
@@ -200,6 +207,20 @@ mod tests {
             profile.avatar_url.as_deref(),
             Some("https://lh3.googleusercontent.com/photo")
         );
+    }
+
+    #[test]
+    fn google_profile_ignores_unverified_email() {
+        let body = json!({
+            "sub": "110169484474386276334",
+            "name": "Ada Lovelace",
+            "email": "attacker-controlled@example.com",
+            "email_verified": false
+        });
+        let profile = (GOOGLE.parse_profile)(&body).unwrap();
+        assert!(profile.email.is_none());
+        // Falls back to the display name rather than the untrusted email.
+        assert_eq!(profile.login, "Ada Lovelace");
     }
 
     #[test]

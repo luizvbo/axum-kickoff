@@ -1,6 +1,5 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use secrecy::ExposeSecret;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use toasty_cli::{Config as ToastyConfig, ToastyCli};
@@ -22,9 +21,12 @@ struct Cli {
 enum Command {
     /// Run the HTTP server
     Server,
-    /// Run the background worker (placeholder)
+    /// Run the background worker
     BackgroundWorker,
-    /// Run database migrations
+    /// Run database migrations. With no arguments, applies the migrations
+    /// embedded in the binary; extra arguments are passed to the Toasty CLI
+    /// (e.g. `migrate migration generate`), which requires the on-disk
+    /// `Toasty.toml` and migration files.
     Migrate {
         #[arg(
             value_name = "ARGS",
@@ -166,29 +168,29 @@ async fn run_server(config: {{crate_name}}::config::Server) -> Result<()> {
 }
 
 async fn run_migrate(args: Vec<String>) -> Result<()> {
-    let config = ToastyConfig::load()?;
-
     // Load database configuration from environment
     let db_config = {{crate_name}}::config::DatabaseConfig::from_environment()?;
 
-    let db = toasty::Db::builder()
-        .models(toasty::models!({{crate_name}}::*))
-        .connect(db_config.connect_url()?.expose_secret())
-        .await
-        .with_context(|| format!("failed to connect to database at {}", db_config.describe()))?;
+    let database = {{crate_name}}::db::Database::from_config(&db_config).await?;
 
-    // Default `cargo run -- migrate` to `migration apply`
-    let toasty_args = if args.is_empty() {
-        vec!["migration".to_string(), "apply".to_string()]
-    } else {
-        args
-    };
+    // Bare `migrate` applies the migrations embedded in the binary — no
+    // `Toasty.toml` or `migrations/` directory needed on disk. Anything else
+    // (`migrate migration generate`, `migrate drop`, ...) is a dev-time
+    // command that goes through the Toasty CLI and its on-disk files.
+    if args.is_empty() {
+        database.migrate().await?;
+        info!("Migrations applied");
+        return Ok(());
+    }
 
+    let config = ToastyConfig::load()?;
     // The Toasty CLI expects the first argument to be the binary name, so
     // prepend a placeholder and pass the remaining arguments through.
-    let args = std::iter::once("toasty".to_string()).chain(toasty_args);
+    let args = std::iter::once("toasty".to_string()).chain(args);
 
-    ToastyCli::with_config(db, config).parse_from(args).await?;
+    ToastyCli::with_config(database.db_clone(), config)
+        .parse_from(args)
+        .await?;
 
     Ok(())
 }

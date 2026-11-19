@@ -3,9 +3,10 @@
 //! Pulls values from the following environment variables:
 //!
 //! - `SESSION_KEY`: The key used to sign and encrypt session cookies (required).
+//! - `HOST`: The address to bind (defaults to `127.0.0.1` in development/test
+//!   and `0.0.0.0` in production — containers and PaaS deployments get a
+//!   publicly reachable listener without extra configuration).
 //! - `PORT`: The port to listen on (defaults to 8888).
-//! - `DEV_DOCKER`: Set to any value to indicate running in Docker (defaults to 127.0.0.1 bind).
-//! - `HEROKU`: Set to any value to indicate running on Heroku (defaults to 0.0.0.0 bind).
 //! - `APP_ENV`: The environment the application is running in (`development`, `test`,
 //!   or `production`). Defaults to `production` when unset.
 //! - `SERVER_THREADS`: Maximum number of blocking threads (`max_blocking_threads`,
@@ -13,6 +14,9 @@
 //! - `SERVER_CORE_THREADS`: Number of async worker threads (`worker_threads` —
 //!   optional, defaults to the available CPU parallelism).
 //! - `DOMAIN_NAME`: The domain name of the application (defaults to "localhost").
+//! - `PUBLIC_BASE_URL`: Public URL of the application (e.g. `https://api.example.com`),
+//!   used for OAuth callback URLs. Defaults to `http://<domain>:<port>` in
+//!   development/test and `https://<domain>` in production.
 //! - `WEB_ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required).
 //! - `BLOCKED_IPS`: Comma-separated list of blocked IP addresses (optional).
 //! - `BLOCKED_ROUTES`: Comma-separated list of blocked route patterns (optional).
@@ -23,16 +27,21 @@
 //!   `GH_CLIENT_ID`/`GH_CLIENT_SECRET` for GitHub, `GOOGLE_*` for Google,
 //!   `FACEBOOK_*` for Facebook). Setting only one of the pair is a startup
 //!   error. `<PREFIX>_REDIRECT_URI` optionally overrides the callback URL,
-//!   which defaults to "https://`<domain>`:`<port>`/api/v1/auth/`<provider>`/callback"
-//!   in production, "http://" in development.
+//!   which defaults to `<PUBLIC_BASE_URL>/api/v1/auth/<provider>/callback`.
 //! - `STORAGE_PATH`: Path for local filesystem storage (defaults to "./local_uploads").
 //! - `CDN_PREFIX`: Optional CDN prefix for generating public URLs.
 //! - `TRUSTED_PROXIES`: Comma-separated list of trusted proxy IPs/CIDR ranges (defaults to "127.0.0.1,::1").
-//! - `METRICS_TOKEN`: Optional token for accessing the metrics endpoint.
+//! - `SESSION_COOKIE_SECURE`: Force the `Secure` flag on session cookies
+//!   (defaults to `true` in production, `false` elsewhere).
+//! - `ENABLE_API_DOCS`: Serve `/swagger-ui` and `/api-docs` in production
+//!   (defaults to `true` in development/test, `false` in production).
+//! - `METRICS_TOKEN`: Token for accessing the metrics endpoint. Required when
+//!   `APP_ENV=production`; optional elsewhere.
 //! - `SENTRY_DSN`: Optional Sentry DSN.
 //! - `LOG_FORMAT`: Optional log format override (`pretty`, `full`, `compact`, or `json`).
 
 use crate::middleware::block_traffic::BlockCriteria;
+use crate::middleware::security_headers::SecurityHeadersConfig;
 use crate::rate_limiter::{LimitedAction, RateLimiterConfig};
 use crate::storage::StorageConfig;
 use crate::Env;
@@ -93,6 +102,9 @@ pub struct Server {
     /// parallelism (Tokio's default).
     pub core_threads: Option<usize>,
     pub domain_name: String,
+    /// Public-facing base URL (e.g. `https://api.example.com`), used for OAuth
+    /// callback URLs and absolute links.
+    pub public_base_url: String,
     pub allowed_origins: AllowedOrigins,
     pub blocked_ips: HashSet<IpAddr>,
     pub blocked_routes: HashSet<String>,
@@ -107,6 +119,13 @@ pub struct Server {
     pub metrics_token: Option<SecretString>,
     pub sentry_dsn: Option<SecretString>,
     pub log_format: LogFormat,
+    /// Whether the session cookie carries the `Secure` flag.
+    pub session_cookie_secure: bool,
+    /// Parsed `SECURITY_*` configuration, owned here so middleware and tests
+    /// don't read the process environment directly.
+    pub security_headers: SecurityHeadersConfig,
+    /// Whether `/swagger-ui` and `/api-docs` are served.
+    pub api_docs_enabled: bool,
 }
 
 impl Server {
@@ -116,22 +135,32 @@ impl Server {
     ///
     /// This function panics if the Server configuration is invalid.
     pub fn from_environment() -> anyhow::Result<Self> {
-        let docker = env::var("DEV_DOCKER")?.is_some();
-        let heroku = env::var("HEROKU")?.is_some();
+        let base = Base::from_environment()?;
 
-        let ip = if heroku || docker {
-            [0, 0, 0, 0].into()
-        } else {
-            [127, 0, 0, 1].into()
+        // Public in production, loopback elsewhere: a container/PaaS deploy
+        // that forgets to set HOST must still be reachable.
+        let ip: IpAddr = match env::var("HOST")? {
+            Some(host) => host
+                .parse()
+                .with_context(|| format!("Invalid HOST '{host}'"))?,
+            None if base.env == Env::Production => [0, 0, 0, 0].into(),
+            None => [127, 0, 0, 1].into(),
         };
 
         let port = env::var_parsed("PORT")?.unwrap_or(8888);
         let max_blocking_threads = env::var_parsed("SERVER_THREADS")?;
         let core_threads = env::var_parsed("SERVER_CORE_THREADS")?;
 
-        let base = Base::from_environment()?;
-
         let domain_name = env::var("DOMAIN_NAME")?.unwrap_or_else(|| "localhost".into());
+
+        let public_base_url = env::var("PUBLIC_BASE_URL")?
+            .map(|u| require_non_empty("PUBLIC_BASE_URL", u))
+            .transpose()?
+            .unwrap_or_else(|| default_public_base_url(&base.env, &domain_name, port));
+        // A trailing slash would produce `//api/v1/...` callback URLs.
+        let public_base_url = public_base_url.trim_end_matches('/').to_string();
+        url::Url::parse(&public_base_url)
+            .context("PUBLIC_BASE_URL must be an absolute URL (e.g. https://api.example.com)")?;
 
         let allowed_origins = AllowedOrigins::from_default_env()?;
 
@@ -187,8 +216,17 @@ impl Server {
             match (client_id, client_secret) {
                 (Some(client_id), Some(client_secret)) => {
                     let redirect_uri = env::var(spec.redirect_uri_env)?.unwrap_or_else(|| {
-                        default_oauth_redirect_uri(&base.env, &domain_name, port, spec.slug)
+                        format!("{public_base_url}/api/v1/auth/{}/callback", spec.slug)
                     });
+                    // The controllers hand this string to `RedirectUrl::new`;
+                    // a malformed value would panic on the first authorize
+                    // request instead of failing at startup.
+                    oauth2::RedirectUrl::new(redirect_uri.clone()).map_err(|_| {
+                        anyhow::anyhow!(
+                            "{} is not a valid URL: '{redirect_uri}'",
+                            spec.redirect_uri_env
+                        )
+                    })?;
                     oauth_providers.push(OAuthProviderConfig {
                         spec,
                         client_id,
@@ -206,7 +244,7 @@ impl Server {
         }
 
         // Load storage configuration
-        let storage_config = StorageConfig::from_environment();
+        let storage_config = StorageConfig::from_environment()?;
 
         // Parse trusted proxies (default to localhost for safety)
         let trusted_proxies = parse_trusted_proxies()?;
@@ -221,6 +259,14 @@ impl Server {
             .map(|t| require_non_empty("METRICS_TOKEN", t))
             .transpose()?
             .map(SecretString::from);
+{% if metrics %}        #[cfg(feature = "metrics")]
+        if base.env == Env::Production && metrics_token.is_none() {
+            anyhow::bail!(
+                "METRICS_TOKEN must be set when APP_ENV=production — \
+                 /metrics would otherwise be publicly exposed on the main listener"
+            );
+        }
+{% endif %}
         let sentry_dsn = env::var("SENTRY_DSN")?
             .map(|t| require_non_empty("SENTRY_DSN", t))
             .transpose()?
@@ -233,6 +279,23 @@ impl Server {
             None => default_log_format(base.env),
         };
 
+        let session_cookie_secure = match env::var("SESSION_COOKIE_SECURE")?.as_deref() {
+            Some(v) if v.trim().eq_ignore_ascii_case("true") || v.trim() == "1" => true,
+            Some(v) if v.trim().eq_ignore_ascii_case("false") || v.trim() == "0" => false,
+            Some(v) => anyhow::bail!("SESSION_COOKIE_SECURE must be true/false/1/0, got '{v}'"),
+            None => base.env == Env::Production,
+        };
+
+        let security_headers = SecurityHeadersConfig::for_env(base.env)?;
+
+        // API docs are a debug surface: off in production unless opted in.
+        let api_docs_enabled = match env::var("ENABLE_API_DOCS")?.as_deref() {
+            Some(v) if v.trim().eq_ignore_ascii_case("true") || v.trim() == "1" => true,
+            Some(v) if v.trim().eq_ignore_ascii_case("false") || v.trim() == "0" => false,
+            Some(v) => anyhow::bail!("ENABLE_API_DOCS must be true/false/1/0, got '{v}'"),
+            None => base.env != Env::Production,
+        };
+
         Ok(Server {
             base,
             ip,
@@ -240,6 +303,7 @@ impl Server {
             max_blocking_threads,
             core_threads,
             domain_name,
+            public_base_url,
             allowed_origins,
             blocked_ips,
             blocked_routes,
@@ -252,6 +316,9 @@ impl Server {
             metrics_token,
             sentry_dsn,
             log_format,
+            session_cookie_secure,
+            security_headers,
+            api_docs_enabled,
         })
     }
 
@@ -378,6 +445,16 @@ fn parse_rate_limiter_config() -> anyhow::Result<HashMap<LimitedAction, RateLimi
         let burst = env::var_parsed::<i32>(&format!("RATE_LIMITER_{key}_BURST"))?
             .unwrap_or(action.default_burst());
 
+        // A zero refill rate divides by 0.0 in the SQL (`tokens = -1`,
+        // permanent 429s); a non-positive burst lets zero or one request
+        // through instead of blocking — both are misconfigurations.
+        if rate.is_zero() {
+            anyhow::bail!("RATE_LIMITER_{key}_RATE_SECONDS must be greater than 0");
+        }
+        if burst <= 0 {
+            anyhow::bail!("RATE_LIMITER_{key}_BURST must be greater than 0");
+        }
+
         config.insert(action, RateLimiterConfig { rate, burst });
     }
 
@@ -450,20 +527,22 @@ where
     Ok(result)
 }
 
-/// Build the default OAuth callback URL for a provider. The port is omitted
-/// when it is the scheme's default: some providers string-match the registered
-/// callback URL and reject an explicit `:443`/`:80`.
-fn default_oauth_redirect_uri(env: &Env, domain_name: &str, port: u16, slug: &str) -> String {
-    let scheme = if *env == Env::Production {
-        "https"
+/// Derive the public base URL when `PUBLIC_BASE_URL` is unset. The port is
+/// omitted when it is the scheme default (443/https, 80/http): production is
+/// assumed to sit behind a TLS-terminating proxy, so leaking `:8888` into
+/// OAuth callback URLs would break provider registration — and exact-match
+/// providers reject redundant `:443`/`:80` suffixes too.
+fn default_public_base_url(env: &Env, domain_name: &str, port: u16) -> String {
+    let (scheme, default_port) = if *env == Env::Production {
+        ("https", 443)
     } else {
-        "http"
+        ("http", 80)
     };
-    let port_suffix = match (scheme, port) {
-        ("https", 443) | ("http", 80) => String::new(),
-        _ => format!(":{port}"),
-    };
-    format!("{scheme}://{domain_name}{port_suffix}/api/v1/auth/{slug}/callback")
+    if port == default_port {
+        format!("{scheme}://{domain_name}")
+    } else {
+        format!("{scheme}://{domain_name}:{port}")
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -481,7 +560,15 @@ impl AllowedOrigins {
 
     pub fn from_default_env() -> anyhow::Result<Self> {
         let value = env::required_var("WEB_ALLOWED_ORIGINS")?;
-        Ok(Self::parse(&value))
+        let origins = Self::parse(&value);
+        // Each origin becomes a CORS `Access-Control-Allow-Origin` header
+        // value — reject entries that can't be one at startup instead of
+        // panicking in the middleware on first request.
+        for origin in origins.origins() {
+            HeaderValue::from_str(origin)
+                .with_context(|| format!("Invalid WEB_ALLOWED_ORIGINS entry '{origin}'"))?;
+        }
+        Ok(origins)
     }
 
     pub fn contains(&self, value: &HeaderValue) -> bool {
@@ -907,23 +994,23 @@ mod tests {
     }
 
     #[test]
-    fn test_default_oauth_redirect_uri() {
+    fn test_default_public_base_url() {
         // Scheme-default ports are omitted: exact-match providers reject them.
         assert_eq!(
-            default_oauth_redirect_uri(&Env::Production, "example.com", 443, "github"),
-            "https://example.com/api/v1/auth/github/callback"
+            default_public_base_url(&Env::Production, "example.com", 443),
+            "https://example.com"
         );
         assert_eq!(
-            default_oauth_redirect_uri(&Env::Development, "localhost", 80, "github"),
-            "http://localhost/api/v1/auth/github/callback"
+            default_public_base_url(&Env::Development, "localhost", 80),
+            "http://localhost"
         );
         assert_eq!(
-            default_oauth_redirect_uri(&Env::Development, "localhost", 8888, "github"),
-            "http://localhost:8888/api/v1/auth/github/callback"
+            default_public_base_url(&Env::Development, "localhost", 8888),
+            "http://localhost:8888"
         );
         assert_eq!(
-            default_oauth_redirect_uri(&Env::Production, "example.com", 8443, "github"),
-            "https://example.com:8443/api/v1/auth/github/callback"
+            default_public_base_url(&Env::Production, "example.com", 8443),
+            "https://example.com:8443"
         );
     }
 

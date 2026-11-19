@@ -15,8 +15,17 @@
                 <a href="#features">Features</a>
                 <a href="#examples">Examples</a>
                 <a href="#getting-started">Getting Started</a>
+                {% if ctx.api_docs_enabled %}
                 <a href="/swagger-ui" target="_blank">API Docs</a>
+                {% endif %}
+                {% if ctx.logged_in %}
+                <form method="post" action="/logout" class="nav-logout">
+                    <input type="hidden" name="csrf_token" value="{{ ctx.csrf_token }}">
+                    <button type="submit" class="nav-link-btn">Sign out</button>
+                </form>
+                {% else %}
                 <a href="/login">Sign in</a>
+                {% endif %}
             </div>
         </div>
     </nav>
@@ -126,7 +135,7 @@
             <h2 class="section-title">Dynamic Content Demo</h2>
             <p class="section-text">Click the button below to see Askama rendering with HTMX in action!</p>
             <button
-                class="btn btn-primary"
+                class="btn btn-primary-solid"
                 hx-get="/api/server-time"
                 hx-target="#server-response"
                 hx-swap="innerHTML"
@@ -167,9 +176,11 @@
                     <div class="example-arrow">→</div>
                 </a>
             </div>
+            {% if ctx.api_docs_enabled %}
             <p class="section-text section-text-mt">
-                <a href="/docs/HTMX_ASKAMA_PATTERNS.md" target="_blank" class="doc-link">📖 View full documentation</a>
+                <a href="/swagger-ui" target="_blank" class="doc-link">📖 View the API documentation</a>
             </p>
+            {% endif %}
         </section>
 
         <section id="getting-started" class="section">

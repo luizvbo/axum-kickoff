@@ -242,35 +242,45 @@ impl Runner {
         tokio::pin!(shutdown);
 
         loop {
+            // Shutdown is only polled *between* jobs: a signal received while
+            // `run_once` is executing is buffered and handled after the job
+            // finishes, so an in-flight job always runs to completion and is
+            // finalized (deleted, rescheduled, or marked dead) rather than
+            // being dropped mid-side-effect and stranded until its lease
+            // expires.
+            let shutdown_requested = tokio::select! {
+                biased;
+                _ = &mut shutdown => true,
+                _ = std::future::ready(()) => false,
+            };
+            if shutdown_requested {
+                info!("Background worker shutting down");
+                return Ok(());
+            }
+
             // Enqueue recurring maintenance jobs when due. This runs between
             // polls so an in-flight job is never cancelled by the scheduler.
             self.enqueue_scheduled_jobs().await;
 
-            tokio::select! {
-                _ = &mut shutdown => {
-                    info!("Background worker shutting down");
-                    return Ok(());
-                }
-                result = self.run_once() => match result {
-                    Ok(true) => continue,
-                    Ok(false) => {
-                        tokio::select! {
-                            _ = &mut shutdown => {
-                                info!("Background worker shutting down");
-                                return Ok(());
-                            }
-                            _ = sleep(self.poll_interval) => {}
+            match self.run_once().await {
+                Ok(true) => continue,
+                Ok(false) => {
+                    tokio::select! {
+                        _ = &mut shutdown => {
+                            info!("Background worker shutting down");
+                            return Ok(());
                         }
+                        _ = sleep(self.poll_interval) => {}
                     }
-                    Err(e) => {
-                        error!(error = ?e, "Background worker error");
-                        tokio::select! {
-                            _ = &mut shutdown => {
-                                info!("Background worker shutting down");
-                                return Ok(());
-                            }
-                            _ = sleep(Duration::from_secs(1)) => {}
+                }
+                Err(e) => {
+                    error!(error = ?e, "Background worker error");
+                    tokio::select! {
+                        _ = &mut shutdown => {
+                            info!("Background worker shutting down");
+                            return Ok(());
                         }
+                        _ = sleep(Duration::from_secs(1)) => {}
                     }
                 }
             }
@@ -289,6 +299,14 @@ impl Runner {
             return;
         }
 
+        // `last_cleanup_enqueue` is in-memory only: without this check every
+        // worker restart and every replica would enqueue a duplicate cleanup
+        // job. A pending row counts as enqueued even if it has not run yet.
+        if self.cleanup_job_pending().await {
+            self.last_cleanup_enqueue = Some(Instant::now());
+            return;
+        }
+
         if let Err(e) = self
             .app
             .enqueue_job_on_queue(&self.queue, CleanupJob::new(self.cleanup_max_age_days), 0)
@@ -300,6 +318,34 @@ impl Runner {
             error!(error = ?e, "Failed to enqueue scheduled cleanup job");
         } else {
             self.last_cleanup_enqueue = Some(Instant::now());
+        }
+    }
+
+    /// Whether a live `cleanup` job is already queued on this runner's queue
+    /// (pending or claimed). Best-effort: on a query error it reports false
+    /// so the caller attempts the enqueue anyway.
+    async fn cleanup_job_pending(&self) -> bool {
+        let mut db = self.app.database.db_clone();
+        let sql = match db.capability().sql_placeholder {
+            Some(SqlPlaceholder::DollarNumber) => {
+                "SELECT 1 FROM background_jobs WHERE queue = $1 AND job_type = $2 AND failed_at IS NULL LIMIT 1"
+            }
+            _ => {
+                "SELECT 1 FROM background_jobs WHERE queue = ?1 AND job_type = ?2 AND failed_at IS NULL LIMIT 1"
+            }
+        };
+
+        match sql::query(sql)
+            .bind(&self.queue)
+            .bind(CleanupJob::NAME)
+            .exec(&mut db)
+            .await
+        {
+            Ok(rows) => !rows.is_empty(),
+            Err(e) => {
+                error!(error = ?e, "Failed to check for pending cleanup job");
+                false
+            }
         }
     }
 

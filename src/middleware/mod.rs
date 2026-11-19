@@ -52,12 +52,14 @@ pub use session::{middleware as session_middleware, SessionExtension, SessionSta
 /// rate-limit work. Those application-specific concerns are applied per route
 /// group in `apply_app_middleware` instead, mirroring crates.io's split stack.
 ///
+/// `request_id` and `security_headers` are applied even further out in
+/// `build_handler`, around `normalize_path`, so that path rejections and
+/// timeout/panic responses still carry `X-Request-ID` and CSP headers.
+///
 /// `.layer()` calls run inside-out: the last call is the outermost middleware.
 pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
     let config = &state.config;
     let env = config.env();
-
-    let security_headers_config = self::security_headers::SecurityHeadersConfig::for_env(env);
 
     // Build CORS layer from allowed origins
     let cors = CorsLayer::new()
@@ -66,17 +68,27 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
                 .allowed_origins
                 .origins()
                 .iter()
-                .map(|s| s.parse().unwrap())
+                .filter_map(|s| s.parse().ok())
                 .collect::<Vec<_>>(),
         )
         .allow_methods(Any)
         .allow_headers(Any);
 
     let router = router
-        // Innermost infra layer. Traffic blocking is applied globally (as in
-        // crates.io) so blocked IPs/routes/user agents cannot reach operational
-        // endpoints either; it only reads config, headers, and `RealIp`.
+        // Innermost panic guard: a handler panic becomes a 500 that flows back
+        // through `log_request`/`error_handler` (so it is still logged) and
+        // through the outer layers (so it still carries security headers).
+        .layer(CatchPanicLayer::new())
+        // Traffic blocking is applied globally (as in crates.io) so blocked
+        // IPs/routes/user agents cannot reach operational endpoints either;
+        // it only reads config, headers, and `RealIp`.
         .layer(from_fn_with_state(state.clone(), self::block_traffic))
+        // Bound the request inside the logging layers so a timeout 408 is
+        // still logged by `log_request`/`error_handler`.
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ))
         .layer(from_fn(log_request))
         .layer(from_fn_with_state(state.clone(), self::real_ip::middleware))
         // `error_handler` is a pure logging layer; `request_format` scopes the
@@ -84,19 +96,7 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         // responses and `HtmlTemplate` can negotiate HTML/HTMX/JSON.
         .layer(from_fn(self::error_handler::middleware))
         .layer(from_fn(self::request_format::middleware))
-        .layer(CatchPanicLayer::new())
         .layer(from_fn(self::require_user_agent::require_user_agent))
-        // Outermost request-id: it must run before `require_user_agent` so the
-        // generated ID exists in extensions (and on rejection responses).
-        .layer(from_fn(self::request_id::middleware))
-        .layer(from_fn_with_state(
-            security_headers_config,
-            self::security_headers::middleware,
-        ))
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(30),
-        ))
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(30)))
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
 {% if metrics %}
@@ -106,6 +106,11 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         self::metrics::update_metrics,
     ));
 {% endif %}
+    // Second panic guard for panics in the middleware itself — the inner one
+    // only covers handlers. Its 500 skips the inner logging layers (their
+    // futures were destroyed by the unwind) but still gets CORS.
+    let router = router.layer(CatchPanicLayer::new());
+
     // CORS is the outermost layer so preflights are answered before the user
     // agent check, session middleware, or rate limiting can run.
     let router = router.layer(cors);
@@ -125,18 +130,9 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
 /// `router::build_axum_router`) and never see this stack. Rate limiting and
 /// CSRF validation are applied even more selectively via `route_layer`.
 pub(crate) fn apply_app_middleware(state: AppState, router: Router<AppState>) -> Router<AppState> {
-    let env = state.config.env();
-
-    // Determine whether session cookies should have the Secure flag.
-    // Enabled by default in production, and can be toggled via SESSION_COOKIE_SECURE.
-    let session_cookie_secure = match dotenvy::var("SESSION_COOKIE_SECURE").ok().as_deref() {
-        Some(v) if v.trim().eq_ignore_ascii_case("true") || v.trim() == "1" => true,
-        Some(v) if v.trim().eq_ignore_ascii_case("false") || v.trim() == "0" => false,
-        _ => env == Env::Production,
-    };
     let session_state = self::session::SessionState {
         key: state.0.session_key.clone(),
-        secure: session_cookie_secure,
+        secure: state.config.session_cookie_secure,
     };
 
     // innermost -> outermost: verify_origin -> authenticate -> session.
@@ -162,7 +158,7 @@ pub(crate) async fn rate_limit(
     let real_ip = req
         .extensions()
         .get::<RealIp>()
-        .map(|ip| ip.0.to_string())
+        .map(|ip| rate_limit_bucket_key(ip.0))
         .unwrap_or_else(|| "unknown".to_string());
 
     let bucket_id = req
@@ -185,7 +181,28 @@ pub(crate) async fn rate_limit(
         .await
     {
         Ok(()) => next.run(req).await,
-        Err(e) => rate_limited(e.action.error_message(), e.retry_after).response(),
+        Err(e) if e.is_limited() => {
+            rate_limited(e.action.error_message(), e.retry_after).response()
+        }
+        Err(e) => {
+            // Database failures are not "too many requests": fail open so a
+            // limiter outage doesn't take the API down with it, and log so
+            // the underlying DB problem isn't hidden.
+            tracing::error!(error = %e, ?action, "Rate limiter failed; allowing request");
+            next.run(req).await
+        }
+    }
+}
+
+/// Reduce a client IP to a rate-limit bucket key. IPv6 users commonly control
+/// a whole `/64` prefix, so keying on the full address lets them rotate
+/// interface IDs to bypass the limit.
+fn rate_limit_bucket_key(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V6(v6) => ipnet::Ipv6Net::new(v6, 64)
+            .map(|net| net.trunc().network().to_string())
+            .unwrap_or_else(|_| v6.to_string()),
+        std::net::IpAddr::V4(v4) => v4.to_string(),
     }
 }
 

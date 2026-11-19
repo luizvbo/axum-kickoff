@@ -30,14 +30,11 @@
             <h2 class="section-title">Counter</h2>
 
             <div class="counter-container">
-                <!-- Counter display - updated via HTMX -->
-                <div
-                    id="counter-display"
-                    hx-post="/examples/counter/increment"
-                    hx-trigger="load"
-                    hx-swap="innerHTML"
-                >
-                    Loading...
+                <!-- Counter display - updated via HTMX. Rendered server-side
+                     at 0; the buttons' hx-post requests carry the hidden
+                     count input forward. -->
+                <div id="counter-display">
+                    {% include "examples/counter_partial.html" %}
                 </div>
 
                 <div class="counter-controls">

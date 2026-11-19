@@ -8,7 +8,10 @@ expression: body
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="">
+  
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
   <title>404 - Error</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link nonce="[CSP_NONCE]" rel="stylesheet" href="/static/css/style.css">
   <script nonce="[CSP_NONCE]" src="/static/vendor/htmx.min.js"></script>
   <script nonce="[CSP_NONCE]" defer src="/static/vendor/alpine.js"></script>
@@ -20,7 +23,7 @@ expression: body
     <h1 class="error-status">404</h1>
     <p class="error-message">Not Found</p>
     <p class="error-back">
-        <a href="/" class="btn btn-secondary">Back to Home</a>
+        <a href="/" class="btn btn-secondary-solid">Back to Home</a>
     </p>
 </main>
 

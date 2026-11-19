@@ -48,8 +48,19 @@ pub fn build_handler(app: Arc<App>) -> axum::Router {
     let state = AppState(app.clone());
 
     let axum_router = build_axum_router(state.clone());
-    let axum_router = middleware::apply_axum_middleware(state, axum_router);
-    axum::Router::new().fallback_service(
-        axum::middleware::from_fn(crate::middleware::normalize_path::middleware).layer(axum_router),
+    let axum_router = middleware::apply_axum_middleware(state.clone(), axum_router);
+    // `normalize_path` runs pre-routing (it rewrites the URI before route
+    // matching). `request_id` and `security_headers` wrap it so its 400
+    // rejections — and every error from the inner stack — still carry
+    // `X-Request-ID` and CSP/security headers.
+    let axum_router =
+        axum::middleware::from_fn(crate::middleware::normalize_path::middleware).layer(axum_router);
+    let axum_router =
+        axum::middleware::from_fn(crate::middleware::request_id::middleware).layer(axum_router);
+    let axum_router = axum::middleware::from_fn_with_state(
+        state.config.security_headers.clone(),
+        crate::middleware::security_headers::middleware,
     )
+    .layer(axum_router);
+    axum::Router::new().fallback_service(axum_router)
 }

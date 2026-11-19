@@ -63,14 +63,20 @@ impl StorageConfig {
     /// Environment variables:
     /// - `STORAGE_PATH`: Path for local filesystem storage (default: "./local_uploads")
     /// - `CDN_PREFIX`: Optional CDN prefix for generating URLs
-    pub fn from_environment() -> Self {
-        let path = dotenvy::var("STORAGE_PATH").unwrap_or_else(|_| "./local_uploads".to_string());
-        let cdn_prefix = dotenvy::var("CDN_PREFIX").ok();
+    pub fn from_environment() -> anyhow::Result<Self> {
+        use crate::config::env as config_env;
 
-        Self {
+        // A set-but-empty path would fail later in `create_dir_all("")` with
+        // an opaque IO error — reject it here with the variable name.
+        let path = config_env::var("STORAGE_PATH")?
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| "./local_uploads".to_string());
+        let cdn_prefix = config_env::var("CDN_PREFIX")?.filter(|v| !v.trim().is_empty());
+
+        Ok(Self {
             backend: StorageBackend::LocalFileSystem { path: path.into() },
             cdn_prefix,
-        }
+        })
     }
 }
 
@@ -82,6 +88,15 @@ pub struct Storage {
 
 /// Validate that a storage path is safe and doesn't escape the base directory
 fn safe_storage_path(base: &Path, input: &str) -> anyhow::Result<PathBuf> {
+    // An input resolving to the storage root itself (empty, ".", "./") would
+    // make upload/download/delete operate on the base directory.
+    let has_real_component = Path::new(input.trim())
+        .components()
+        .any(|c| !matches!(c, std::path::Component::CurDir));
+    if !has_real_component {
+        anyhow::bail!("Invalid storage path: resolves to the storage root");
+    }
+
     let path = Path::new(input);
 
     // Reject absolute paths
@@ -129,7 +144,7 @@ impl Storage {
 
     /// Create storage from environment variables
     pub fn from_environment() -> anyhow::Result<Self> {
-        Self::from_config(&StorageConfig::from_environment())
+        Self::from_config(&StorageConfig::from_environment()?)
     }
 
     /// Get the public URL for a file
@@ -632,7 +647,7 @@ mod tests {
         std::env::set_var("STORAGE_PATH", "/custom/path");
         std::env::set_var("CDN_PREFIX", "cdn.example.com");
 
-        let config = StorageConfig::from_environment();
+        let config = StorageConfig::from_environment().unwrap();
         assert!(matches!(
             config.backend,
             StorageBackend::LocalFileSystem { path } if path == *"/custom/path"

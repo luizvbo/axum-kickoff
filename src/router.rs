@@ -56,6 +56,7 @@ use crate::Env;
             crate::controllers::token::ListTokensResponse,
         )
     ),
+    modifiers(&SecurityAddon),
     tags(
         (name = "Posts", description = "Blog post CRUD operations"),
         (name = "Tokens", description = "API token management")
@@ -67,12 +68,38 @@ use crate::Env;
     ),
     servers(
         (url = "http://localhost:8888", description = "Local development server")
-    ),
-    security(
-        ("bearer_auth" = [])
     )
 )]
 struct ApiDoc;
+
+/// Registers the `bearer_auth` and `cookie_auth` security schemes so the
+/// per-path `security(...)` requirements resolve in the generated spec.
+struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        use utoipa::openapi::security::{
+            ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme,
+        };
+
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "bearer_auth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("API token")
+                    .build(),
+            ),
+        );
+        components.add_security_scheme(
+            "cookie_auth",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(
+                crate::middleware::session::COOKIE_NAME,
+            ))),
+        );
+    }
+}
 
 /// Common context passed to every full-page and partial HTML template.
 #[derive(Clone, Debug)]
@@ -86,6 +113,12 @@ pub struct PageContext {
     /// OAuth providers with credentials configured — drives the sign-in
     /// buttons on the login page.
     pub oauth_providers: Vec<&'static crate::oauth::OAuthProviderSpec>,
+    /// Whether the request is authenticated — drives the navbar's
+    /// sign-in/sign-out state.
+    pub logged_in: bool,
+    /// Whether the Swagger UI / api-docs routes are enabled — used to hide
+    /// dead links when docs are turned off.
+    pub api_docs_enabled: bool,
 }
 
 /// Human-friendly application name derived from the crate's package name
@@ -140,6 +173,11 @@ impl FromRequestParts<AppState> for PageContext {
                 .iter()
                 .map(|provider| provider.spec)
                 .collect(),
+            logged_in: parts
+                .extensions
+                .get::<crate::util::auth::Authentication>()
+                .is_some(),
+            api_docs_enabled: state.0.config.api_docs_enabled,
         })
     }
 }
@@ -164,6 +202,7 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
     // Operational routes — infrastructure middleware only.
     let ops_router = Router::new()
         .route("/health", get(health_check))
+        .route("/robots.txt", get(robots_txt))
         .nest_service(
             "/static",
             ServeDir::new("static")
@@ -260,10 +299,17 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
 
     let app_router = crate::middleware::apply_app_middleware(state.clone(), app_router);
 
-    Router::new()
-        .merge(ops_router)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .merge(app_router)
+    // Swagger UI and the OpenAPI document are opt-in: enabled by default in
+    // development/test via ENABLE_API_DOCS, off in production so a generated
+    // app doesn't ship its API surface to the internet unauthenticated.
+    let router = Router::new().merge(ops_router).merge(app_router);
+    let router = if state.config.api_docs_enabled {
+        router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+    } else {
+        router
+    };
+
+    router
         .fallback(async |method: Method| match method {
             Method::HEAD => StatusCode::NOT_FOUND.into_response(),
             _ => {
@@ -277,6 +323,10 @@ pub fn build_axum_router(state: AppState) -> Router<()> {
 async fn home(ctx: PageContext) -> impl IntoResponse {
     let template = IndexTemplate { ctx };
     HtmlTemplate::new(template)
+}
+
+async fn robots_txt() -> &'static str {
+    "User-agent: *\nDisallow:\n"
 }
 
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
@@ -404,15 +454,21 @@ fn template_render_error(description: &str, err: askama::Error) -> Response {
 mod tests {
     use super::*;
 
+    fn test_ctx() -> PageContext {
+        PageContext {
+            csrf_token: "test-csrf".into(),
+            csp_nonce: "test-nonce".into(),
+            app_name: app_name(),
+            oauth_providers: Vec::new(),
+            logged_in: false,
+            api_docs_enabled: true,
+        }
+    }
+
     #[test]
     fn test_html_template_renders_with_page_context() {
         let template = ServerTimeTemplate {
-            ctx: PageContext {
-                csrf_token: "test-csrf".into(),
-                csp_nonce: "test-nonce".into(),
-                app_name: app_name(),
-                oauth_providers: Vec::new(),
-            },
+            ctx: test_ctx(),
             time: "now".to_string(),
         };
         let response = HtmlTemplate::new(template).into_response();
@@ -422,21 +478,11 @@ mod tests {
     #[test]
     fn test_html_template_with_partial_renders_full_by_default() {
         let full = ServerTimeTemplate {
-            ctx: PageContext {
-                csrf_token: "test-csrf".into(),
-                csp_nonce: "test-nonce".into(),
-                app_name: app_name(),
-                oauth_providers: Vec::new(),
-            },
+            ctx: test_ctx(),
             time: "now".to_string(),
         };
         let partial = ServerTimePartialTemplate {
-            ctx: PageContext {
-                csrf_token: "test-csrf".into(),
-                csp_nonce: "test-nonce".into(),
-                app_name: app_name(),
-                oauth_providers: Vec::new(),
-            },
+            ctx: test_ctx(),
             time: "now".to_string(),
         };
         let response = HtmlTemplate::new(full)

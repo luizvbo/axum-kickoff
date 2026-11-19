@@ -86,7 +86,10 @@ let check = AuthCheck::default()
 
 ## Creating Scoped Tokens
 
-When creating an API token, you can specify scopes:
+Both `resource_scopes` and `action_scopes` are **required** when creating a
+token through the API (`["*"]` grants all resources). At the model layer
+scopes remain optional so that tokens created before this requirement keep
+working:
 
 ```rust
 use crate::models::token::{ApiToken, ActionScope, ResourceScope};

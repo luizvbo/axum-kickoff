@@ -40,7 +40,6 @@ struct ContactPageTemplate {
 #[derive(Template)]
 #[template(path = "examples/contact_success.html")]
 struct ContactSuccessTemplate {
-    ctx: PageContext,
     name: String,
     email: String,
 }
@@ -111,7 +110,6 @@ pub async fn contact_submit(
 
     // Return success partial
     let template = ContactSuccessTemplate {
-        ctx,
         name: form.name,
         email: form.email,
     };
@@ -127,6 +125,7 @@ pub async fn contact_submit(
 #[template(path = "examples/counter.html")]
 struct CounterPageTemplate {
     ctx: PageContext,
+    count: i32,
 }
 
 /// Counter partial template - Returned on increment/decrement
@@ -138,9 +137,10 @@ struct CounterPartialTemplate {
     count: i32,
 }
 
-/// Render the counter page
+/// Render the counter page. The display is rendered at 0 so the page does
+/// not fire a spurious increment request on load.
 pub async fn counter_page(ctx: PageContext) -> impl IntoResponse {
-    let template = CounterPageTemplate { ctx };
+    let template = CounterPageTemplate { ctx, count: 0 };
     HtmlTemplate::new(template)
 }
 

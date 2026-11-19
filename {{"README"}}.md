@@ -44,6 +44,10 @@ cp .env.sample .env
 
 # Run the server
 cargo run --bin {{project-name}} -- server
+
+# In another terminal: apply migrations and run the background worker
+cargo run --bin {{project-name}} -- migrate
+cargo run --bin {{project-name}} -- background-worker
 ```
 
 The server will start on `http://localhost:8888` by default.
@@ -90,48 +94,6 @@ STORAGE_PATH=./local_uploads
 ```
 
 See [Configuration Documentation](docs/CONFIGURATION.md) for all available options.
-
-## Using this repository as a template
-
-This repository is a [cargo-generate](https://github.com/cargo-generate/cargo-generate) template:
-
-```bash
-cargo install cargo-generate
-cargo generate --git https://github.com/luizvbo/axum-kickoff --name my-app
-```
-
-You'll be prompted for the options below (or pass `-d <key>=<value>` to skip prompts):
-
-| Option | Values | Default | Effect |
-| ------ | ------ | ------- | ------ |
-| `project-name` | any crate-safe name | asked once | Package name, binary name, session cookie (`<crate_name>_session`), default SQLite file (`<crate_name>.db`), PostgreSQL `application_name`, API title, user-agent strings, and the on-page application branding |
-| `database` | `sqlite` / `postgresql` | `sqlite` | `sqlite`: zero-setup file database. `postgresql`: adds the Toasty Postgres driver and a `postgresql://` default `DATABASE_URL`. SQLite stays enabled either way. The test suite uses in-memory SQLite regardless |
-| `oauth_github` | `true` / `false` | `true` | Compiles in the GitHub OAuth provider, enabled at runtime when `GH_CLIENT_ID`/`GH_CLIENT_SECRET` are set |
-| `oauth_google` | `true` / `false` | `false` | Same for Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) |
-| `oauth_facebook` | `true` / `false` | `false` | Same for Facebook (`FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`) |
-| `metrics` | `true` / `false` | `false` | Adds the `prometheus` dependency, a `metrics` feature in `default`, the `/metrics` endpoint, and request instrumentation middleware |
-| `sentry` | `true` / `false` | `false` | Adds `sentry` + `sentry-tracing` dependencies and feature, error-event capture via the tracing layer, and `SENTRY_DSN` support |
-| `jemalloc` | `true` / `false` | `false` | Adds `tikv-jemallocator` and sets jemalloc as the global allocator |
-
-The background worker, filesystem storage, and Swagger/OpenAPI subsystems are
-unconditional parts of the application, not template options.
-
-> **PostgreSQL note**: the template ships a migration set per backend
-> (`migrations/` for SQLite, `migrations-postgres/` for PostgreSQL) and keeps
-> only the one matching `database`, so `migrate` works out of the box on
-> either backend. The test suite is unaffected: it runs on in-memory SQLite.
-
-### Non-interactive generation
-
-```bash
-cargo generate --git https://github.com/luizvbo/axum-kickoff \
-  --name my-app --silent \
-  -d database=postgresql -d metrics=true -d sentry=true -d jemalloc=true
-```
-
-See the "Working on this template" section in
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how the template itself is
-developed and verified.
 
 ## Documentation
 

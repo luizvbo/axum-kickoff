@@ -74,7 +74,7 @@ impl DatabaseConfig {
             "postgresql" | "postgres" => {
                 if !query.contains_key("application_name") {
                     let application_name = env::var("DATABASE_APPLICATION_NAME")?
-                        .unwrap_or_else(|| "{{crate_name}}".to_string());
+                        .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string());
                     query.insert("application_name".to_string(), application_name);
                 }
 

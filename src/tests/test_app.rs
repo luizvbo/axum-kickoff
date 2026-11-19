@@ -82,6 +82,7 @@ impl TestApp {
             max_blocking_threads: None,
             core_threads: None,
             domain_name: "localhost".to_string(),
+            public_base_url: "http://localhost:8888".to_string(),
             allowed_origins: AllowedOrigins::parse("http://localhost:3000"),
             blocked_ips: Default::default(),
             blocked_routes: Default::default(),
@@ -123,6 +124,9 @@ impl TestApp {
             metrics_token: None,
             sentry_dsn: None,
             log_format: LogFormat::Pretty,
+            session_cookie_secure: false,
+            security_headers: Default::default(),
+            api_docs_enabled: true,
         }
     }
 

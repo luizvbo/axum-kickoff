@@ -6,12 +6,13 @@
 //! crates.io-style { "errors": [{ "detail": "..." }] } format.
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// Standard success response wrapper
 ///
 /// Wraps successful responses in a consistent structure with a data field.
 /// This matches the crates.io pattern for API responses.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T> {
     pub data: T,
 }

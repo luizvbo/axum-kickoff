@@ -15,6 +15,18 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 #[derive(Clone, Debug)]
 pub struct RequestId(pub String);
 
+/// Client-supplied `X-Request-ID` values are honored only when they look like
+/// IDs — bounded length, common ID characters. Anything else (log injection
+/// attempts, garbage) is replaced with a fresh UUID.
+fn sanitize_request_id(value: &str) -> Option<String> {
+    let ok = value.len() <= 128
+        && !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    ok.then(|| value.to_string())
+}
+
 /// Middleware that generates a request ID, adds it to extensions and tracing span,
 /// and includes it in the response headers.
 pub async fn middleware(mut req: Request, next: Next) -> Response {
@@ -22,7 +34,7 @@ pub async fn middleware(mut req: Request, next: Next) -> Response {
         .headers()
         .get(REQUEST_ID_HEADER)
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
+        .and_then(sanitize_request_id)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     req.extensions_mut().insert(RequestId(request_id.clone()));

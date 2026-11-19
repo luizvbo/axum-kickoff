@@ -15,7 +15,9 @@ pub struct ApiToken {
     #[auto]
     pub id: u64,
 
-    /// Foreign key to the user
+    /// Foreign key to the user. Indexed: tokens are listed and revoked by
+    /// owner on every token-management request.
+    #[index]
     pub user_id: u64,
 
     /// The name of the token

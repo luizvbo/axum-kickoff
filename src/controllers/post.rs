@@ -73,7 +73,7 @@ pub struct ListPostsResponse {
         ListPostsParams
     ),
     responses(
-        (status = 200, description = "Paginated list of posts", body = ListPostsResponse)
+        (status = 200, description = "Paginated list of posts", body = ApiResponse<ListPostsResponse>)
     ),
     tag = "Posts"
 )]
@@ -84,7 +84,7 @@ pub async fn list_posts(
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params
         .per_page
-        .map(|p| (p as usize).min(MAX_PER_PAGE))
+        .map(|p| (p as usize).clamp(1, MAX_PER_PAGE))
         .unwrap_or(DEFAULT_PER_PAGE);
     let offset = ((page - 1) as usize).saturating_mul(per_page);
 
@@ -130,7 +130,7 @@ pub async fn list_posts(
         ("id" = u64, Path, description = "Post ID")
     ),
     responses(
-        (status = 200, description = "Post details", body = PostResponse),
+        (status = 200, description = "Post details", body = ApiResponse<PostResponse>),
         (status = 404, description = "Post not found")
     ),
     tag = "Posts"
@@ -169,13 +169,14 @@ pub async fn show_post(
     path = "/api/v1/posts",
     request_body = CreatePostRequest,
     responses(
-        (status = 201, description = "Post created", body = PostResponse),
+        (status = 201, description = "Post created", body = ApiResponse<PostResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 400, description = "Bad request")
     ),
     tag = "Posts",
     security(
-        ("bearer_auth" = [])
+        ("bearer_auth" = []),
+        ("cookie_auth" = [])
     )
 )]
 pub async fn create_post(
@@ -233,14 +234,15 @@ pub async fn create_post(
     ),
     request_body = UpdatePostRequest,
     responses(
-        (status = 200, description = "Post updated", body = PostResponse),
+        (status = 200, description = "Post updated", body = ApiResponse<PostResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Post not found"),
         (status = 400, description = "Bad request")
     ),
     tag = "Posts",
     security(
-        ("bearer_auth" = [])
+        ("bearer_auth" = []),
+        ("cookie_auth" = [])
     )
 )]
 pub async fn update_post(
@@ -312,7 +314,8 @@ pub async fn update_post(
     ),
     tag = "Posts",
     security(
-        ("bearer_auth" = [])
+        ("bearer_auth" = []),
+        ("cookie_auth" = [])
     )
 )]
 pub async fn delete_post(
@@ -348,13 +351,14 @@ pub async fn delete_post(
         ("id" = u64, Path, description = "Post ID")
     ),
     responses(
-        (status = 200, description = "Post published", body = PostResponse),
+        (status = 200, description = "Post published", body = ApiResponse<PostResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Post not found")
     ),
     tag = "Posts",
     security(
-        ("bearer_auth" = [])
+        ("bearer_auth" = []),
+        ("cookie_auth" = [])
     )
 )]
 pub async fn publish_post(
@@ -408,13 +412,14 @@ pub async fn publish_post(
         ("id" = u64, Path, description = "Post ID")
     ),
     responses(
-        (status = 200, description = "Post unpublished", body = PostResponse),
+        (status = 200, description = "Post unpublished", body = ApiResponse<PostResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Post not found")
     ),
     tag = "Posts",
     security(
-        ("bearer_auth" = [])
+        ("bearer_auth" = []),
+        ("cookie_auth" = [])
     )
 )]
 pub async fn unpublish_post(

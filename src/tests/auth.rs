@@ -383,6 +383,9 @@ async fn forged_unsigned_session_cookie_is_rejected() {
 async fn session_cookie_has_required_security_flags_in_production() {
     let mut config = TestApp::test_config();
     config.base.env = Env::Production;
+    // Production config sets this from SESSION_COOKIE_SECURE/default-true;
+    // replicate it here since the test builds the config directly.
+    config.session_cookie_secure = true;
     let app = TestApp::with_config(config).await;
     let Some(slug) = test_provider(&app).map(|p| p.spec.slug) else {
         return;

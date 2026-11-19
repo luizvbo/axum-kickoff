@@ -277,7 +277,11 @@ async fn csrf_protected_route_with_valid_csrf_succeeds() {
     let response = cookie_user
         .post_with_headers::<serde_json::Value>(
             "/api/v1/tokens",
-            serde_json::json!({ "name": "test-token" }),
+            serde_json::json!({
+                "name": "test-token",
+                "resource_scopes": ["*"],
+                "action_scopes": ["admin"]
+            }),
             cookie_user.headers_with_csrf(&csrf_token),
         )
         .await;

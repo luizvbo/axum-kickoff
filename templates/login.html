@@ -17,7 +17,7 @@
             <div class="hero-actions">
                 {% for provider in ctx.oauth_providers %}
                 <a
-                    class="btn btn-primary"
+                    class="btn btn-primary-solid"
                     href="/api/v1/auth/{{ provider.slug }}/authorize?redirect_to={{ redirect_to | urlencode }}"
                     >Sign in with {{ provider.display_name }}</a
                 >

@@ -33,7 +33,11 @@ impl HashedToken {
     ///
     /// This will both reject tokens without a prefix and tokens of the wrong kind.
     pub fn parse(plaintext: &str) -> Result<Self, InvalidTokenError> {
-        if !plaintext.starts_with(TOKEN_PREFIX) {
+        // Wrong-length strings can't be real tokens — reject them before
+        // hashing so `validate_token` never hits the DB on garbage input.
+        if plaintext.len() != TOKEN_PREFIX.len() + TOKEN_LENGTH
+            || !plaintext.starts_with(TOKEN_PREFIX)
+        {
             return Err(InvalidTokenError);
         }
 
@@ -196,9 +200,16 @@ mod tests {
 
     #[test]
     fn test_parse_valid_token_with_prefix() {
-        let valid_token = "ako_abcdefghijklmnopqrstuvwxyz123456";
-        let result = HashedToken::parse(valid_token);
+        let valid_token = format!("{}{}", TOKEN_PREFIX, "a".repeat(TOKEN_LENGTH));
+        let result = HashedToken::parse(&valid_token);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_rejects_wrong_length() {
+        // One byte short — must be rejected before hashing.
+        let short = format!("{}{}", TOKEN_PREFIX, "a".repeat(TOKEN_LENGTH - 1));
+        assert!(HashedToken::parse(&short).is_err());
     }
 
     #[test]

@@ -24,9 +24,11 @@ use crate::util::PlainToken;
 pub struct CreateTokenRequest {
     /// The name of the token
     pub name: String,
-    /// Optional resource scope patterns (as strings, will be validated)
+    /// Required resource scope patterns (`["*"]` grants all resources).
+    /// Scopes must be declared explicitly — an absent field is rejected so a
+    /// caller can't mint an unrestricted token by omission.
     pub resource_scopes: Option<Vec<String>>,
-    /// Optional action scopes (as strings, will be validated)
+    /// Required action scopes (`["admin"]` grants all actions).
     pub action_scopes: Option<Vec<String>>,
     /// Optional expiration date (ISO 8601 format)
     pub expires_at: Option<String>,
@@ -49,28 +51,30 @@ impl CreateTokenRequest {
             ));
         }
 
-        // Validate resource scopes
+        // Scopes are required: omitting them would mint an unrestricted
+        // "legacy" token (the `None` scope path in AuthCheck).
         let resource_scopes = self
             .resource_scopes
-            .map(|scopes| {
-                scopes
-                    .into_iter()
-                    .map(ResourceScope::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()
+            .ok_or_else(|| "resource_scopes is required (use [\"*\"] for all)".to_string())?;
+        if resource_scopes.is_empty() {
+            return Err("resource_scopes must not be empty".to_string());
+        }
+        let resource_scopes = resource_scopes
+            .into_iter()
+            .map(ResourceScope::try_from)
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Invalid resource scope: {}", e))?;
 
-        // Validate action scopes
         let action_scopes = self
             .action_scopes
-            .map(|scopes| {
-                scopes
-                    .into_iter()
-                    .map(|s| ActionScope::parse(&s))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()
+            .ok_or_else(|| "action_scopes is required (use [\"admin\"] for all)".to_string())?;
+        if action_scopes.is_empty() {
+            return Err("action_scopes must not be empty".to_string());
+        }
+        let action_scopes = action_scopes
+            .into_iter()
+            .map(|s| ActionScope::parse(&s))
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Invalid action scope: {}", e))?;
 
         // Validate expiration date. Accept any RFC 3339 / ISO 8601 timestamp
@@ -90,8 +94,8 @@ impl CreateTokenRequest {
 
         Ok(ValidatedCreateTokenRequest {
             name,
-            resource_scopes,
-            action_scopes,
+            resource_scopes: Some(resource_scopes),
+            action_scopes: Some(action_scopes),
             expires_at,
         })
     }
@@ -155,13 +159,13 @@ pub struct TokenListItem {
     path = "/api/v1/tokens",
     request_body = CreateTokenRequest,
     responses(
-        (status = 201, description = "Token created", body = CreateTokenResponse),
+        (status = 201, description = "Token created", body = ApiResponse<CreateTokenResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 400, description = "Bad request")
     ),
     tag = "Tokens",
     security(
-        ("bearer_auth" = [])
+        ("cookie_auth" = [])
     )
 )]
 pub async fn create_token(
@@ -170,10 +174,9 @@ pub async fn create_token(
     State(state): State<AppState>,
     Json(req): Json<CreateTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
-    AuthCheck::new()
-        .with_action_scope(ActionScope::Create)
-        .for_crate("tokens")
-        .check(&auth)?;
+    // Token management is cookie-only: an API token must never be able to
+    // list, mint, or revoke other tokens (mirroring crates.io's model).
+    AuthCheck::only_cookie().check(&auth)?;
 
     // Validate the request
     let validated = req.validate().map_err(bad_request)?;
@@ -268,12 +271,12 @@ const MAX_TOKEN_PER_PAGE: usize = 100;
         ListTokensParams
     ),
     responses(
-        (status = 200, description = "Paginated list of tokens", body = ListTokensResponse),
+        (status = 200, description = "Paginated list of tokens", body = ApiResponse<ListTokensResponse>),
         (status = 401, description = "Unauthorized")
     ),
     tag = "Tokens",
     security(
-        ("bearer_auth" = [])
+        ("cookie_auth" = [])
     )
 )]
 pub async fn list_tokens(
@@ -282,22 +285,21 @@ pub async fn list_tokens(
     State(state): State<AppState>,
     Query(params): Query<ListTokensParams>,
 ) -> AppResult<impl IntoResponse> {
-    AuthCheck::new()
-        .with_action_scope(ActionScope::Read)
-        .for_crate("tokens")
-        .check(&auth)?;
+    AuthCheck::only_cookie().check(&auth)?;
 
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params
         .per_page
-        .map(|p| (p as usize).min(MAX_TOKEN_PER_PAGE))
+        .map(|p| (p as usize).clamp(1, MAX_TOKEN_PER_PAGE))
         .unwrap_or(DEFAULT_TOKEN_PER_PAGE);
     let offset = ((page - 1) as usize).saturating_mul(per_page);
 
     let mut db = state.0.database.db_clone();
 
-    // Query tokens for the user using Toasty's filter API with pagination
+    // Query tokens for the user using Toasty's filter API with pagination.
+    // A deterministic order keeps page boundaries stable.
     let tokens = ApiToken::filter(ApiToken::fields().user_id().eq(user_id))
+        .order_by(ApiToken::fields().id().desc())
         .limit(per_page)
         .offset(offset)
         .exec(&mut db)
@@ -353,7 +355,7 @@ pub async fn list_tokens(
     ),
     tag = "Tokens",
     security(
-        ("bearer_auth" = [])
+        ("cookie_auth" = [])
     )
 )]
 pub async fn revoke_token(
@@ -362,10 +364,7 @@ pub async fn revoke_token(
     State(state): State<AppState>,
     Path(token_id): Path<u64>,
 ) -> AppResult<impl IntoResponse> {
-    AuthCheck::new()
-        .with_action_scope(ActionScope::Delete)
-        .for_crate("tokens")
-        .check(&auth)?;
+    AuthCheck::only_cookie().check(&auth)?;
 
     let mut db = state.0.database.db_clone();
 
@@ -402,10 +401,29 @@ mod tests {
     fn request_with_expiry(expires_at: &str) -> CreateTokenRequest {
         CreateTokenRequest {
             name: "test".to_string(),
-            resource_scopes: None,
-            action_scopes: None,
+            resource_scopes: Some(vec!["*".to_string()]),
+            action_scopes: Some(vec!["admin".to_string()]),
             expires_at: Some(expires_at.to_string()),
         }
+    }
+
+    #[test]
+    fn test_validate_requires_explicit_scopes() {
+        let req = CreateTokenRequest {
+            name: "test".to_string(),
+            resource_scopes: None,
+            action_scopes: Some(vec!["admin".to_string()]),
+            expires_at: None,
+        };
+        assert!(req.validate().is_err());
+
+        let req = CreateTokenRequest {
+            name: "test".to_string(),
+            resource_scopes: Some(vec![]),
+            action_scopes: Some(vec!["admin".to_string()]),
+            expires_at: None,
+        };
+        assert!(req.validate().is_err());
     }
 
     #[test]

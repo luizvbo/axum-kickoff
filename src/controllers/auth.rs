@@ -337,9 +337,14 @@ pub async fn oauth_callback(
     session.remove(SESSION_OAUTH_PROVIDER);
     session.remove("csrf_token");
 
-    // Set user_id in session (this will trigger a fresh signed cookie)
+    // Set user_id in session (this will trigger a fresh encrypted cookie).
+    // Stamp the embedded expiry so the session is bounded independently of
+    // the browser-honored cookie Max-Age.
+    use crate::middleware::session::{SESSION_EXPIRES_AT, SESSION_TTL};
+    let expires_at = jiff::Timestamp::now().as_second() + SESSION_TTL.whole_seconds();
     session.insert("user_id".to_string(), user.id.to_string());
     session.insert("user_login".to_string(), user.login);
+    session.insert(SESSION_EXPIRES_AT.to_string(), expires_at.to_string());
 
     // Generate new CSRF token for the fresh session
     use crate::middleware::csrf::generate_token;
@@ -436,6 +441,13 @@ fn is_valid_redirect(url: &str, _domain_name: &str) -> bool {
         return false;
     }
 
+    // The value lands in a `Location` header. Control characters or
+    // non-ASCII input make `HeaderValue` construction fail inside
+    // `Redirect::to` — a 500 raised *after* the session was established.
+    if !url.is_ascii() || axum::http::HeaderValue::from_str(url).is_err() {
+        return false;
+    }
+
     // Only allow relative URLs (but not protocol-relative)
     url.starts_with('/')
 }
@@ -493,6 +505,16 @@ mod tests {
         assert!(is_valid_redirect("/path/with-dash", "localhost"));
         assert!(is_valid_redirect("/path/with_underscore", "localhost"));
         assert!(is_valid_redirect("/path/with.dot", "localhost"));
+    }
+
+    #[test]
+    fn test_is_valid_redirect_rejects_non_ascii_and_control_chars() {
+        // Raw CR/LF or other control bytes would break `Location` header
+        // construction mid-flow (a 500 after login already happened).
+        assert!(!is_valid_redirect("/\r\nHeader: x", "localhost"));
+        assert!(!is_valid_redirect("/café", "localhost"));
+        // Percent-encoded input is fine — it stays opaque ASCII in the header.
+        assert!(is_valid_redirect("/%0d%0a", "localhost"));
     }
 
     #[test]

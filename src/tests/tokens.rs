@@ -37,7 +37,9 @@ async fn create_token_returns_201() {
         .post_with_headers::<Value>(
             "/api/v1/tokens",
             &json!({
-                "name": "my-api-token"
+                "name": "my-api-token",
+                "resource_scopes": ["*"],
+                "action_scopes": ["admin"]
             }),
             headers,
         )
@@ -298,8 +300,10 @@ async fn create_token_without_csrf_returns_error() {
     assert_ne!(response.status(), StatusCode::CREATED);
 }
 
+/// Token management is cookie-only: an API token must never be able to
+/// list, mint, or revoke other tokens — even with matching scopes.
 #[tokio::test]
-async fn token_auth_can_list_tokens_without_csrf() {
+async fn token_auth_cannot_list_tokens() {
     let app = TestApp::new().await;
     let mut db = app.db().db_clone();
 
@@ -320,16 +324,12 @@ async fn token_auth_can_list_tokens_without_csrf() {
 
     let response = token_user.get::<Value>("/api/v1/tokens").await;
 
-    response.assert_status(StatusCode::OK);
-
-    let body = response.into_json::<Value>().await;
-    let data = body["data"].as_array().expect("data should be an array");
-    assert_eq!(data.len(), 1);
-    assert_eq!(data[0]["name"], "read-token");
+    response.assert_status(StatusCode::FORBIDDEN);
 }
 
 /// The `Authorization` scheme is case-insensitive (RFC 6750): clients sending
 /// `bearer <token>` must authenticate the same as `Bearer <token>`.
+/// Exercises a scoped write endpoint so token validation actually runs.
 #[tokio::test]
 async fn token_auth_accepts_lowercase_bearer_scheme() {
     let app = TestApp::new().await;
@@ -342,21 +342,27 @@ async fn token_auth_accepts_lowercase_bearer_scheme() {
         .expect("Failed to create user");
 
     let (_api_token, plain_token) = app
-        .token_builder(user.id, "read-token")
-        .action_scopes(vec![ActionScope::Read])
+        .token_builder(user.id, "write-token")
+        .action_scopes(vec![ActionScope::Create])
         .build(&mut db)
         .await
         .expect("Failed to create token");
 
     let anon = crate::tests::AnonymousUser::new(app);
-    let mut request = anon.request_builder(http::Method::GET, "/api/v1/tokens");
+    let mut request = anon.request_builder(http::Method::POST, "/api/v1/posts");
     request.headers_mut().insert(
         http::header::AUTHORIZATION,
         format!("bearer {plain_token}").parse().unwrap(),
     );
+    request.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+    *request.body_mut() =
+        axum::body::Body::from(serde_json::json!({"title": "t", "content": "c"}).to_string());
 
     let response = anon.run::<Value>(request).await;
-    response.assert_status(StatusCode::OK);
+    response.assert_status(StatusCode::CREATED);
 }
 
 #[tokio::test]

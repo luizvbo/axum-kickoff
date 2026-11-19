@@ -7,7 +7,12 @@ use anyhow::{Context, Result};
 use secrecy::ExposeSecret;
 use std::sync::Arc;
 use std::time::Duration;
+use toasty::migration::MigrationSet;
 use toasty::Db;
+
+/// Migrations embedded at compile time so a deployed binary can apply them
+/// without the `migrations/` directory on disk.
+const MIGRATIONS: MigrationSet = toasty::embed_migrations!("{% if database == "postgresql" %}migrations-postgres{% else %}migrations{% endif %}");
 
 /// Database wrapper with connection management
 #[derive(Clone)]
@@ -41,7 +46,7 @@ impl Database {
         wait_timeout: Option<Duration>,
         create_timeout: Option<Duration>,
     ) -> Result<Self> {
-        let db = Db::builder()
+        let mut db = Db::builder()
             .models(toasty::models!(crate::*))
             .max_pool_size(max_pool_size)
             .pool_wait_timeout(wait_timeout)
@@ -51,6 +56,17 @@ impl Database {
             .connect(config.connect_url()?.expose_secret())
             .await
             .with_context(|| format!("failed to connect to database at {}", config.describe()))?;
+
+        // `journal_mode` is persisted in the database file header, so one
+        // PRAGMA on any connection switches the file to WAL for every current
+        // and future connection. Ignored for in-memory databases, which
+        // report `memory` and can't use WAL.
+        // shortcut: per-connection pragmas (busy_timeout, foreign_keys)
+        // can't be set through toasty's pool — upgrade when the driver gains
+        // a connection-init hook.
+        let _ = toasty::sql::statement("PRAGMA journal_mode=WAL")
+            .exec(&mut db)
+            .await;
 
         Ok(Self { db: Arc::new(db) })
     }
@@ -70,11 +86,17 @@ impl Database {
         self.db.as_ref().clone()
     }
 
-    /// Apply pending Toasty migrations.
+    /// Apply pending migrations embedded in the binary.
+    ///
+    /// Unlike the `toasty` CLI this needs no `Toasty.toml`, `history.toml`,
+    /// or `.sql` files on disk — it works in a release image that ships only
+    /// the binary.
     pub async fn migrate(&self) -> Result<()> {
-        let config = toasty_cli::Config::load()?;
-        let cli = toasty_cli::ToastyCli::with_config(self.db_clone(), config);
-        cli.parse_from(["toasty", "migration", "apply"]).await
+        MIGRATIONS
+            .apply(&self.db)
+            .await
+            .context("failed to apply embedded migrations")?;
+        Ok(())
     }
 }
 

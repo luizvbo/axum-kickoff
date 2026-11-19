@@ -249,18 +249,22 @@ async fn test_endpoint_name() {
 
 ### Configuration
 
-Tests use in-memory SQLite by default:
+By default each test uses a temporary SQLite file. To run the suite against
+PostgreSQL, point `TEST_DATABASE_URL` at a database the user can create
+schemas in:
 
 ```bash
-TEST_DATABASE_URL=sqlite::memory:
+TEST_DATABASE_URL=postgres://postgres:password@localhost:5432/myapp_test cargo test
 ```
 
 ### Isolation
 
 Each test gets an isolated database:
-- Temporary file created on `TestApp::new()`
-- Cleaned up on `TestApp` drop
-- No shared state between tests
+- **SQLite**: a temporary file created per test, removed on drop
+- **PostgreSQL**: a per-test `t_<uuid>` schema on the shared database; the
+  connection's `search_path` is pointed at it in `TestDatabase::new()`, and it
+  is dropped when the test finishes — so the suite is fully parallel-safe on
+  a single database with no external setup beyond the URL
 
 ### Test Data
 

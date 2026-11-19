@@ -47,14 +47,6 @@ async fn metrics_endpoint_returns_prometheus_text() {
         body.contains("db_pool_connections_idle"),
         "metrics output should include db_pool_connections_idle"
     );
-    assert!(
-        body.contains("db_pool_wait_time_seconds"),
-        "metrics output should include db_pool_wait_time_seconds"
-    );
-    assert!(
-        body.contains("db_pool_timeouts_total"),
-        "metrics output should include db_pool_timeouts_total"
-    );
 }
 
 #[tokio::test]

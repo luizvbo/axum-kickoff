@@ -304,14 +304,14 @@ impl CookieUser {
             return None;
         }
 
-        // Try to verify the signed cookie
+        // Try to verify the private (encrypted + signed) cookie
         let mut jar = CookieJar::new();
         jar.add_original(Cookie::new(
             cookie.name().to_string(),
             cookie.value().to_string(),
         ));
         let verified_cookie = jar
-            .signed(&self.session_key)
+            .private(&self.session_key)
             .get(crate::middleware::session::COOKIE_NAME)?;
 
         // Decode the verified cookie value
@@ -386,8 +386,8 @@ impl RequestHelper for TokenUser {
 /// Encode a session cookie header for mock requests
 ///
 /// This matches the session encoding used in the session middleware.
-/// The cookie is signed with the session key to match the verification
-/// done by the middleware on every request.
+/// The cookie is encrypted and signed with the session key to match the
+/// verification done by the middleware on every request.
 pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String {
     let cookie_name = crate::middleware::session::COOKIE_NAME;
 
@@ -407,9 +407,9 @@ pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String 
         .max_age(cookie::time::Duration::days(90))
         .build();
 
-    // Sign the cookie using the session key
+    // Encrypt+sign the cookie using the session key
     let mut jar = cookie::CookieJar::new();
-    jar.signed_mut(session_key).add(cookie);
+    jar.private_mut(session_key).add(cookie);
 
     // Return only the name/value pair for the Cookie header.
     jar.get(cookie_name)

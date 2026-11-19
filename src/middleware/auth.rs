@@ -174,7 +174,7 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
 
 async fn validate_token(state: &AppState, token_str: &str) -> Result<Authentication, Response> {
     let hashed_token =
-        HashedToken::parse(token_str).map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
+        HashedToken::parse(token_str).map_err(|_| unauthorized("Invalid API token").response())?;
 
     let mut db = state.0.database.db_clone();
 
@@ -186,41 +186,43 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<Authenticat
     .first()
     .exec(&mut db)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?
-    .ok_or(StatusCode::UNAUTHORIZED.into_response())?;
+    .map_err(|e| crate::util::errors::db_error(e).response())?
+    .ok_or_else(|| unauthorized("Invalid API token").response())?;
 
     let stored_hash: &[u8] = api_token.token.as_slice();
     let provided_hash: &[u8] = hashed_token.as_bytes();
     if !bool::from(stored_hash.ct_eq(provided_hash)) {
-        return Err(StatusCode::UNAUTHORIZED.into_response());
+        return Err(unauthorized("Invalid API token").response());
     }
 
     if api_token.revoked || !api_token.is_valid() {
-        return Err(StatusCode::UNAUTHORIZED.into_response());
+        return Err(unauthorized("Invalid API token").response());
     }
 
     // Verify the owning user is active and not locked before treating the
     // token as valid.
     let user = User::get_by_id(&mut db, api_token.user_id)
         .await
-        .map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
+        .map_err(|_| unauthorized("Invalid API token").response())?;
     if !user.is_active || user.is_locked() {
-        return Err(StatusCode::FORBIDDEN.into_response());
+        return Err(forbidden("Account is not active").response());
     }
 
     // Refresh last_used_at at most once per hour. A write on every
     // bearer-token request would serialize token-authenticated traffic onto
-    // this row.
+    // this row; a stale timestamp is not worth failing the request over.
     let now = jiff::Timestamp::now();
     let stale = api_token
         .last_used_at
         .is_none_or(|ts| ts < now - jiff::SignedDuration::from_hours(1));
     if stale {
         let last_used_at = Some(now);
-        toasty::update!(api_token { last_used_at })
+        if let Err(e) = toasty::update!(api_token { last_used_at })
             .exec(&mut db)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
+        {
+            tracing::warn!(error = %e, "Failed to update API token last_used_at");
+        }
     }
 
     Ok(Authentication::Token {

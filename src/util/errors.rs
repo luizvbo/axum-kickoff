@@ -161,6 +161,8 @@ fn build_error_response(
             csp_nonce: current_csp_nonce(),
             app_name: crate::router::app_name(),
             oauth_providers: Vec::new(),
+            logged_in: false,
+            api_docs_enabled: true,
         };
         let html = HtmlError {
             ctx,

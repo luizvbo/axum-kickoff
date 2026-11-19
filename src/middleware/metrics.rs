@@ -7,12 +7,25 @@ use axum::response::Response;
 #[cfg(feature = "metrics")]
 use crate::app::AppState;
 
+/// Decrements `requests_in_flight` on drop so client disconnects and
+/// `TimeoutLayer` cancellations can't leak the gauge upward permanently.
+#[cfg(feature = "metrics")]
+struct InFlightGuard(prometheus::IntGauge);
+
+#[cfg(feature = "metrics")]
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.0.dec();
+    }
+}
+
 #[cfg(feature = "metrics")]
 pub async fn update_metrics(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let metrics = state.0.metrics.clone();
 
     metrics.requests_total.inc();
     metrics.requests_in_flight.inc();
+    let _in_flight = InFlightGuard(metrics.requests_in_flight.clone());
 
     // Label by the matched route template (`/api/v1/posts/{id}`), never the
     // raw request path — per-entity URLs would give `endpoint` unbounded
@@ -36,7 +49,6 @@ pub async fn update_metrics(State(state): State<AppState>, req: Request, next: N
         .responses_by_status_code_total
         .with_label_values(&[response.status().as_str()])
         .inc();
-    metrics.requests_in_flight.dec();
 
     response
 }

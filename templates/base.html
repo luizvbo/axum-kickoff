@@ -4,7 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ ctx.csrf_token }}">
+  {# htmx runs under the strict CSP: no injected indicator <style>, no
+     eval()/inline handlers (hx-on), and no re-executed <script> tags in
+     swapped fragments. Indicator styles live in style.css instead. #}
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
   <title>{% block title %}{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link nonce="{{ ctx.csp_nonce }}" rel="stylesheet" href="/static/css/style.css">
   <script nonce="{{ ctx.csp_nonce }}" src="/static/vendor/htmx.min.js"></script>
   <script nonce="{{ ctx.csp_nonce }}" defer src="/static/vendor/alpine.js"></script>

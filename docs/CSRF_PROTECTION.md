@@ -98,7 +98,7 @@ No additional configuration is required. CSRF protection works out of the box wi
 ## Security Considerations
 
 - CSRF tokens are 32-character alphanumeric strings generated using a cryptographically secure random number generator.
-- Tokens are stored in signed session cookies, preventing tampering.
+- Tokens are stored in encrypted session cookies, preventing tampering and client-side reading.
 - Safe HTTP methods (GET, HEAD, OPTIONS) are exempt from CSRF validation.
 - The middleware returns a 400 Bad Request error if CSRF validation fails.
 

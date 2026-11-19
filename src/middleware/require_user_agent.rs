@@ -19,13 +19,12 @@
 //! # How it works
 //!
 //! 1. Checks if the request has a User-Agent header
-//! 2. If missing (and not a download endpoint), returns `403 Forbidden`
-//! 3. Download endpoints are exempt to support older clients that may not set User-Agent
+//! 2. If missing (and not an exempt path), returns `403 Forbidden`
 //!
 //! # Exemptions
 //!
-//! Requests to paths ending with `/download` are always allowed, even without a
-//! User-Agent header. This is to support older clients and backward compatibility.
+//! `/health` is exempt so load balancers and uptime probes that don't set a
+//! User-Agent still get a liveness answer.
 //!
 //! # What is a User-Agent?
 //!
@@ -77,10 +76,10 @@ pub async fn require_user_agent(
         None => "",
     };
 
-    let has_user_agent = !agent.is_empty();
-    let is_download = req.uri().path().ends_with("download");
+    let has_user_agent = !agent.trim().is_empty();
+    let is_exempt = req.uri().path() == "/health";
 
-    if !has_user_agent && !is_download {
+    if !has_user_agent && !is_exempt {
         // `request_id` middleware runs outermost, so the extension always
         // exists by now — it holds a client-supplied or generated ID.
         let request_id = req

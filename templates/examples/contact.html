@@ -53,7 +53,7 @@
                         required
                         placeholder="Your name"
                         class="form-input"
-                        aria-describedby="name-error"
+                        aria-describedby="form-result"
                     >
                 </div>
 
@@ -66,7 +66,7 @@
                         required
                         placeholder="your@email.com"
                         class="form-input"
-                        aria-describedby="email-error"
+                        aria-describedby="form-result"
                     >
                 </div>
 
@@ -79,7 +79,7 @@
                         rows="5"
                         placeholder="Your message..."
                         class="form-input"
-                        aria-describedby="message-error"
+                        aria-describedby="form-result"
                     ></textarea>
                 </div>
 
@@ -87,7 +87,7 @@
                     Send Message
                 </button>
 
-                <div id="loading-indicator" class="loading-indicator">
+                <div id="loading-indicator" class="loading-indicator htmx-indicator" aria-live="polite">
                     Sending...
                 </div>
             </form>

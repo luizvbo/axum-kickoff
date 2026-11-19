@@ -1,12 +1,18 @@
 //! Session management utilities
 //!
-//! This module provides session management using signed cookies.
-//! The session key is available in the app state for signing and verifying cookies.
+//! This module provides session management using private (AEAD-encrypted,
+//! tamper-evident) cookies, so cookie values are neither readable nor
+//! forgeable without the session key. The key is available in the app state.
+//!
+//! shortcut: stateless cookie sessions cannot be revoked server-side — a
+//! stolen cookie stays valid until its embedded expiry; switch to a
+//! server-side session store (e.g. tower-sessions) if instant revocation
+//! matters.
 
 use axum::extract::{Request, State};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum_extra::extract::cookie::SignedCookieJar;
+use axum_extra::extract::cookie::PrivateCookieJar;
 use base64::{engine::general_purpose, Engine};
 use cookie::time::Duration as CookieDuration;
 use cookie::{Cookie, Key};
@@ -15,6 +21,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub static COOKIE_NAME: &str = "{{crate_name}}_session";
+
+/// Session key holding the authenticated session's expiry as Unix seconds.
+/// Stamped on login (see `oauth_callback`); checked on every request so a
+/// stolen cookie is bounded even when the browser ignores `Max-Age`.
+pub const SESSION_EXPIRES_AT: &str = "session_expires_at";
+
+/// How long an authenticated session stays valid, mirroring the cookie's
+/// `Max-Age`.
+pub const SESSION_TTL: cookie::time::Duration = CookieDuration::days(90);
 
 /// State passed to the session middleware.
 #[derive(Clone)]
@@ -116,16 +131,27 @@ pub fn encode(h: &HashMap<String, String>) -> String {
 
 /// Session middleware
 ///
-/// Extracts the session cookie from the request, verifies its signature,
+/// Extracts the session cookie from the request, decrypts and verifies it,
 /// decodes it, and provides a SessionExtension to handlers. After the handler
-/// runs, if the session was modified, it encodes it back to a signed cookie.
+/// runs, if the session was modified, it encodes it back to a private cookie.
 pub async fn middleware(State(state): State<SessionState>, req: Request, next: Next) -> Response {
-    // Create SignedCookieJar from request headers for automatic signature verification
-    let jar = SignedCookieJar::from_headers(req.headers(), state.key.clone());
+    // Create PrivateCookieJar from request headers for automatic decryption
+    // and integrity verification. Forged or tampered cookies return None.
+    let jar = PrivateCookieJar::from_headers(req.headers(), state.key.clone());
 
-    // Decode session cookie - signature is automatically verified by SignedCookieJar
-    // If signature is invalid, get() returns None
-    let session_data = jar.get(COOKIE_NAME).map(decode).unwrap_or_default();
+    let mut session_data = jar.get(COOKIE_NAME).map(decode).unwrap_or_default();
+
+    // Embedded expiry: bounds a stolen cookie's lifetime independently of
+    // the browser-honored `Max-Age`. Only set on authenticated sessions, so
+    // anonymous state (CSRF, OAuth handshake) is unaffected.
+    if let Some(expires_at) = session_data
+        .get(SESSION_EXPIRES_AT)
+        .and_then(|v| v.parse::<i64>().ok())
+    {
+        if expires_at <= jiff::Timestamp::now().as_second() {
+            session_data.clear();
+        }
+    }
 
     // Create session extension
     let session = Session::new(session_data);
@@ -168,13 +194,13 @@ pub async fn middleware(State(state): State<SessionState>, req: Request, next: N
             .path("/")
             .http_only(true)
             .same_site(cookie::SameSite::Lax)
-            .max_age(CookieDuration::days(90));
+            .max_age(SESSION_TTL);
 
         if state.secure {
             cookie = cookie.secure(true);
         }
 
-        // Return updated jar with response - SignedCookieJar implements IntoResponse
+        // Return updated jar with response - PrivateCookieJar implements IntoResponse
         (jar.add(cookie.build()), response).into_response()
     } else {
         response

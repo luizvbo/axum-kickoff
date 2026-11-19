@@ -55,12 +55,6 @@ use crate::models::RateLimitBucket;
 pub enum LimitedAction {
     /// General API requests
     ApiRequest,
-    /// Login/authentication attempts
-    LoginAttempt,
-    /// Password reset requests
-    PasswordReset,
-    /// File upload operations
-    FileUpload,
     /// Form submissions (contact forms, etc.)
     FormSubmission,
     /// OAuth authorize requests
@@ -77,9 +71,6 @@ impl LimitedAction {
     pub fn as_str(&self) -> &'static str {
         match self {
             LimitedAction::ApiRequest => "api_request",
-            LimitedAction::LoginAttempt => "login_attempt",
-            LimitedAction::PasswordReset => "password_reset",
-            LimitedAction::FileUpload => "file_upload",
             LimitedAction::FormSubmission => "form_submission",
             LimitedAction::OAuthAuthorize => "oauth_authorize",
             LimitedAction::OAuthCallback => "oauth_callback",
@@ -91,9 +82,6 @@ impl LimitedAction {
     pub fn default_rate_seconds(&self) -> u64 {
         match self {
             LimitedAction::ApiRequest => 1,
-            LimitedAction::LoginAttempt => 5,
-            LimitedAction::PasswordReset => 60,
-            LimitedAction::FileUpload => 10,
             LimitedAction::FormSubmission => 30,
             LimitedAction::OAuthAuthorize => 5,
             LimitedAction::OAuthCallback => 5,
@@ -105,9 +93,6 @@ impl LimitedAction {
     pub fn default_burst(&self) -> i32 {
         match self {
             LimitedAction::ApiRequest => 10,
-            LimitedAction::LoginAttempt => 5,
-            LimitedAction::PasswordReset => 3,
-            LimitedAction::FileUpload => 5,
             LimitedAction::FormSubmission => 10,
             LimitedAction::OAuthAuthorize => 5,
             LimitedAction::OAuthCallback => 5,
@@ -119,9 +104,6 @@ impl LimitedAction {
     pub fn env_var_key(&self) -> &'static str {
         match self {
             LimitedAction::ApiRequest => "API_REQUEST",
-            LimitedAction::LoginAttempt => "LOGIN_ATTEMPT",
-            LimitedAction::PasswordReset => "PASSWORD_RESET",
-            LimitedAction::FileUpload => "FILE_UPLOAD",
             LimitedAction::FormSubmission => "FORM_SUBMISSION",
             LimitedAction::OAuthAuthorize => "OAUTH_AUTHORIZE",
             LimitedAction::OAuthCallback => "OAUTH_CALLBACK",
@@ -133,13 +115,6 @@ impl LimitedAction {
     pub fn error_message(&self) -> &'static str {
         match self {
             LimitedAction::ApiRequest => "Too many API requests. Please slow down.",
-            LimitedAction::LoginAttempt => {
-                "Too many login attempts. Please wait before trying again."
-            }
-            LimitedAction::PasswordReset => {
-                "Too many password reset requests. Please wait before trying again."
-            }
-            LimitedAction::FileUpload => "Too many file uploads. Please wait before trying again.",
             LimitedAction::FormSubmission => {
                 "Too many form submissions. Please wait before trying again."
             }
@@ -156,11 +131,8 @@ impl LimitedAction {
         }
     }
 
-    pub const VARIANTS: [LimitedAction; 9] = [
+    pub const VARIANTS: [LimitedAction; 6] = [
         LimitedAction::ApiRequest,
-        LimitedAction::LoginAttempt,
-        LimitedAction::PasswordReset,
-        LimitedAction::FileUpload,
         LimitedAction::FormSubmission,
         LimitedAction::OAuthAuthorize,
         LimitedAction::OAuthCallback,
@@ -234,12 +206,14 @@ impl RateLimiter {
         let rows = query.exec(&mut db).await.map_err(|e| RateLimitError {
             action,
             retry_after: config.rate,
+            limited: false,
             source: Some(e),
         })?;
 
         let tokens = parse_returned_tokens(rows).ok_or_else(|| RateLimitError {
             action,
             retry_after: config.rate,
+            limited: false,
             source: None,
         })?;
 
@@ -247,6 +221,7 @@ impl RateLimiter {
             Err(RateLimitError {
                 action,
                 retry_after: config.rate,
+                limited: true,
                 source: None,
             })
         } else {
@@ -336,13 +311,13 @@ const POSTGRES_TAKE_SQL: &str = r#"
     VALUES ($1, $2, $3, $4, $5)
     ON CONFLICT (bucket_key) DO UPDATE
     SET tokens = CASE
-        WHEN GREATEST(0, b.tokens) + FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer >= 1
-        THEN LEAST(GREATEST(0, b.tokens) + FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer, $7) - 1
+        WHEN GREATEST(0, b.tokens) + GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::bigint) >= 1
+        THEN LEAST(GREATEST(0, b.tokens) + GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::bigint), $7) - 1
         ELSE -1
     END,
     last_refill = CASE
-        WHEN FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer >= 1
-        THEN b.last_refill + (FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::integer * $6) * INTERVAL '1 second'
+        WHEN GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::bigint) >= 1
+        THEN b.last_refill + (GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (EXCLUDED.last_refill - b.last_refill)) / $6)::bigint) * $6) * INTERVAL '1 second'
         ELSE b.last_refill
     END
     RETURNING tokens
@@ -357,13 +332,13 @@ const SQLITE_TAKE_SQL: &str = r#"
     VALUES (?1, ?2, ?3, ?4, ?5)
     ON CONFLICT (bucket_key) DO UPDATE
     SET tokens = CASE
-        WHEN MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER) >= 1
-        THEN MIN(MAX(0, b.tokens) + CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER), ?7) - 1
+        WHEN MAX(0, b.tokens) + MAX(0, CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER)) >= 1
+        THEN MIN(MAX(0, b.tokens) + MAX(0, CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER)), ?7) - 1
         ELSE -1
     END,
     last_refill = CASE
-        WHEN CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER) >= 1
-        THEN strftime('%Y-%m-%dT%H:%M:%fZ', b.last_refill, printf('%+f seconds', CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER) * ?6))
+        WHEN MAX(0, CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER)) >= 1
+        THEN strftime('%Y-%m-%dT%H:%M:%fZ', b.last_refill, printf('%+f seconds', MAX(0, CAST((((julianday(EXCLUDED.last_refill) - julianday(b.last_refill)) * 86400 + 0.002) / ?6) AS INTEGER)) * ?6))
         ELSE b.last_refill
     END
     RETURNING tokens
@@ -378,7 +353,18 @@ fn parse_returned_tokens(rows: Vec<Value>) -> Option<i32> {
 pub struct RateLimitError {
     pub action: LimitedAction,
     pub retry_after: Duration,
+    /// `true` when the bucket was actually exhausted; `false` for database
+    /// or decode failures, which callers should treat as infrastructure
+    /// errors (fail open + log) rather than `429`s.
+    limited: bool,
     source: Option<toasty::Error>,
+}
+
+impl RateLimitError {
+    /// Whether this error represents a real rate-limit rejection.
+    pub fn is_limited(&self) -> bool {
+        self.limited
+    }
 }
 
 impl std::fmt::Display for RateLimitError {
@@ -567,7 +553,7 @@ mod tests {
             },
         );
         config.insert(
-            LimitedAction::LoginAttempt,
+            LimitedAction::FormSubmission,
             RateLimiterConfig {
                 rate: Duration::from_secs(1),
                 burst: 5,
@@ -592,12 +578,12 @@ mod tests {
 
         for _ in 0..5 {
             assert!(rate_limiter
-                .check_by_ip(ip, LimitedAction::LoginAttempt)
+                .check_by_ip(ip, LimitedAction::FormSubmission)
                 .await
                 .is_ok());
         }
         assert!(rate_limiter
-            .check_by_ip(ip, LimitedAction::LoginAttempt)
+            .check_by_ip(ip, LimitedAction::FormSubmission)
             .await
             .is_err());
     }

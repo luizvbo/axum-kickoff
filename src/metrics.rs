@@ -5,7 +5,7 @@ use axum::http::{header, HeaderMap, StatusCode};
 #[cfg(feature = "metrics")]
 use axum::response::{IntoResponse, Response};
 #[cfg(feature = "metrics")]
-use prometheus::{Encoder, Histogram, IntCounter, IntCounterVec, IntGauge, Registry};
+use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Registry};
 #[cfg(feature = "metrics")]
 use secrecy::ExposeSecret;
 #[cfg(feature = "metrics")]
@@ -29,8 +29,6 @@ pub struct InstanceMetrics {
     // Database pool metrics
     pub db_pool_connections_total: IntGauge,
     pub db_pool_connections_idle: IntGauge,
-    pub db_pool_wait_time: Histogram,
-    pub db_pool_timeouts_total: IntCounter,
 }
 
 #[cfg(feature = "metrics")]
@@ -91,24 +89,6 @@ impl InstanceMetrics {
             .register(Box::new(db_pool_connections_idle.clone()))
             .unwrap();
 
-        let db_pool_wait_time = Histogram::with_opts(prometheus::HistogramOpts::new(
-            "db_pool_wait_time_seconds",
-            "Time spent waiting for a database connection from the pool",
-        ))
-        .unwrap();
-        registry
-            .register(Box::new(db_pool_wait_time.clone()))
-            .unwrap();
-
-        let db_pool_timeouts_total = IntCounter::with_opts(prometheus::Opts::new(
-            "db_pool_timeouts_total",
-            "Total number of database connection pool timeouts",
-        ))
-        .unwrap();
-        registry
-            .register(Box::new(db_pool_timeouts_total.clone()))
-            .unwrap();
-
         Self {
             registry,
             requests_total,
@@ -117,8 +97,6 @@ impl InstanceMetrics {
             responses_by_status_code_total,
             db_pool_connections_total,
             db_pool_connections_idle,
-            db_pool_wait_time,
-            db_pool_timeouts_total,
         }
     }
 
@@ -126,29 +104,13 @@ impl InstanceMetrics {
         Ok(self.registry.gather())
     }
 
-    /// Update database pool metrics by sampling the current pool status and
-    /// timing how long it takes to acquire a connection.
-    pub async fn update_db_pool_metrics(&self, database: &crate::db::Database) {
-        let db = database.db();
-
-        let status = db.pool().status();
+    /// Update database pool metrics from the pool status. Lock-free by
+    /// design: a metrics scrape must never acquire a real connection (it
+    /// would let unauthenticated traffic generate pool churn).
+    pub fn update_db_pool_metrics(&self, database: &crate::db::Database) {
+        let status = database.db().pool().status();
         self.db_pool_connections_total.set(status.size as i64);
         self.db_pool_connections_idle.set(status.available as i64);
-
-        let start = std::time::Instant::now();
-        match db.connection().await {
-            Ok(conn) => {
-                let elapsed = start.elapsed();
-                self.db_pool_wait_time.observe(elapsed.as_secs_f64());
-                drop(conn);
-            }
-            Err(err) => {
-                if err.to_string().contains("Timeout occurred while waiting") {
-                    self.db_pool_timeouts_total.inc();
-                }
-                tracing::debug!("Failed to acquire database connection for metrics: {}", err);
-            }
-        }
     }
 }
 
@@ -209,7 +171,7 @@ pub async fn metrics_handler(
     match kind {
         "instance" => {
             let metrics = &state.0.metrics;
-            metrics.update_db_pool_metrics(&state.0.database).await;
+            metrics.update_db_pool_metrics(&state.0.database);
 
             let encoder = prometheus::TextEncoder::new();
 

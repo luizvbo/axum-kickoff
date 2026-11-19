@@ -1,9 +1,17 @@
 [advisories]
 ignore = [
-    # rsa is pulled into Cargo.lock only as an optional dependency of
+{% if database == "postgresql" %}    # rustls-pemfile is pulled into Cargo.lock by `toasty-driver-postgresql`
+    # (only compiled with the postgresql backend). The advisory has no
+    # fixed release in the rustls 0.23 line; revisit when toasty bumps.
+    "RUSTSEC-2025-0134",
+{% endif %}    # rsa is pulled into Cargo.lock only as an optional dependency of
     # `toasty-driver-mysql` (via `sqlx-mysql`). The mysql/mariadb driver
     # features are never enabled — the only database backends are sqlite
     # and postgresql — so the crate is never compiled. The Marvin Attack
     # advisory has no fixed release; revisit if a mysql backend is added.
     "RUSTSEC-2023-0071",
+    # basic-toml is pulled in by `askama_derive` at build time only; the
+    # unmaintained-crate advisory has no security impact on the built
+    # binary. Revisit when askama drops the dependency.
+    "RUSTSEC-2026-0374",
 ]
