@@ -21,6 +21,10 @@ Action scopes define what actions a token can perform:
 | `delete` | Can remove resources | DELETE requests |
 | `admin` | Full administrative access | All actions, including administrative operations |
 
+> **Note**: `admin` also satisfies endpoints that declare **no** required
+> action scope — it is treated as universal access. This deliberately differs
+> from crates.io, which rejects *every* scoped token on scopeless endpoints.
+
 ### Usage Example
 
 ```rust

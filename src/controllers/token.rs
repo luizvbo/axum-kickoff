@@ -196,6 +196,27 @@ pub async fn create_token(
 
     let mut db = state.0.database.db_clone();
 
+    // Bound token accumulation per user like crates.io; revoked and expired
+    // tokens no longer count against the cap.
+    let active_tokens = ApiToken::filter(ApiToken::fields().user_id().eq(user_id))
+        .filter(ApiToken::fields().revoked().eq(false))
+        .filter(
+            ApiToken::fields()
+                .expired_at()
+                .is_none()
+                .or(ApiToken::fields().expired_at().gt(jiff::Timestamp::now())),
+        )
+        .count()
+        .exec(&mut db)
+        .await
+        .map_err(db_error)?;
+
+    if active_tokens >= MAX_TOKENS_PER_USER {
+        return Err(bad_request(format!(
+            "Token limit reached: a user can have at most {MAX_TOKENS_PER_USER} active tokens"
+        )));
+    }
+
     let token_record = toasty::create!(ApiToken {
         user_id,
         name: validated.name.clone(),
@@ -261,6 +282,14 @@ pub struct ListTokensResponse {
 const DEFAULT_TOKEN_PER_PAGE: usize = 20;
 const MAX_TOKEN_PER_PAGE: usize = 100;
 
+/// Maximum active (non-revoked, non-expired) API tokens per user —
+/// crates.io uses the same cap.
+const MAX_TOKENS_PER_USER: u64 = 500;
+
+/// Expired tokens stay listed for this grace window before `list_tokens`
+/// filters them out; `CleanupJob` deletes them for good past it.
+const EXPIRED_TOKEN_LIST_GRACE: jiff::SignedDuration = jiff::SignedDuration::from_hours(24 * 30);
+
 /// List all API tokens for the authenticated user
 ///
 /// This endpoint returns a paginated list of all API tokens belonging to the authenticated user.
@@ -297,8 +326,20 @@ pub async fn list_tokens(
     let mut db = state.0.database.db_clone();
 
     // Query tokens for the user using Toasty's filter API with pagination.
-    // A deterministic order keeps page boundaries stable.
+    // A deterministic order keeps page boundaries stable. Revoked tokens are
+    // hidden entirely and expired tokens drop off after the grace window,
+    // matching crates.io's token list.
+    let expired_cutoff = jiff::Timestamp::now()
+        .checked_sub(EXPIRED_TOKEN_LIST_GRACE)
+        .unwrap_or(jiff::Timestamp::UNIX_EPOCH);
     let tokens = ApiToken::filter(ApiToken::fields().user_id().eq(user_id))
+        .filter(ApiToken::fields().revoked().eq(false))
+        .filter(
+            ApiToken::fields()
+                .expired_at()
+                .is_none()
+                .or(ApiToken::fields().expired_at().gt(expired_cutoff)),
+        )
         .order_by(ApiToken::fields().id().desc())
         .limit(per_page)
         .offset(offset)

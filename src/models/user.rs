@@ -49,6 +49,11 @@ pub struct User {
 
     /// Timestamp when the user was last updated
     pub updated_at: jiff::Timestamp,
+
+    /// Epoch stamped into the session cookie at login; bumping it (see
+    /// [`User::bump_session_epoch`]) invalidates all sessions for this user.
+    #[default(0)]
+    pub session_epoch: i32,
 }
 
 impl User {
@@ -75,6 +80,7 @@ impl User {
             account_lock_until: None,
             created_at: now,
             updated_at: now,
+            session_epoch: 0,
         }
     }
 
@@ -96,6 +102,23 @@ impl User {
         self.email = email;
         self.avatar_url = avatar_url;
         self.touch();
+    }
+
+    /// Invalidate every outstanding session for this user ("log out
+    /// everywhere"): cookies stamped with the old epoch fail the
+    /// `enforce_authentication` check on the next request.
+    pub async fn bump_session_epoch(&mut self, db: &mut toasty::Db) -> Result<(), toasty::Error> {
+        let session_epoch = self.session_epoch + 1;
+        let updated_at = jiff::Timestamp::now();
+        toasty::update!(self {
+            session_epoch,
+            updated_at,
+        })
+        .exec(db)
+        .await?;
+        self.session_epoch = session_epoch;
+        self.updated_at = updated_at;
+        Ok(())
     }
 
     /// Returns true if the account is currently locked.

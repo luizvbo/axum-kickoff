@@ -51,7 +51,9 @@
 //!   spoof their IP.
 //! - In production, clients MUST NOT be able to reach the app directly —
 //!   all inbound traffic must flow through a trusted proxy (enforce with
-//!   firewall rules / security groups).
+//!   firewall rules / security groups). There is no in-app origin
+//!   authentication (unlike crates.io's `x-crates-origin-auth` CDN header):
+//!   network isolation is the only enforcement, so do not skip it.
 //! - Configure `TRUSTED_PROXIES` with your proxy's IP addresses or CIDR ranges
 //!
 //! Example `TRUSTED_PROXIES` values:

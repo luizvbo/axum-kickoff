@@ -4,10 +4,12 @@
 //! tamper-evident) cookies, so cookie values are neither readable nor
 //! forgeable without the session key. The key is available in the app state.
 //!
-//! shortcut: stateless cookie sessions cannot be revoked server-side — a
-//! stolen cookie stays valid until its embedded expiry; switch to a
-//! server-side session store (e.g. tower-sessions) if instant revocation
-//! matters.
+//! shortcut: cookie sessions can only be revoked per user — the
+//! `session_epoch` claim is compared to `User::session_epoch` on
+//! authenticated requests, so `User::bump_session_epoch` logs out every
+//! session of that user at once. Revoking a single session/device needs a
+//! server-side session store (e.g. tower-sessions); upgrade if that
+//! granularity matters.
 
 use axum::extract::{Request, State};
 use axum::middleware::Next;
@@ -26,6 +28,11 @@ pub static COOKIE_NAME: &str = "{{crate_name}}_session";
 /// Stamped on login (see `oauth_callback`); checked on every request so a
 /// stolen cookie is bounded even when the browser ignores `Max-Age`.
 pub const SESSION_EXPIRES_AT: &str = "session_expires_at";
+
+/// Session key holding the `User::session_epoch` snapshot taken at login.
+/// `enforce_authentication` rejects cookies whose stamp no longer matches
+/// the user's current epoch (see `User::bump_session_epoch`).
+pub const SESSION_EPOCH: &str = "session_epoch";
 
 /// How long an authenticated session stays valid, mirroring the cookie's
 /// `Max-Age`.

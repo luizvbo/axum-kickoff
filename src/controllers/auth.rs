@@ -270,65 +270,7 @@ pub async fn oauth_callback(
 
     let mut db = state.0.database.db_clone();
 
-    let user = match User::get_by_provider_and_provider_user_id(
-        &mut db,
-        provider.spec.slug,
-        profile.provider_user_id.clone(),
-    )
-    .await
-    {
-        Ok(mut existing_user) => {
-            // Deactivated accounts may not log back in
-            if !existing_user.is_active {
-                return Err(forbidden("Account is not active"));
-            }
-
-            // Check if locked
-            if existing_user.is_locked() {
-                let reason = existing_user
-                    .account_lock_reason
-                    .clone()
-                    .unwrap_or_else(|| "Account is locked".into());
-                return Err(forbidden(reason));
-            }
-
-            // Update existing user
-            existing_user.update_from_oauth(
-                profile.login.clone(),
-                profile.name.clone(),
-                profile.email.clone(),
-                profile.avatar_url.clone(),
-            );
-
-            existing_user
-                .update()
-                .exec(&mut db)
-                .await
-                .map_err(db_error)?;
-
-            existing_user
-        }
-        Err(e) if e.is_record_not_found() || e.is_invalid_record_count() => {
-            // Create new user
-            toasty::create!(User {
-                provider: provider.spec.slug.to_string(),
-                provider_user_id: profile.provider_user_id.clone(),
-                login: profile.login.clone(),
-                name: profile.name.clone(),
-                email: profile.email.clone(),
-                avatar_url: profile.avatar_url.clone(),
-                is_active: true,
-                account_lock_reason: None,
-                account_lock_until: None,
-                created_at: jiff::Timestamp::now(),
-                updated_at: jiff::Timestamp::now(),
-            })
-            .exec(&mut db)
-            .await
-            .map_err(db_error)?
-        }
-        Err(e) => return Err(db_error(e)),
-    };
+    let user = find_or_create_user(&mut db, provider.spec.slug, &profile).await?;
 
     // Session fixation protection: clear pre-login session data
     // except redirect_to, then set fresh authenticated session
@@ -340,11 +282,14 @@ pub async fn oauth_callback(
     // Set user_id in session (this will trigger a fresh encrypted cookie).
     // Stamp the embedded expiry so the session is bounded independently of
     // the browser-honored cookie Max-Age.
-    use crate::middleware::session::{SESSION_EXPIRES_AT, SESSION_TTL};
+    use crate::middleware::session::{SESSION_EPOCH, SESSION_EXPIRES_AT, SESSION_TTL};
     let expires_at = jiff::Timestamp::now().as_second() + SESSION_TTL.whole_seconds();
     session.insert("user_id".to_string(), user.id.to_string());
     session.insert("user_login".to_string(), user.login);
     session.insert(SESSION_EXPIRES_AT.to_string(), expires_at.to_string());
+    // Stamp the user's current session epoch so `bump_session_epoch`
+    // invalidates this cookie along with every other outstanding session.
+    session.insert(SESSION_EPOCH.to_string(), user.session_epoch.to_string());
 
     // Generate new CSRF token for the fresh session
     use crate::middleware::csrf::generate_token;
@@ -362,6 +307,114 @@ pub async fn oauth_callback(
     }
 
     Ok(Redirect::to(&redirect_to))
+}
+
+/// Find the user owning this OAuth identity — updating their profile
+/// fields — or create the record on first login.
+///
+/// Two concurrent first logins for the same identity race on the
+/// `(provider, provider_user_id)` unique index; the loser retries the lookup
+/// once and takes the normal update path. crates.io wraps this in an
+/// update-then-insert transaction; one retry on constraint failure is the
+/// smallest equivalent.
+async fn find_or_create_user(
+    db: &mut toasty::Db,
+    provider_slug: &str,
+    profile: &crate::oauth::OAuthProfile,
+) -> Result<User, BoxedAppError> {
+    match User::get_by_provider_and_provider_user_id(
+        db,
+        provider_slug,
+        profile.provider_user_id.clone(),
+    )
+    .await
+    {
+        Ok(existing_user) => login_existing_user(db, existing_user, profile).await,
+        Err(e) if e.is_record_not_found() || e.is_invalid_record_count() => {
+            match insert_new_user(db, provider_slug, profile).await {
+                Ok(user) => Ok(user),
+                // Lost the insert race — the winner's row is visible now, so
+                // take the normal update path. If the retry also fails the
+                // insert error was not a unique violation.
+                Err(insert_err) => match User::get_by_provider_and_provider_user_id(
+                    db,
+                    provider_slug,
+                    profile.provider_user_id.clone(),
+                )
+                .await
+                {
+                    Ok(existing_user) => login_existing_user(db, existing_user, profile).await,
+                    Err(_) => Err(db_error(insert_err)),
+                },
+            }
+        }
+        Err(e) => Err(db_error(e)),
+    }
+}
+
+/// Login path for an existing identity: deactivated/locked accounts are
+/// rejected; otherwise the profile fields are refreshed and the user
+/// returned.
+async fn login_existing_user(
+    db: &mut toasty::Db,
+    mut user: User,
+    profile: &crate::oauth::OAuthProfile,
+) -> Result<User, BoxedAppError> {
+    // Deactivated accounts may not log back in
+    if !user.is_active {
+        return Err(forbidden("Account is not active"));
+    }
+
+    if user.is_locked() {
+        let reason = user
+            .account_lock_reason
+            .clone()
+            .unwrap_or_else(|| "Account is locked".into());
+        return Err(forbidden(reason));
+    }
+
+    toasty::update!(user {
+        login: profile.login.clone(),
+        name: profile.name.clone(),
+        email: profile.email.clone(),
+        avatar_url: profile.avatar_url.clone(),
+        updated_at: jiff::Timestamp::now(),
+    })
+    .exec(db)
+    .await
+    .map_err(db_error)?;
+
+    user.update_from_oauth(
+        profile.login.clone(),
+        profile.name.clone(),
+        profile.email.clone(),
+        profile.avatar_url.clone(),
+    );
+
+    Ok(user)
+}
+
+/// Insert the first-login user row for this OAuth identity.
+async fn insert_new_user(
+    db: &mut toasty::Db,
+    provider_slug: &str,
+    profile: &crate::oauth::OAuthProfile,
+) -> Result<User, toasty::Error> {
+    toasty::create!(User {
+        provider: provider_slug.to_string(),
+        provider_user_id: profile.provider_user_id.clone(),
+        login: profile.login.clone(),
+        name: profile.name.clone(),
+        email: profile.email.clone(),
+        avatar_url: profile.avatar_url.clone(),
+        is_active: true,
+        account_lock_reason: None,
+        account_lock_until: None,
+        created_at: jiff::Timestamp::now(),
+        updated_at: jiff::Timestamp::now(),
+    })
+    .exec(db)
+    .await
 }
 
 /// Login page

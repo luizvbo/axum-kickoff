@@ -14,11 +14,20 @@ use std::str::FromStr;
 
 use crate::util::errors::bad_request;
 
+/// The request path as sent by the client, before `normalize_path` rewrote
+/// it. Inserted only when the path actually changed so access logs can show
+/// what the client requested (crates.io stores the same extension).
+#[derive(Debug, Clone)]
+pub struct OriginalPath(pub String);
+
 /// Middleware that normalizes the request URI path before it reaches the router.
 pub async fn middleware(req: Request, next: Next) -> Response {
     match normalize_request_uri(req.uri()) {
         Ok(Some(new_uri)) => {
             let (mut parts, body) = req.into_parts();
+            parts
+                .extensions
+                .insert(OriginalPath(parts.uri.path().to_string()));
             parts.uri = new_uri;
             next.run(Request::from_parts(parts, body)).await
         }

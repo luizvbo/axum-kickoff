@@ -548,19 +548,15 @@ git push heroku main
 
 ### Health Checks
 
-Add health check endpoint (if not already implemented):
+The app ships `GET /health`, which runs a real query against the `users`
+table and returns `503` (`{"status":"degraded","database":false}`) when the
+database is unreachable, `200` otherwise.
 
-```rust
-pub async fn health_check() -> &'static str {
-    "OK"
-}
-```
-
-Configure in router:
-
-```rust
-router.route("/health", get(health_check))
-```
+This is a **readiness** probe: use it for load balancer health checks and
+Kubernetes `readinessProbe`. Do **not** point a Kubernetes `livenessProbe`
+at it — a database blip would make Kubernetes restart otherwise-healthy
+pods, and every pod would go down together with the database. If you need a
+liveness probe, add a DB-free endpoint that returns `200` unconditionally.
 
 ### Logs
 
@@ -618,6 +614,12 @@ sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS
 sudo ufw enable
 ```
+
+**Important:** the app has no in-app origin authentication (unlike crates.io's
+`x-crates-origin-auth` CDN header) — it cannot tell whether a request arrived
+via your reverse proxy or hit the origin directly. Restricting inbound traffic
+to your proxy's addresses at the firewall is the only enforcement, so don't
+skip this step.
 
 ### Fail2Ban
 

@@ -116,19 +116,26 @@ impl<S: Send + Sync> FromRequestParts<S> for OptionalCurrentUserId {
 
 /// Global authentication middleware
 ///
-/// Populates request extensions with the current user's authentication context.
-/// It first checks for a valid API token in the `Authorization` header. If present
-/// and valid, it sets `Authentication` and `CurrentUserId` and does not require
-/// a session. If no token is provided, it falls back to the session cookie.
+/// Populates request extensions with the current user's authentication
+/// context from the session cookie. This middleware is deliberately lazy:
+/// the session middleware already decoded the signed cookie, so the
+/// `user_id` claim is trusted without a database lookup. The user record
+/// (and account-lock check) is only loaded by `require_auth`/`require_login`
+/// on routes that actually need authentication — mirroring crates.io's
+/// `AuthCheck` pattern.
 ///
-/// This middleware is deliberately lazy for cookie sessions: the session
-/// middleware already decoded the signed cookie, so the `user_id` claim is
-/// trusted without a database lookup. The user record (and account-lock check)
-/// is only loaded by `require_auth`/`require_login` on routes that actually
-/// need authentication — mirroring crates.io's `AuthCheck` pattern. Bearer
-/// tokens are still validated eagerly because the token lookup and the
-/// `last_used_at` update are inherent to token authentication.
-pub async fn authenticate(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+/// `Authorization: Bearer` headers are intentionally ignored here — token
+/// validation only runs inside `enforce_authentication` on protected routes,
+/// so a stale or forged token cannot 401 a public page. A consequence of
+/// that split, matching crates.io's semantics: public-but-optionally-auth
+/// routes that read `Authentication`/`OptionalCurrentUserId` without
+/// `require_auth` see cookie sessions only; Bearer tokens on them are
+/// ignored entirely.
+pub async fn authenticate(
+    State(_state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     // If another middleware has already set the user, continue
     if req.extensions().get::<CurrentUserId>().is_some() {
         return next.run(req).await;
@@ -147,26 +154,6 @@ pub async fn authenticate(State(state): State<AppState>, mut req: Request, next:
         req.extensions_mut().insert(CurrentUserId(user_id));
         req.extensions_mut()
             .insert(Authentication::Cookie { user_id });
-    }
-
-    // If an Authorization header is present, prefer token auth. The scheme
-    // is case-insensitive per RFC 6750 and the token may carry surrounding
-    // whitespace.
-    if let Some(auth_header) = req
-        .headers()
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-    {
-        let (scheme, token_str) = auth_header.split_once(' ').unwrap_or(("", auth_header));
-        if scheme.eq_ignore_ascii_case("bearer") {
-            match validate_token(&state, token_str.trim()).await {
-                Ok(auth) => {
-                    req.extensions_mut().insert(CurrentUserId(auth.user_id()));
-                    req.extensions_mut().insert(auth);
-                }
-                Err(response) => return response,
-            }
-        }
     }
 
     next.run(req).await
@@ -234,22 +221,33 @@ async fn validate_token(state: &AppState, token_str: &str) -> Result<Authenticat
 
 /// Enforce authentication at the point where a route requires it.
 ///
-/// Token-authenticated requests were already fully validated — including the
-/// account-active and account-lock checks — by `authenticate`, so they pass
-/// through untouched. Cookie sessions only carry a `user_id` claim, so the
-/// `User` record is loaded here, exactly once and only for requests that need
-/// it. Deactivated and locked users are rejected with 403; sessions
-/// referencing missing users get 401.
+/// An `Authorization: Bearer` header wins: the token is validated and the
+/// request authenticates as its owner — an invalid token is a 401 even when
+/// a valid session cookie is also present, matching crates.io. The scheme
+/// is case-insensitive per RFC 6750 and the token may carry surrounding
+/// whitespace.
+///
+/// Without a Bearer header, the cookie-session `user_id` claim loads the
+/// `User` record here, exactly once and only for requests that need it.
+/// Sessions stamped with a stale `session_epoch` (see
+/// [`User::bump_session_epoch`]) get 401, as do sessions referencing missing
+/// users; deactivated and locked users get 403.
 ///
 /// On success the loaded `User` is inserted into the request extensions so
 /// handlers can reuse it without a second lookup.
 async fn enforce_authentication(state: &AppState, req: &mut Request) -> Result<(), Response> {
-    if req
-        .extensions()
-        .get::<Authentication>()
-        .is_some_and(|auth| auth.is_token())
+    if let Some(auth_header) = req
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
     {
-        return Ok(());
+        let (scheme, token_str) = auth_header.split_once(' ').unwrap_or(("", auth_header));
+        if scheme.eq_ignore_ascii_case("bearer") {
+            let auth = validate_token(state, token_str.trim()).await?;
+            req.extensions_mut().insert(CurrentUserId(auth.user_id()));
+            req.extensions_mut().insert(auth);
+            return Ok(());
+        }
     }
 
     let user_id = req
@@ -278,6 +276,19 @@ async fn enforce_authentication(state: &AppState, req: &mut Request) -> Result<(
             Err(forbidden(reason).response())
         }
         Ok(user) => {
+            // Per-user session revocation: the cookie must carry the user's
+            // current epoch. A missing stamp (pre-epoch sessions) or a
+            // mismatch after `bump_session_epoch` ends the session.
+            let session_epoch = req
+                .extensions()
+                .get::<SessionExtension>()
+                .and_then(|s| s.get(crate::middleware::session::SESSION_EPOCH))
+                .and_then(|v| v.parse::<i32>().ok());
+
+            if session_epoch != Some(user.session_epoch) {
+                return Err(unauthorized("Session expired").response());
+            }
+
             req.extensions_mut().insert(user);
             Ok(())
         }

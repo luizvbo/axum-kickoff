@@ -30,9 +30,7 @@ pub mod session;
 
 pub use auth::{authenticate, require_auth, require_login, CurrentUserId, OptionalCurrentUserId};
 pub use block_traffic::middleware as block_traffic;
-pub use csrf::{
-    csrf_protect, get_or_create_csrf_token, protect, validate_csrf_token, verify_origin,
-};
+pub use csrf::{csrf_protect, get_or_create_csrf_token, validate_csrf_token, verify_origin};
 pub use error_handler::middleware as error_handler;
 {% if metrics %}#[cfg(feature = "metrics")]
 pub use metrics::update_metrics;
@@ -83,6 +81,10 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         // IPs/routes/user agents cannot reach operational endpoints either;
         // it only reads config, headers, and `RealIp`.
         .layer(from_fn_with_state(state.clone(), self::block_traffic))
+        // The user-agent check runs inside the logging/error layers so its
+        // 400 rejections are still logged by `log_request`, wrapped by
+        // `error_handler`, and format-negotiated like any other response.
+        .layer(from_fn(self::require_user_agent::require_user_agent))
         // Bound the request inside the logging layers so a timeout 408 is
         // still logged by `log_request`/`error_handler`.
         .layer(TimeoutLayer::with_status_code(
@@ -96,7 +98,6 @@ pub fn apply_axum_middleware(state: AppState, router: Router<()>) -> Router {
         // responses and `HtmlTemplate` can negotiate HTML/HTMX/JSON.
         .layer(from_fn(self::error_handler::middleware))
         .layer(from_fn(self::request_format::middleware))
-        .layer(from_fn(self::require_user_agent::require_user_agent))
         .layer(RequestBodyTimeoutLayer::new(Duration::from_secs(30)))
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
 {% if metrics %}
@@ -242,7 +243,13 @@ async fn log_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let method = req.method().clone();
-    let uri = req.uri().path().to_string();
+    // Log the original path when `normalize_path` rewrote the URI so the
+    // access log shows what the client actually sent.
+    let uri = req
+        .extensions()
+        .get::<self::normalize_path::OriginalPath>()
+        .map(|p| p.0.clone())
+        .unwrap_or_else(|| req.uri().path().to_string());
     let user_agent = req
         .headers()
         .get(header::USER_AGENT)

@@ -147,6 +147,8 @@ openssl rand -base64 64
 Sessions store:
 
 - User ID and login (`user_id`, `user_login`)
+- Embedded expiry (`session_expires_at`, Unix seconds) and session epoch
+  (`session_epoch`) — both stamped at login
 - CSRF token (`csrf_token`)
 - Transient OAuth state (`oauth_state`, `oauth_pkce_verifier`, `oauth_provider`, `redirect_to`)
 
@@ -165,10 +167,22 @@ The session middleware in `src/middleware/session.rs`:
 - **HttpOnly Flag**: Cookies are not accessible via JavaScript
 - **SameSite**: Cookies are set with `SameSite=Lax` to prevent CSRF
 
-### Session Expiration
+### Session Expiration and Revocation
 
-Session cookies expire via `Max-Age` (90 days). Expiration is enforced by the
-browser, not the server. Revoke access by locking the account instead.
+Sessions are bounded two ways: the cookie's `Max-Age` (90 days), enforced by
+the browser, and a `session_expires_at` timestamp embedded in the encrypted
+cookie, enforced by the session middleware on every request so a stolen
+cookie cannot outlive its window.
+
+Per-user revocation uses `session_epoch`: the cookie carries the user's
+epoch from login time and `require_auth` compares it to
+`User::session_epoch`. Calling `User::bump_session_epoch` invalidates every
+outstanding session for that user ("log out everywhere"). Revoking a single
+device is not possible with stateless cookies — that granularity needs a
+server-side session store.
+
+Note for upgrades: sessions issued before `session_epoch` existed carry no
+stamp and are rejected — users simply log in again.
 
 ## API Tokens
 

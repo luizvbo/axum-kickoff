@@ -24,7 +24,10 @@
 //! # Exemptions
 //!
 //! `/health` is exempt so load balancers and uptime probes that don't set a
-//! User-Agent still get a liveness answer.
+//! User-Agent still get a readiness answer. New endpoints that must answer
+//! clients without a User-Agent (webhook receivers, additional probes) need
+//! their own exemption added to the check below — the middleware runs on
+//! every route.
 //!
 //! # What is a User-Agent?
 //!

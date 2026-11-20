@@ -30,7 +30,7 @@
 //!
 //! // Apply CSRF protection middleware to routes that process forms:
 //! // .route("/submit", submit.route().layer(axum::middleware::from_fn(
-//! //     crate::middleware::csrf::protect
+//! //     crate::middleware::csrf::csrf_protect
 //! // )))
 //! ```
 
@@ -47,7 +47,7 @@ use subtle::ConstantTimeEq;
 use crate::config::AllowedOrigins;
 use crate::middleware::SessionExtension;
 use crate::util::auth::Authentication;
-use crate::util::errors::{bad_request, AppResult};
+use crate::util::errors::{bad_request, forbidden, AppResult};
 
 pub static CSRF_TOKEN_KEY: &str = "csrf_token";
 pub static CSRF_HEADER_NAME: &str = "x-csrf-token";
@@ -187,9 +187,11 @@ fn is_unsafe_method(method: &Method) -> bool {
 
 /// Verify the Origin header for unsafe methods as defense-in-depth against CSRF.
 ///
-/// Checks the `Origin` header against the allowed origins list.
-/// Requests with no `Origin` header are allowed (same-origin browser
-/// navigations and non-browser clients may omit the header).
+/// Every `Origin` header value must be on the allowed origins list — a second
+/// smuggled value cannot hide behind an allowed first one — and any failure
+/// is a 403 like crates.io. Requests with no `Origin` header are allowed
+/// (same-origin browser navigations and non-browser clients may omit the
+/// header).
 ///
 /// This is designed to be used as `from_fn_with_state` middleware with `AllowedOrigins`.
 pub async fn verify_origin(
@@ -197,26 +199,11 @@ pub async fn verify_origin(
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    let method = req.method();
-
-    if is_unsafe_method(method) {
-        let headers = req.headers();
-
-        // Check Origin header first
-        let origin = headers
-            .get(axum::http::header::ORIGIN)
-            .and_then(|v| v.to_str().ok());
-
-        if let Some(origin) = origin {
-            if let Ok(header_value) = axum::http::HeaderValue::from_str(origin) {
-                if !allowed_origins.contains(&header_value) {
-                    return bad_request(
-                        "Origin not allowed. Request blocked by origin verification.",
-                    )
+    if is_unsafe_method(req.method()) {
+        for origin in req.headers().get_all(axum::http::header::ORIGIN) {
+            if !allowed_origins.contains(origin) {
+                return forbidden("Origin not allowed. Request blocked by origin verification.")
                     .response();
-                }
-            } else {
-                return bad_request("Invalid Origin header.").response();
             }
         }
     }
@@ -224,7 +211,7 @@ pub async fn verify_origin(
     next.run(req).await
 }
 
-/// Shared CSRF validation for the [`protect`] and [`csrf_protect`] middleware.
+/// Shared CSRF validation for [`csrf_protect`].
 ///
 /// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
 /// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
@@ -290,36 +277,26 @@ async fn enforce_csrf(req: axum::extract::Request, next: Next) -> Response {
 /// CSRF protection middleware
 ///
 /// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
+/// This middleware does NOT check authentication — it only validates CSRF
+/// tokens, so it also composes onto routes reachable by anonymous users.
 /// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
 ///
 /// This middleware checks for the CSRF token in:
 /// 1. The `X-CSRF-Token` header (for HTMX and API clients)
 /// 2. The `csrf_token` form field (for traditional form submissions)
 ///
-/// # Note
+/// For form submissions this expects the form data in the request body,
+/// which works with axum's `Form` extractor.
 ///
-/// For form submissions, this middleware expects the form data to be available
-/// in the request body. This works with axum's Form extractor.
-/// If no session exists or the session is empty, the request passes through unchanged (for API endpoints).
-pub async fn protect(req: axum::extract::Request, next: Next) -> Response {
-    enforce_csrf(req, next).await
-}
-
-/// CSRF-only protection middleware
+/// # Anonymous sessions get no CSRF protection
 ///
-/// Validates CSRF tokens for unsafe HTTP methods (POST, PUT, PATCH, DELETE).
-/// This middleware does NOT check authentication - it only validates CSRF tokens.
-/// Use this for routes that require CSRF protection but may be accessed by anonymous users.
-///
-/// Safe methods (GET, HEAD, OPTIONS) are allowed without CSRF validation.
-///
-/// This middleware checks for the CSRF token in:
-/// 1. The `X-CSRF-Token` header (for HTMX and API clients)
-/// 2. The `csrf_token` form field (for traditional form submissions)
-///
-/// # Note
-///
-/// If no session exists or the session is empty, the request passes through unchanged.
+/// `csrf_protect` is a no-op for sessions with no auth/CSRF state
+/// (`session_has_csrf_state`), and `PageContext` only mints tokens for
+/// stateful sessions — so an anonymous state-changing endpoint added later
+/// gets neither CSRF protection here nor a token to submit through
+/// `PageContext`. If anonymous forms need real CSRF tokens, mint and
+/// validate one for them as well; until then they rely on `SameSite=Lax`
+/// cookies plus `verify_origin`.
 pub async fn csrf_protect(req: axum::extract::Request, next: Next) -> Response {
     enforce_csrf(req, next).await
 }

@@ -19,24 +19,24 @@ Path normalization is applied as a top-level service around the router in `src/l
 5. **Request Body Timeout** - Request body timeout (30s default)
 6. **Timeout** - Request timeout (30s default)
 7. **Security Headers** - CSP, HSTS, X-Frame-Options, etc.
-8. **User Agent Validation** - Block requests without User-Agent
-9. **Panic Catcher** - Catch panics and convert to 500 responses
-10. **Request ID** - Per-request correlation ID
-11. **Request Format** - Scopes the `REQUEST_FORMAT` task-local (HTMX/HTML vs JSON)
-12. **Error Handler** - Logs 4xx/5xx responses
-13. **Real IP Extraction** - Extract client IP from proxy headers
-14. **Request Logging** - Structured logging with tracing
+8. **Panic Catcher** - Catch panics and convert to 500 responses
+9. **Request ID** - Per-request correlation ID
+10. **Request Format** - Scopes the `REQUEST_FORMAT` task-local (HTMX/HTML vs JSON)
+11. **Error Handler** - Logs 4xx/5xx responses
+12. **Real IP Extraction** - Extract client IP from proxy headers
+13. **Request Logging** - Structured logging with tracing
+14. **User Agent Validation** - Block requests without User-Agent (inside the logging/error layers so rejections are logged and format-negotiated)
 15. **Traffic Blocking** - Blocked IPs, routes, and header patterns
 
 **Application stack** (`src/middleware/mod.rs::apply_app_middleware`) runs only for HTML pages and `/api/*` routes:
 
 16. **Session Management** - Encrypted-cookie session parsing/writing
-17. **Authentication** - Resolves auth context: lazy for cookie sessions (no DB lookup), eager for Bearer tokens
+17. **Authentication** - Resolves cookie-session auth context lazily (no DB lookup); `Authorization: Bearer` is ignored here so a bad token can't break public routes
 18. **Origin Verification** - `Origin` header check on unsafe methods
 
 **Route layers** (`route_layer` in `src/router.rs::build_axum_router`) run only when a route matches, applied in this order on protected routes:
 
-19. **`require_auth`** - Enforces authentication: loads the `User`, rejects missing users with 401 and locked accounts with 403
+19. **`require_auth`** - Enforces authentication: a `Bearer` header is validated as an API token; otherwise the session's `user_id`/`session_epoch` claims load the `User`. Rejects stale-epoch sessions and missing users with 401, locked accounts with 403
 20. **`csrf_protect`** - CSRF token validation for unsafe methods (skipped for Bearer-token auth)
 21. **`rate_limit`** - Database-backed token bucket, only on sensitive routes (token creation, OAuth flow, form submissions, logout, protected API)
 

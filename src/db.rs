@@ -61,9 +61,13 @@ impl Database {
         // PRAGMA on any connection switches the file to WAL for every current
         // and future connection. Ignored for in-memory databases, which
         // report `memory` and can't use WAL.
-        // shortcut: per-connection pragmas (busy_timeout, foreign_keys)
-        // can't be set through toasty's pool — upgrade when the driver gains
-        // a connection-init hook.
+        // shortcut: per-connection pragmas can't be set through toasty's
+        // pool — upgrade when the driver gains a connection-init hook.
+        // Consequences: `foreign_keys` stays OFF (`FOREIGN KEY` / `REFERENCES`
+        // clauses in hand-written SQLite migrations are not enforced;
+        // PostgreSQL enforces them normally). The `busy_timeout` query param
+        // appended by `DatabaseConfig::connect_url` *is* honored by the
+        // driver — see `test_sqlite_busy_timeout_param_is_applied`.
         let _ = toasty::sql::statement("PRAGMA journal_mode=WAL")
             .exec(&mut db)
             .await;
@@ -183,6 +187,34 @@ mod tests {
         // (they point to the same pool but are different Db instances)
         let _ = clone1;
         let _ = clone2;
+    }
+
+    // `connect_url` appends `busy_timeout=5000` to SQLite URLs; this pins
+    // that the driver actually applies it (verified empirically — reading
+    // the driver source suggested it might drop query params).
+    #[tokio::test]
+    async fn test_sqlite_busy_timeout_param_is_applied() {
+        let db_file = NamedTempFile::new().expect("Failed to create temp database file");
+        let db_url = format!("sqlite:{}", db_file.path().display());
+
+        let config = DatabaseConfig { url: db_url.into() };
+        let db = Database::from_config(&config)
+            .await
+            .expect("Failed to create database");
+
+        let mut conn = db.db_clone();
+        let rows = toasty::sql::query("PRAGMA busy_timeout")
+            .exec(&mut conn)
+            .await
+            .expect("PRAGMA busy_timeout failed");
+
+        let busy_timeout = match rows.into_iter().next() {
+            Some(toasty::stmt::Value::Record(record)) => {
+                record.fields.into_iter().next().and_then(|v| v.to_u64())
+            }
+            other => panic!("Expected record row, got {other:?}"),
+        };
+        assert_eq!(busy_timeout, Some(5000));
     }
 
     #[tokio::test]

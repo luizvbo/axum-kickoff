@@ -329,6 +329,10 @@ async fn robots_txt() -> &'static str {
     "User-agent: *\nDisallow:\n"
 }
 
+/// Readiness probe: queries the `users` table and returns 503 when the
+/// database is unreachable. Do not point a Kubernetes liveness probe at
+/// this endpoint — a DB blip would restart a healthy pod. See
+/// `docs/DEPLOYMENT.md`.
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let mut db = state.0.database.db_clone();
     let db_ok = User::filter(User::fields().id().eq(0))

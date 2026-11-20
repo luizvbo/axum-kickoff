@@ -228,17 +228,34 @@ pub struct CookieUser {
     app: super::test_app::TestApp,
     user_id: u64,
     session_key: cookie::Key,
+    /// `session_epoch` stamped into the encoded cookie, matching
+    /// `User::session_epoch` at login time
+    session_epoch: i32,
     /// Stored Set-Cookie header value for cookie persistence
     session_cookie: Arc<Mutex<Option<String>>>,
 }
 
 impl CookieUser {
-    /// Create a new cookie-authenticated user
+    /// Create a new cookie-authenticated user whose cookie carries
+    /// `session_epoch = 0`, matching freshly built test users.
     pub fn new(app: super::test_app::TestApp, user_id: u64, session_key: cookie::Key) -> Self {
+        Self::with_epoch(app, user_id, session_key, 0)
+    }
+
+    /// Create a cookie-authenticated user stamped with a chosen
+    /// `session_epoch` — e.g. to test session invalidation after
+    /// `User::bump_session_epoch`.
+    pub fn with_epoch(
+        app: super::test_app::TestApp,
+        user_id: u64,
+        session_key: cookie::Key,
+        session_epoch: i32,
+    ) -> Self {
         Self {
             app,
             user_id,
             session_key,
+            session_epoch,
             session_cookie: Arc::new(Mutex::new(None)),
         }
     }
@@ -292,7 +309,7 @@ impl CookieUser {
             cookie.clone()
         } else {
             // Otherwise, encode session cookie from user_id
-            encode_session_header(&self.session_key, self.user_id)
+            encode_session_header(&self.session_key, self.user_id, self.session_epoch)
         };
 
         // URL-decode the cookie string (Set-Cookie headers are URL-encoded)
@@ -337,7 +354,7 @@ impl RequestHelper for CookieUser {
         }
 
         // Otherwise, encode session cookie from user_id
-        let cookie = encode_session_header(&self.session_key, self.user_id);
+        let cookie = encode_session_header(&self.session_key, self.user_id, self.session_epoch);
         headers.insert(
             header::COOKIE,
             HeaderValue::from_str(&cookie).expect("Invalid cookie header"),
@@ -385,15 +402,23 @@ impl RequestHelper for TokenUser {
 
 /// Encode a session cookie header for mock requests
 ///
-/// This matches the session encoding used in the session middleware.
-/// The cookie is encrypted and signed with the session key to match the
-/// verification done by the middleware on every request.
-pub fn encode_session_header(session_key: &cookie::Key, user_id: u64) -> String {
+/// This matches the session encoding used in the session middleware —
+/// including the `session_epoch` stamp written at login (see
+/// `oauth_callback`). The cookie is encrypted and signed with the session
+/// key to match the verification done by the middleware on every request.
+pub fn encode_session_header(
+    session_key: &cookie::Key,
+    user_id: u64,
+    session_epoch: i32,
+) -> String {
+    use crate::middleware::session::SESSION_EPOCH;
+
     let cookie_name = crate::middleware::session::COOKIE_NAME;
 
     // Build session data map
     let mut map = std::collections::HashMap::new();
     map.insert("user_id".to_string(), user_id.to_string());
+    map.insert(SESSION_EPOCH.to_string(), session_epoch.to_string());
 
     // Use the same encoding as the session middleware
     let encoded = crate::middleware::session::encode(&map);
@@ -425,7 +450,7 @@ mod tests {
     #[test]
     fn test_encode_session_header() {
         let session_key = cookie::Key::generate();
-        let cookie = encode_session_header(&session_key, 42);
+        let cookie = encode_session_header(&session_key, 42, 0);
         assert!(cookie.contains(&format!("{}=", crate::middleware::session::COOKIE_NAME)));
     }
 }

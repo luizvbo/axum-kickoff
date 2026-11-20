@@ -183,6 +183,8 @@ impl AuthCheck {
             // The endpoint declares no required scope. Only `admin` tokens
             // (full access by definition) pass — anything narrower stays
             // denied so a token can't reach endpoints it was never scoped for.
+            // Note: crates.io rejects *all* scoped tokens on such endpoints;
+            // treating `admin` as universal is a deliberate relaxation.
             (Some(token_scopes), None) => token_scopes
                 .iter()
                 .any(|scope| scope.can_perform(ActionScope::Admin.as_str())),

@@ -549,6 +549,11 @@ Toasty is a relatively new ORM with some limitations compared to more mature ORM
 - Automatic migrations may not handle all schema changes
 - Complex refactoring (renaming tables, changing column types) may require manual intervention
 - Rollback support is limited
+- SQLite does **not** enforce `FOREIGN KEY` / `REFERENCES` constraints. Toasty's
+  pool offers no per-connection hook to set `PRAGMA foreign_keys` (see
+  `src/db.rs`), and Toasty-generated migrations emit no FK clauses anyway.
+  Hand-written SQLite migrations that add them get no enforcement —
+  PostgreSQL enforces them normally.
 
 ### Query Builder Limitations
 

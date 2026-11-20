@@ -193,15 +193,11 @@ async fn revoke_token_returns_204() {
 
     response.assert_status(StatusCode::NO_CONTENT);
 
-    // Verify the token is revoked in the list
+    // Revoked tokens are filtered out of the listing
     let response = cookie_user.get::<Value>("/api/v1/tokens").await;
     let body = response.into_json::<Value>().await;
     let data = body["data"].as_array().expect("data should be an array");
-    let revoked_token = data
-        .iter()
-        .find(|t| t["id"] == token.id)
-        .expect("Token should still be in list");
-    assert_eq!(revoked_token["revoked"], true);
+    assert!(data.iter().all(|t| t["id"] != token.id));
 }
 
 #[tokio::test]
@@ -448,4 +444,93 @@ async fn token_auth_for_inactive_user_is_forbidden() {
     let response = token_user.get::<Value>("/api/v1/tokens").await;
 
     response.assert_status(StatusCode::FORBIDDEN);
+}
+
+/// Token creation is capped at 500 active tokens per user, like crates.io —
+/// token rows cannot accumulate without bound.
+#[tokio::test]
+async fn create_token_enforces_per_user_cap() {
+    let (cookie_user, csrf_token, user_id) = setup_auth_user().await;
+    let mut db = cookie_user.app().db().db_clone();
+
+    for i in 0..500 {
+        cookie_user
+            .app()
+            .token_builder(user_id, &format!("cap-token-{i}"))
+            .build(&mut db)
+            .await
+            .expect("Failed to create token");
+    }
+
+    let headers = cookie_user.headers_with_csrf(&csrf_token);
+    let response = cookie_user
+        .post_with_headers::<Value>(
+            "/api/v1/tokens",
+            &json!({
+                "name": "one-too-many",
+                "resource_scopes": ["*"],
+                "action_scopes": ["admin"]
+            }),
+            headers,
+        )
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+/// `list_tokens` hides revoked tokens entirely and expired tokens once the
+/// 30-day grace window passes; recently expired tokens still show.
+#[tokio::test]
+async fn list_tokens_hides_revoked_and_old_expired_tokens() {
+    let (cookie_user, _csrf_token, user_id) = setup_auth_user().await;
+    let mut db = cookie_user.app().db().db_clone();
+
+    cookie_user
+        .app()
+        .token_builder(user_id, "active")
+        .build(&mut db)
+        .await
+        .unwrap();
+    cookie_user
+        .app()
+        .token_builder(user_id, "revoked")
+        .revoked(true)
+        .build(&mut db)
+        .await
+        .unwrap();
+    let yesterday = jiff::Timestamp::now()
+        .checked_sub(SignedDuration::from_hours(24))
+        .unwrap();
+    cookie_user
+        .app()
+        .token_builder(user_id, "expired-recent")
+        .expired_at(yesterday)
+        .build(&mut db)
+        .await
+        .unwrap();
+    let old = jiff::Timestamp::now()
+        .checked_sub(SignedDuration::from_hours(31 * 24))
+        .unwrap();
+    cookie_user
+        .app()
+        .token_builder(user_id, "expired-old")
+        .expired_at(old)
+        .build(&mut db)
+        .await
+        .unwrap();
+
+    let response = cookie_user.get::<Value>("/api/v1/tokens").await;
+    response.assert_status(StatusCode::OK);
+
+    let body = response.into_json::<Value>().await;
+    let names: Vec<&str> = body["data"]
+        .as_array()
+        .expect("data should be an array")
+        .iter()
+        .filter_map(|t| t["name"].as_str())
+        .collect();
+    assert!(names.contains(&"active"));
+    assert!(names.contains(&"expired-recent"));
+    assert!(!names.contains(&"revoked"));
+    assert!(!names.contains(&"expired-old"));
 }

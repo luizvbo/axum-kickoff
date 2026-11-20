@@ -450,3 +450,153 @@ async fn inactive_user_can_access_public_routes() {
     let response = cookie_user.get::<serde_json::Value>("/api/v1/posts").await;
     response.assert_status(StatusCode::OK);
 }
+
+/// A stale or forged `Authorization: Bearer` header must not break public
+/// routes — token validation only runs inside `require_auth`, so public
+/// endpoints ignore the header entirely (matching crates.io semantics).
+#[tokio::test]
+async fn invalid_bearer_token_is_ignored_on_public_routes() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let mut request = anon.request_builder(http::Method::GET, "/api/v1/posts");
+    request.headers_mut().insert(
+        http::header::AUTHORIZATION,
+        http::HeaderValue::from_static("Bearer not-a-real-token"),
+    );
+    let response = anon.run::<serde_json::Value>(request).await;
+
+    response.assert_status(StatusCode::OK);
+}
+
+/// On protected routes the Bearer header wins: an invalid token is a 401
+/// even when the request is otherwise anonymous.
+#[tokio::test]
+async fn invalid_bearer_token_returns_401_on_protected_routes() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let mut request = anon.request_builder(http::Method::GET, "/api/v1/tokens");
+    request.headers_mut().insert(
+        http::header::AUTHORIZATION,
+        http::HeaderValue::from_static("Bearer not-a-real-token"),
+    );
+    let response = anon.run::<serde_json::Value>(request).await;
+
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+/// `session_epoch` is stamped into the session cookie at login and
+/// re-checked by `require_auth`: bumping `User::session_epoch` invalidates
+/// every outstanding session for that user ("log out everywhere").
+#[tokio::test]
+async fn bumping_session_epoch_invalidates_outstanding_sessions() {
+    use crate::tests::request_helper::encode_session_header;
+
+    let app = TestApp::new().await;
+    let mut db = app.db().db_clone();
+    let mut user = app
+        .user_builder("epoch_user")
+        .build(&mut db)
+        .await
+        .expect("Failed to create user");
+
+    let session_key = app.state.session_key.clone();
+    let cookie_user = CookieUser::new(app, user.id, session_key.clone());
+
+    // The login-time stamp (epoch 0) authenticates.
+    let response = cookie_user.get::<serde_json::Value>("/api/v1/tokens").await;
+    response.assert_status(StatusCode::OK);
+
+    user.bump_session_epoch(&mut db)
+        .await
+        .expect("Failed to bump session epoch");
+
+    // The old cookie is now stale and gets rejected.
+    let response = cookie_user.get::<serde_json::Value>("/api/v1/tokens").await;
+    response.assert_status(StatusCode::UNAUTHORIZED);
+
+    // A cookie stamped with the new epoch — what a fresh login would
+    // carry — authenticates again.
+    let mut request = cookie_user.request_builder(http::Method::GET, "/api/v1/tokens");
+    let fresh = encode_session_header(&session_key, user.id, user.session_epoch);
+    request.headers_mut().insert(
+        http::header::COOKIE,
+        http::HeaderValue::from_str(&fresh).unwrap(),
+    );
+    let response = cookie_user.run::<serde_json::Value>(request).await;
+    response.assert_status(StatusCode::OK);
+}
+
+/// `verify_origin` must check *every* Origin header value: a second smuggled
+/// value must not hide behind an allowed first one.
+#[tokio::test]
+async fn smuggled_second_origin_header_is_forbidden() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let mut request = anon.request_builder(http::Method::POST, "/examples/contact");
+    request.headers_mut().insert(
+        http::header::ORIGIN,
+        http::HeaderValue::from_static("http://localhost:3000"),
+    );
+    request.headers_mut().append(
+        http::header::ORIGIN,
+        http::HeaderValue::from_static("https://evil.com"),
+    );
+    request.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/x-www-form-urlencoded"),
+    );
+    *request.body_mut() =
+        axum::body::Body::from("name=Tester&email=t%40example.com&message=hello+there+world");
+    let response = anon.run::<()>(request).await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+/// A non-UTF8 Origin header value can never be on the allowlist — it is
+/// rejected outright rather than silently skipped.
+#[tokio::test]
+async fn non_utf8_origin_header_is_forbidden() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let mut request = anon.request_builder(http::Method::POST, "/examples/contact");
+    request.headers_mut().insert(
+        http::header::ORIGIN,
+        http::HeaderValue::from_bytes(&[0xff, 0xfe]).unwrap(),
+    );
+    let response = anon.run::<()>(request).await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+/// The configured origin still passes and an unlisted origin gets 403.
+#[tokio::test]
+async fn origin_check_allows_configured_origin_and_rejects_others() {
+    let app = TestApp::new().await;
+    let anon = AnonymousUser::new(app);
+
+    let mut request = anon.request_builder(http::Method::POST, "/examples/contact");
+    request.headers_mut().insert(
+        http::header::ORIGIN,
+        http::HeaderValue::from_static("http://localhost:3000"),
+    );
+    request.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/x-www-form-urlencoded"),
+    );
+    *request.body_mut() =
+        axum::body::Body::from("name=Tester&email=t%40example.com&message=hello+there+world");
+    let response = anon.run::<()>(request).await;
+    response.assert_status(StatusCode::OK);
+
+    let mut request = anon.request_builder(http::Method::POST, "/examples/contact");
+    request.headers_mut().insert(
+        http::header::ORIGIN,
+        http::HeaderValue::from_static("https://evil.com"),
+    );
+    let response = anon.run::<()>(request).await;
+    response.assert_status(StatusCode::FORBIDDEN);
+}

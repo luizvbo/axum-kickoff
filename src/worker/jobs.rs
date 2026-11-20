@@ -31,10 +31,11 @@ pub trait Job: serde::de::DeserializeOwned + Send + Sync + 'static {
 }
 
 /// Deletes `rate_limit_buckets` rows whose `last_refill` is older than the
-/// configured number of days, and `background_jobs` rows marked dead
-/// (`failed_at`) longer ago than that. This is an idempotent job: running it
-/// twice with the same `max_age_days` simply deletes nothing on the second
-/// run.
+/// configured number of days, `background_jobs` rows marked dead
+/// (`failed_at`) longer ago than that, and `api_tokens` rows that were
+/// revoked or expired longer ago than that. This is an idempotent job:
+/// running it twice with the same `max_age_days` simply deletes nothing on
+/// the second run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupJob {
     pub max_age_days: u64,
@@ -92,18 +93,25 @@ async fn cleanup_old_rate_limit_buckets(
     Ok(())
 }
 
-fn build_delete_sqls(placeholder: Option<toasty::SqlPlaceholder>) -> [&'static str; 2] {
+fn build_delete_sqls(placeholder: Option<toasty::SqlPlaceholder>) -> [&'static str; 4] {
     match placeholder {
         Some(toasty::SqlPlaceholder::DollarNumber) => [
             "DELETE FROM rate_limit_buckets WHERE last_refill < $1",
             // Dead jobs are never retried — without pruning they would
             // accumulate forever.
             "DELETE FROM background_jobs WHERE failed_at < $1",
+            // Revoked/expired tokens are hidden from `list_tokens` anyway;
+            // delete their rows (and the stored hashes) after the retention
+            // window so the table cannot grow without bound.
+            "DELETE FROM api_tokens WHERE revoked = true AND created_at < $1",
+            "DELETE FROM api_tokens WHERE expired_at < $1",
         ],
         Some(toasty::SqlPlaceholder::NumberedQuestionMark)
         | Some(toasty::SqlPlaceholder::QuestionMark) => [
             "DELETE FROM rate_limit_buckets WHERE last_refill < ?1",
             "DELETE FROM background_jobs WHERE failed_at < ?1",
+            "DELETE FROM api_tokens WHERE revoked = true AND created_at < ?1",
+            "DELETE FROM api_tokens WHERE expired_at < ?1",
         ],
         None => panic!("raw SQL cleanup requires a SQL backend"),
     }
